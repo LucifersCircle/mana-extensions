@@ -1,0 +1,33 @@
+{
+  "repositoryName": "Lucifers Circle | VortexScans",
+  "thumbnail": "https://avatars.githubusercontent.com/LucifersCircle",
+  "sources": [
+    {
+      "id": "VortexScans",
+      "version": "1.0.5",
+      "name": "VortexScans",
+      "description": "Read manga, manhwa, and manhua from VortexScans.",
+      "thumbnail": "VortexScans.png",
+      "rating": 1,
+      "website": "https://vortexscans.org",
+      "badges": [
+        "Manga",
+        "Manhua",
+        "Manhwa"
+      ],
+      "supportedLanguages": [
+        "en_US"
+      ],
+      "developers": [
+        {
+          "name": "Lucifers Circle",
+          "github": "https://github.com/LucifersCircle"
+        }
+      ],
+      "path": "VortexScans",
+      "environment": "source",
+      "intents": 6298636,
+      "hash": "7a93e53f7a93e53f7a93e53f7a93e53f7a93e53f7a93e53f7a93e53f7a93e53f"
+    }
+  ]
+}
