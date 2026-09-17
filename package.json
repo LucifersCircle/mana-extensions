@@ -1,51 +1,46 @@
 {
-  "name": "extensions-Mana-generic-1.0",
+  "name": "mana-vortexscans",
   "version": "1.0.0",
-  "repositoryName": "Mana - Generic (1.0)",
-  "description": "Mana - Generic for 1.0!",
+  "repositoryName": "VortexScans for Mana",
+  "description": "VortexScans extension for Mana.",
   "main": "index.js",
   "scripts": {
-    "test": "jest",
-    "prep": "rm -rf ./dist && tsc",
+    "test": "jest --runInBand",
+    "typecheck": "tsc --noEmit",
+    "prep": "rm -rf ./lib && tsc",
     "dev": "nodemon",
-    "build": "mana build",
-    "serve": "mana serve",
-    "lint": "eslint"
+    "build": "mana-dev build",
+    "serve": "mana-dev serve",
+    "lint": "eslint 'src/**/*.ts'"
   },
   "author": {
-    "name": "Seyden",
-    "email": "saiifii@live.de",
-    "url": "https://github.com/Seyden"
+    "name": "Lucifers Circle",
+    "url": "https://github.com/LucifersCircle"
   },
   "license": "GPL-3.0-or-later",
   "devDependencies": {
+    "@mana-app/dev": "0.1.14",
     "@tsconfig/recommended": "^1.0.1",
-    "@types/cheerio": "^0.22.21",
-    "@types/crypto-js": "^4.1.1",
     "@types/jest": "^29.2.4",
     "@typescript-eslint/eslint-plugin": "^5.1.0",
     "@typescript-eslint/parser": "^5.57.1",
+    "@types/cheerio": "^0.22.35",
     "eslint": "^7.27.0",
     "eslint-plugin-modules-newline": "^0.0.6",
     "jest": "^29.3.1",
     "nodemon": "^2.0.22",
-    "simple-url": "^1.1.8",
     "ts-jest": "^29.0.3",
     "ts-node": "^10.2.1",
     "typescript": "^4.9.5"
   },
   "dependencies": {
     "@mana-app/types": "0.0.27",
-    "@sinonjs/text-encoding": "^0.7.3",
-    "@types/cheerio": "^0.22.21",
-    "cheerio": "^1.0.0-rc.12",
-    "crypto-js": "^4.1.1",
-    "html-entities": "^2.5.2",
-    "moment": "^2.30.1"
+    "cheerio": "1.0.0-rc.12",
+    "html-entities": "^2.5.2"
   },
   "mana": {
-    "repositoryName": "Seyden | Mana - Generic (1.0)",
-    "thumbnail": "https://avatars.githubusercontent.com/u/639817"
+    "repositoryName": "Lucifers Circle | VortexScans",
+    "thumbnail": "https://avatars.githubusercontent.com/LucifersCircle"
   },
   "type": "module"
 }

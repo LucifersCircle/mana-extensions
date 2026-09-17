@@ -108,6 +108,7 @@ dist
 
 #compiled files and the monstor that node usually is
 node_modules
+lib
 dist
 bundles
 tmp

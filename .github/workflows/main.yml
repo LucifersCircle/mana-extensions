@@ -4,6 +4,10 @@ on:
     branches:
       - '**'
       - '!main'
+
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Bundle and Publish Sources
@@ -19,18 +23,17 @@ jobs:
           node-version: 16
           registry-url: https://registry.npmjs.org/
 
-      - name: Extract branch name
-        shell: bash
-        run: echo "##[set-output name=branch;]$(echo ${GITHUB_REF#refs/heads/})"
-        id: extract_branch
-
-      - run: npm install
-      - run: npm install -D @mana-app/dev@latest
-      - run: npx mana-dev build --output ${{ steps.extract_branch.outputs.branch }}
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+      - name: Build GitHub Pages artifact
+        run: npm run build -- --output dist
+      - name: Add custom domain
+        run: cp CNAME dist/CNAME
 
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@4.1.0
         with:
           branch: gh-pages
-          folder: ${{ steps.extract_branch.outputs.branch }}
-          target-folder: ${{ steps.extract_branch.outputs.branch }}
+          folder: dist
+          clean: true

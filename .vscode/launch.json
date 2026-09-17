@@ -5,14 +5,13 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Test Current Source",
+            "name": "Serve VortexScans",
             "request": "launch",
             "runtimeArgs": [
-                "paperback",
-                "test",
-                "${fileBasenameNoExtension}"
+                "run",
+                "dev"
             ],
-            "runtimeExecutable": "npx",
+            "runtimeExecutable": "npm",
             "skipFiles": [
                 "<node_internals>/**"
             ],
