@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { performance } from 'node:perf_hooks';
 import { load } from 'cheerio';
 import { assertReadOnlyMangaSushiPost } from './mana-runtime.mjs';
 
@@ -212,11 +213,33 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
     }
     assert(terminal && safeIDs.size, 'No complete safe catalog for home parity');
     const cold = freshSource();
-    const sections = await cold.getSectionsForPage({ id: 'home' });
-    assert.equal(sections.length, 2);
-    for (const section of sections) {
-      const result = await cold.resolvePageSection({ id: 'home' }, section.id);
+    const bodies = [];
+    const original = cold.api.text.bind(cold.api);
+    cold.api.text = async (url, body) => { if (body) bodies.push(new URLSearchParams(body)); return original(url, body); };
+    const started = performance.now(), before = requests.length;
+    const [sections, ...rows] = await Promise.all([
+      cold.getSectionsForPage({ id: 'home' }),
+      cold.resolvePageSection({ id: 'home' }, 'popular'),
+      cold.resolvePageSection({ id: 'home' }, 'latest')
+    ]);
+    assert.deepEqual(Array.from(sections, (section) => section.id), ['popular', 'latest']);
+    const coldRequests = requests.length - before;
+    assert.equal(coldRequests, 2, 'Cold home should share one homepage request and one native metadata batch');
+    assert.equal(bodies.length, 1);
+    assert.equal(bodies[0].get('template'), 'madara-core/content/content-search');
+    assert.equal(bodies[0].get('page'), '0');
+    const adultClause = [...bodies[0].entries()].find(([key, value]) => /^vars\[meta_query\].*\[key\]$/.test(key) && value === 'manga_adult_content');
+    assert(adultClause, 'Metadata batch must retain the native adult filter');
+    assert.equal(bodies[0].get(adultClause[0].replace(/\[key\]$/, '[value]')), '', 'Metadata batch must request adult=0, never adult=1');
+    console.log(`DISCOVERY COLD: ${coldRequests} requests, ${Math.round(performance.now() - started)}ms`);
+    const warmBefore = requests.length, warmStarted = performance.now();
+    const warmRows = await Promise.all(sections.map((section) => cold.resolvePageSection({ id: 'home' }, section.id)));
+    assert.equal(requests.length - warmBefore, 0, 'Warm discovery should reuse cached native metadata');
+    console.log(`DISCOVERY WARM: 0 requests, ${Math.round(performance.now() - warmStarted)}ms`);
+    for (const [index, section] of sections.entries()) {
+      const result = rows[index];
       const expected = homeIDs[section.id].filter((id) => safeIDs.has(id));
+      assert.deepEqual(Array.from(warmRows[index].items, (item) => item.id), expected);
       assert.deepEqual(Array.from(result.items, (item) => item.id), expected, 'Safe home titles must not disappear during canonical enrichment');
       assert(Array.isArray(result.items)); // All popular titles may be NSFW or unclassified.
       console.log(`SAFE HOME ${section.id}: ${result.items.length} of the site's titles visible`);
@@ -226,6 +249,36 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
       }
       if (section.id === 'popular') assert.equal(result.viewMoreLink, undefined);
     }
+  });
+  await check('Setting changes invalidate a pending discovery metadata batch', async () => {
+    const cold = freshSource();
+    const original = cold.api.text.bind(cold.api);
+    let started, release;
+    const ready = new Promise((resolve) => { started = resolve; });
+    cold.api.text = async (url, body) => {
+      const html = await original(url, body);
+      if (body && new URLSearchParams(body).get('template') === 'madara-core/content/content-search') {
+        started();
+        return new Promise((resolve) => { release = () => resolve(html); });
+      }
+      return html;
+    };
+    const pending = cold.search({ page: 1, listId: 'latest' });
+    try {
+      await Promise.race([ready, pending.then(() => { throw new Error('Discovery completed without the metadata gate'); })]);
+      const field = (await cold.getPreferenceMenu()).sections[0].children[0];
+      await field.didChange(false);
+      release();
+      await assert.rejects(pending, /settings changed/i);
+      assert.equal(cold.metadata.size, 0, 'A stale discovery batch must not repopulate metadata after a settings change');
+      await field.didChange(true);
+    } finally { release?.(); cold.api.text = original; }
+  });
+  await check('Malformed discovery metadata fails visibly instead of trusting home titles', async () => {
+    const cold = freshSource();
+    const original = cold.api.text.bind(cold.api);
+    cold.api.text = async (url, body) => body ? '<html><title>Unexpected metadata</title></html>' : original(url, body);
+    await assert.rejects(cold.search({ page: 1, listId: 'latest' }), /unrecognized continuation/i);
   });
   await check('Read-only host rejects duplicate AJAX actions before any request', async () => {
     // Invoke the same pure guard used by the runtime. A regression must never
