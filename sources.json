@@ -32,11 +32,11 @@
       "path": "Kagane",
       "environment": "source",
       "intents": 6298637,
-      "hash": "22e98c5e22e98c5e22e98c5e22e98c5e22e98c5e22e98c5e22e98c5e22e98c5e"
+      "hash": "74f5a52074f5a52074f5a52074f5a52074f5a52074f5a52074f5a52074f5a520"
     },
     {
       "id": "MangaSushi",
-      "version": "0.0.1-alpha.3",
+      "version": "0.0.1-alpha.4",
       "name": "MangaSushi",
       "description": "MangaSushi with the site’s discovery, search filters, and a global NSFW exclusion setting.",
       "thumbnail": "MangaSushi.png",
@@ -57,7 +57,7 @@
       "path": "MangaSushi",
       "environment": "source",
       "intents": 6298637,
-      "hash": "0ee30d2a0ee30d2a0ee30d2a0ee30d2a0ee30d2a0ee30d2a0ee30d2a0ee30d2a"
+      "hash": "0a166fc80a166fc80a166fc80a166fc80a166fc80a166fc80a166fc80a166fc8"
     },
     {
       "id": "VortexScans",
@@ -84,7 +84,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 6298636,
-      "hash": "0dbf8f160dbf8f160dbf8f160dbf8f160dbf8f160dbf8f160dbf8f160dbf8f16"
+      "hash": "5a613ce15a613ce15a613ce15a613ce15a613ce15a613ce15a613ce15a613ce1"
     }
   ]
 }
