@@ -10,11 +10,14 @@ import {
     staff
 } from '@mana-app/types'
 import { decode } from 'html-entities'
+import { incompleteRatingInfo,
+    nativeRating } from '../../ContentRatingPolicy'
 import {
     VORTEX_FALLBACK_IMAGE,
     VORTEX_LANGUAGE,
     VortexChapter,
     VortexChapterData,
+    VortexGenre,
     VortexPost
 } from './VortexScansModels'
 import {
@@ -44,7 +47,7 @@ export class VortexScansParser {
                     id: buildVortexContentId(post.id, post.slug),
                     title: decode(post.postTitle.trim()),
                     cover: post.featuredImage || VORTEX_FALLBACK_IMAGE,
-                    contentRating: getVortexContentRating(post),
+                    contentRating: nativeRating(getVortexContentRating(post)),
                     webUrl: buildVortexSeriesUrl(post.slug),
                     subtitle: home && latestChapter
                         ? `Ch. ${chapterValue}`
@@ -73,29 +76,22 @@ export class VortexScansParser {
         return {
             title,
             cover: post.featuredImage || VORTEX_FALLBACK_IMAGE,
-            contentRating: getVortexContentRating(post),
+            contentRating: nativeRating(getVortexContentRating(post)),
             webUrl: buildVortexSeriesUrl(post.slug),
             status: mapVortexPublicationStatus(post.seriesStatus),
             contentType: mapVortexContentType(post.seriesType),
             recommendedPanelMode: ReadingMode.WEBTOON,
             summary: cleanVortexDescription(post.postContent),
             additionalTitles: parseAlternativeTitles(post.alternativeTitles, title),
-            tags: (post.genres ?? [])
+            tags: validVortexGenres(post)
                 .filter((genre) => genre.name.toLowerCase() !== 'hidden')
                 .map((genre) => ({
                     id: genre.id.toString(),
                     title: genre.name
                 })),
-            ...(staffItems.length > 0
-                ? {
-                    additionalInfo: [staff.section({
-                        id: 'staff',
-                        title: 'Staff',
-                        hasMore: false,
-                        items: staffItems
-                    })]
-                }
-                : {})
+            additionalInfo: [...(staffItems.length > 0 ? [staff.section({
+                id: 'staff', title: 'Staff', hasMore: false, items: staffItems
+            })] : []), ...(getVortexContentRating(post) === undefined ? [incompleteRatingInfo()] : [])]
         }
     }
 
@@ -225,16 +221,22 @@ export function mapVortexContentType(
     }
 }
 
-export function getVortexContentRating(post: VortexPost): ContentRating {
-    const genres = new Set((post.genres ?? [])
-        .map((genre) => genre.name.trim().toLowerCase()))
+function validVortexGenres(post: VortexPost): VortexGenre[] {
+    return Array.isArray(post.genres) ? post.genres.filter((genre) => !!genre && Number.isSafeInteger(genre.id) && genre.id > 0 && typeof genre.name === 'string' && !!genre.name.trim()) : []
+}
 
+export function getVortexContentRating(post: VortexPost): ContentRating | undefined {
+    const valid = validVortexGenres(post)
+    const genres = new Set(valid.map((genre) => genre.name.trim().toLowerCase()))
+
+    if (['adult', 'smut', 'hentai', 'erotica', 'pornographic', 'pornography'].some((genre) => genres.has(genre))) return ContentRating.EXPLICIT
     if (['mature', 'gore', 'blood', 'violence', 'terror']
         .some((genre) => genres.has(genre))) {
         return ContentRating.MATURE
     }
-    if (genres.has('harem')) return ContentRating.SUGGESTIVE
-    return ContentRating.SAFE
+    if (genres.has('ecchi') || genres.has('suggestive')) return ContentRating.SUGGESTIVE
+    // Relationship/demographic tags alone are not sexual content ratings.
+    return Array.isArray(post.genres) && valid.length > 0 && valid.length === post.genres.length ? ContentRating.SAFE : undefined
 }
 
 function isVortexChapterDataLocked(chapter: VortexChapterData): boolean {

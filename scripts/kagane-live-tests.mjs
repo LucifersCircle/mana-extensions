@@ -130,6 +130,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
     if (!item || typeof item !== 'object') return undefined;
     const old = typeof item.content_rating === 'string' ? item.content_rating.trim().toLowerCase() : undefined;
     const legacy = ['safe', 'suggestive', 'erotica', 'pornographic'].includes(old) ? old : undefined;
+    if (item.is_pornographic === true || legacy === 'pornographic') return 'pornographic';
     if (item.age_rating === undefined && item.is_pornographic === undefined) return legacy;
     if (typeof item.is_pornographic !== 'boolean') return undefined;
     const modern = item.age_rating === 'Safe' && !item.is_pornographic ? 'safe'
@@ -167,12 +168,21 @@ export async function testKagane({ source, check, highlights, searchResult, imag
     assert(known, `Unrecognized reader image bytes: ${signature}`);
     console.log(`READER IMAGE ${response.status} ${response.headers.get('content-type')} ${redactURL(request.url)}`);
   }
-  let catalog, form, chapterList, index, content, blocked, readerData;
-  await check('Persistent rating selection defaults to Safe/Suggestive and verifies modern ratings', async () => {
-    assert.deepEqual(Array.from((await preference('contentRatings')).value), defaultRatings);
+  let catalog, form, chapterList, index, content, blocked, readerData, safeBody;
+  await check('Never-saved source categories follow native policy and explicit source selection persists', async () => {
+    assert.equal(source.info.version, '0.0.1-alpha.2');
+    assert.deepEqual(Array.from((await preference('contentRatings')).value), allRatings);
+    const start = requests.length, empty = await source.search({ page: 1, context: { allowedContentRatings: [] } });
+    assert.equal(empty.results.length, 0); assert.equal(empty.isLastPage, true); assert.equal(requests.length, start);
+    const nativeExplicit = await source.search({ page: 1, context: { allowedContentRatings: [3] } }); searchResult(nativeExplicit);
+    assert(nativeExplicit.results.every((item) => item.contentRating === 3));
+    const nativeSafe = await source.search({ page: 1, context: { allowedContentRatings: [0] } }); searchResult(nativeSafe);
+    assert(nativeSafe.results.every((item) => item.contentRating === 0));
+    await preference('contentRatings', defaultRatings);
+    assert.deepEqual(Array.from((await preference('contentRatings', undefined, freshSource())).value), defaultRatings);
     catalog = await source.search({ page: 1 }); searchResult(catalog);
     for (const item of catalog.results) assert(isSafe(seen.get(item.id)), `Unsafe or unknown listing: ${item.id}`);
-    const sent = searches.at(-1).args[0];
+    const sent = searches.at(-1).args[0]; safeBody = sent;
     assert.equal(sent.is_pornographic, false); assert(sent.age_rating.includes('Safe'));
   });
   await check('Search pagination follows upstream completion, not the filtered result count', async () => {
@@ -283,13 +293,13 @@ export async function testKagane({ source, check, highlights, searchResult, imag
     await assert.rejects(source.search({ page: 0 }), /invalid|page/i);
     await assert.rejects(source.search({ page: 1, listId: 'not-a-real-section' }), /unknown|invalid|section|list/i);
   });
-  await check('All six website discovery rows preserve order and native continuation', async () => {
+  await check('All six native discovery sorts preserve live API order and continuation', async () => {
     const sections = await source.getSectionsForPage({ id: 'home' });
     assert.deepEqual(Array.from(sections, (section) => section.id), ['popular', 'trending_month', 'trending_week', 'trending_today', 'latest_updates', 'recently_added']);
     for (const section of sections) {
       const result = await source.resolvePageSection({ id: 'home' }, section.id); assert(Array.isArray(result.items));
       const sorts = { popular: 'total_views', trending_month: 'avg_views_month', trending_week: 'avg_views_week', trending_today: 'avg_views_today', latest_updates: 'updated_at', recently_added: 'created_at' };
-      const raw = await originalSearch(searches[0].args[0], 1, 50, `${sorts[section.id]},desc`, false);
+      const raw = await originalSearch(safeBody, 1, 50, `${sorts[section.id]},desc`, false);
       const expected = Array.from(raw.content).filter((item) => isSafe(item) && item.cover_image_id?.trim()).map((item) => item.series_id);
       assert.deepEqual(Array.from(result.items, (item) => item.id), expected);
       if (!raw.last) assert.equal(result.viewMoreLink?.request?.listId, section.id);
@@ -422,6 +432,45 @@ export async function testKagane({ source, check, highlights, searchResult, imag
       const target = freshSource(); target.api.series = async () => ({ ...raw, ...overrides });
       for (const fn of [() => target.getContent(sample), () => target.getChapters(sample), () => target.getChapterData(sample, chapterList[0].chapterId)]) await assert.rejects(fn(), /excluded|classification|rating|NSFW/i);
     }
+  });
+  await check('Incomplete rating metadata uses native Mature fallback without overriding known explicit evidence', async () => {
+    const raw = details.get(sample); assert(raw); await preference('contentRatings', allRatings);
+    try {
+      const target = freshSource(); target.api.series = async () => ({ ...raw, age_rating: undefined, is_pornographic: undefined, content_rating: undefined });
+      const result = await target.getContent(sample, { allowedContentRatings: [2] }); assert.equal(result.contentRating, 2);
+      assert(result.additionalInfo.some((section) => section.id === 'content-rating-metadata' && /Incomplete/.test(section.items[0].title)));
+      await assert.rejects(target.getContent(sample, { allowedContentRatings: [0, 1, 3] }), /excluded/);
+      assert.equal((await target.getContent(sample)).contentRating, 2, 'Omitted native policy is not Safe-only');
+      for (const [age, pornographic, expected] of [['Safe', false, 0], ['FifteenPlus', false, 1], ['EighteenPlus', false, 2], ['EighteenPlus', true, 3]]) {
+        const rated = freshSource(); rated.api.series = async () => ({ ...raw, content_rating: undefined, age_rating: age, is_pornographic: pornographic });
+        assert.equal((await rated.getContent(sample, { allowedContentRatings: [expected] })).contentRating, expected);
+        await assert.rejects(rated.getContent(sample, { allowedContentRatings: [0, 1, 2, 3].filter((value) => value !== expected) }), /excluded/);
+      }
+      for (const overrides of [{ age_rating: 'Safe', is_pornographic: true }, { age_rating: 'Safe', is_pornographic: false, content_rating: 'Pornographic' }]) {
+        const explicit = freshSource(); explicit.api.series = async () => ({ ...raw, ...overrides });
+        assert.equal((await explicit.getContent(sample, { allowedContentRatings: [3] })).contentRating, 3);
+        await assert.rejects(explicit.getContent(sample, { allowedContentRatings: [0, 1, 2] }), /excluded/);
+      }
+    } finally { await preference('contentRatings', defaultRatings); }
+  });
+  await check('Native rating policy and accumulated IDs survive partial overlap and duplicate-only physical pages', async () => {
+    const pool = [...seen.values()].filter((item) => item.series_id && item.title && item.cover_image_id).slice(0, 5); assert.equal(pool.length, 5);
+    await preference('contentRatings', allRatings);
+    try {
+      const target = freshSource(), calls = [];
+      target.api.search = async (_body, page) => { calls.push(page); return { content: (page === 1 ? pool.slice(0, 3) : page === 2 ? pool.slice(0, 3) : pool.slice(2)).map((item) => ({ ...item, age_rating: 'Safe', is_pornographic: false, content_rating: 'Safe' })), last: page >= 3 }; };
+      const first = await target.search({ page: 1, context: { allowedContentRatings: [0] } }), next = await target.search({ page: 2, context: { allowedContentRatings: [0] } });
+      assert.deepEqual([...first.results, ...next.results].map((item) => item.id), pool.map((item) => item.series_id)); assert.deepEqual(calls, [1, 2, 3]);
+      assert.equal(new Set([...first.results, ...next.results].map((item) => item.id)).size, 5); assert.equal(next.isLastPage, true);
+      const before = calls.length; assert.deepEqual(Array.from((await target.search({ page: 2, context: { allowedContentRatings: [0] } })).results, (item) => item.id), next.results.map((item) => item.id)); assert.equal(calls.length, before);
+      const migrated = await target.search({ page: 2, context: { allowedContentRatings: [0], origin: 0 } });
+      assert(migrated.results.every((item) => item.context.origin === 0)); assert.equal(calls.length, before, 'Migration context reuses cached policy metadata');
+      const ordinary = await target.search({ page: 2, context: { allowedContentRatings: [0] } });
+      assert(ordinary.results.every((item) => item.context.origin === undefined), 'Cached highlights do not retain a previous request origin');
+      const blocked = await target.search({ page: 1, context: { allowedContentRatings: [3] } }); assert.equal(blocked.results.length, 0); assert.equal(blocked.isLastPage, true);
+      const link = await target.resolvePageSection({ id: 'home', context: { allowedContentRatings: [0] } }, 'latest_updates');
+      if (link.viewMoreLink) assert.deepEqual(Array.from(link.viewMoreLink.request.context.allowedContentRatings), [0]);
+    } finally { await preference('contentRatings', defaultRatings); }
   });
   await check('Changing safety preference invalidates an in-flight unfiltered response', async () => {
     await preference('contentRatings', allRatings);

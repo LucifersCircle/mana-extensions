@@ -11,9 +11,19 @@ import {
     staff
 } from '@mana-app/types'
 import { load } from 'cheerio'
+import { incompleteRatingInfo,
+    nativeRating } from '../../ContentRatingPolicy'
 
 export const DOMAIN = 'https://mangasushi.org'
 export const BLOCKED_GENRES = new Set(['adult', 'mature', 'smut', 'hentai', 'erotica', 'ecchi'])
+const EXPLICIT_GENRES = new Set(['hentai', 'smut', 'erotica'])
+const ADULT_WARNING = '.adult-content, .manga-adult, .adult-warning, [data-adult="1"], [data-adult="true"]'
+
+function itemRating(genres: Option[], warning: boolean): ContentRating | undefined {
+    if (warning || genres.some((genre) => EXPLICIT_GENRES.has(genre.id.toLowerCase()))) return ContentRating.EXPLICIT
+    if (genres.some((genre) => BLOCKED_GENRES.has(genre.id.toLowerCase()))) return ContentRating.MATURE
+    return genres.length ? ContentRating.SAFE : undefined
+}
 export type QueryValue = string | number | boolean | null | QueryValue[] | { [key: string]: QueryValue }
 export interface Listing {
     items: Series[]
@@ -126,8 +136,8 @@ export function parseListing(html: string, selector = '.c-tabs-item__content'): 
             id: ($(node).attr('href') ?? '').match(/\/manga-genre\/([^/?#]+)/)?.[1] ?? '',
             title: text($(node).text())
         })).filter((genre) => genre.id && genre.title)
-        const explicit = genres.some((genre) => BLOCKED_GENRES.has(genre.id.toLowerCase()))
-            || item.find('.adult-content, .manga-adult, .adult-warning, [data-adult="1"], [data-adult="true"]').length > 0
+        const warning = item.find(ADULT_WARNING).add(item.filter(ADULT_WARNING)).length > 0
+        const explicit = warning || genres.some((genre) => BLOCKED_GENRES.has(genre.id.toLowerCase()))
         items.push({
             id,
             title,
@@ -141,7 +151,7 @@ export function parseListing(html: string, selector = '.c-tabs-item__content'): 
             alternatives: [text(field('alternative').text())].filter(Boolean),
             status: status(field('status').text()),
             release: text(field('release').text()) || undefined,
-            contentRating: explicit ? ContentRating.MATURE : genres.length ? ContentRating.SAFE : undefined,
+            contentRating: itemRating(genres, warning),
             explicit,
             classified: genres.length > 0
         })
@@ -158,6 +168,23 @@ export function parseListing(html: string, selector = '.c-tabs-item__content'): 
         next = { template, vars }
     }
     return { items, next, ended: items.length === 0 || $('.no-posts').length > 0 }
+}
+
+export function parseDetailMetadata(html: string, id: string): Series {
+    const $ = load(html), root = $('.tab-summary').first()
+    const field = (name: string) => root.find('.post-content_item').filter((_, node) =>
+        text($(node).find('.summary-heading').text()).toLowerCase().replace(/\(s\)/g, '') === name
+    ).first().find('.summary-content')
+    const genres = field('genre').find('a').toArray().map((node) => ({
+        id: ($(node).attr('href') ?? '').match(/\/manga-genre\/([^/?#]+)/)?.[1] ?? '', title: text($(node).text())
+    })).filter((genre) => genre.id && genre.title)
+    const warning = root.find(ADULT_WARNING).add(root.filter(ADULT_WARNING)).length > 0
+    return { id, title: text($('.post-title h1').first().text()), cover: coverURL($, $('.summary_image img').first().get(0)),
+        webUrl: seriesURL(id), genres, authors: field('author').find('a').toArray().map((node) => text($(node).text())),
+        artists: field('artist').find('a').toArray().map((node) => text($(node).text())),
+        alternatives: [text(field('alternative').text())].filter(Boolean), status: status(field('status').text()),
+        release: text(field('release').text()) || undefined, explicit: warning || genres.some((genre) => BLOCKED_GENRES.has(genre.id.toLowerCase())),
+        classified: genres.length > 0, contentRating: itemRating(genres, warning) }
 }
 
 export function parseContent(html: string, series: Series): Content {
@@ -183,9 +210,10 @@ export function parseContent(html: string, series: Series): Content {
         tags: series.genres,
         status: series.status,
         contentType: ContentType.MANGA,
-        contentRating: series.contentRating,
+        contentRating: nativeRating(series.contentRating),
         recommendedPanelMode: ReadingMode.PAGED_MANGA,
-        additionalInfo: people.length ? [staff.section({ id: 'staff', title: 'Staff', hasMore: false, items: people })] : undefined
+        additionalInfo: [...(people.length ? [staff.section({ id: 'staff', title: 'Staff', hasMore: false, items: people })] : []),
+            ...(series.contentRating === undefined ? [incompleteRatingInfo()] : [])]
     }
 }
 

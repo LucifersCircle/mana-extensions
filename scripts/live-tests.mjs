@@ -10,6 +10,7 @@ import { failedSources } from './test-sources.mjs';
 import { readSelection } from './changed-sources.mjs';
 import { testMangaSushi, coverDimensions } from './mangasushi-live-tests.mjs';
 import { testManhwaNex } from './manhwanex-live-tests.mjs';
+import { testVortexRatings } from './vortexscans-live-tests.mjs';
 import { load } from 'cheerio';
 
 rmSync('bundles/live-test-results.json', { force: true });
@@ -108,11 +109,11 @@ for (const name of names) {
     if (name === 'Kagane') {
       await testKagane({ source, check, referenceFetch: testTransport.fetch, highlights, searchResult, image, requests, freshSource: () => new context.Target() });
     } else if (name === 'Hijala') {
-      await testHijala({ source, check, highlights, searchResult, image, requests, freshSource: () => new context.Target(), referenceFetch: testTransport.fetch });
+      await testHijala({ source, check, nativeStore: context.ObjectStore, highlights, searchResult, image, requests, freshSource: () => new context.Target(), referenceFetch: testTransport.fetch });
     } else if (name === 'MangaSushi') {
-      await testMangaSushi({ source, check, highlights, searchResult, image, requests, freshSource: () => new context.Target() });
+      await testMangaSushi({ source, check, nativeStore: context.ObjectStore, highlights, searchResult, image, requests, freshSource: () => new context.Target() });
     } else if (name === 'ManhwaNex') {
-      await testManhwaNex({ source, check, requests, freshSource: () => new context.Target() });
+      await testManhwaNex({ source, check, nativeStore: context.ObjectStore, requests, freshSource: () => new context.Target() });
     } else await check('Supported source-specific live contract', () => assert.fail(`No live contract implemented for ${name}`));
     report[name] = { tests, summary: { total: tests.length, passed: tests.filter((test) => test.status === 'pass').length,
       failed: tests.filter((test) => test.status === 'fail').length, duration: performance.now() - started } };
@@ -306,6 +307,7 @@ for (const name of names) {
     const result = await source.handleURL(content.webUrl);
     assert.equal(result?.content?.id, catalog.results[0].id);
   });
+  await testVortexRatings({ source, check, requests, freshSource: () => new context.Target() });
   report[name] = {
     tests,
     summary: { total: tests.length, passed: tests.filter((test) => test.status === 'pass').length,

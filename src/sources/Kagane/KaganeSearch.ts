@@ -60,6 +60,13 @@ export function searchBody(request: SearchRequest<Filters>, settings: Settings, 
     }
     if (!ratings.includes('Pornographic')) body.is_pornographic = false
     else if (ratings.length === 1) body.is_pornographic = true
+    // Unknown source ratings need a broad query to reach their native Mature fallback.
+    // A deliberate source-rating filter still requires actual matching site metadata.
+    if (ratings.includes('Erotica') && settings.contentRatings.length === RATINGS.length && !selectedOptions(request.filters, 'content_rating').length) {
+        delete body.content_rating
+        delete body.age_rating
+        delete body.is_pornographic
+    }
     if (settings.languages.length) body.content_lang = settings.languages
     const query = request.query?.trim()
     if (query) body.title = query

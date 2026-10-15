@@ -25,12 +25,15 @@ import {
     SearchTextField,
     SectionStyle,
     SortOption,
+    SourceContext,
     SourceInfo,
     SourcePreferenceProvider,
     UIListSection,
     UIToggle
 } from '@mana-app/types'
 import { load } from 'cheerio'
+import { nativeRating,
+    ratingAllowed } from '../../ContentRatingPolicy'
 import { ManhwaNexApi } from './ManhwaNexApi'
 import {
     chapterURL,
@@ -63,8 +66,8 @@ class ExcludedContentError extends Error {}
 
 export class Target implements ContentSource, PageLinkResolver, ImageRequestHandler, SourcePreferenceProvider {
     readonly info: SourceInfo = {
-        id: 'ManhwaNex', version: '0.0.1-alpha.3', name: 'ManhwaNex',
-        description: 'ManhwaNex with native Popular Series, Latest Updates, home categories, search filters and persistent NSFW exclusion.',
+        id: 'ManhwaNex', version: '0.0.1-alpha.4', name: 'ManhwaNex',
+        description: 'ManhwaNex with native discovery, search filters and Mana content-rating policy.',
         thumbnail: 'ManhwaNex.png', rating: CatalogRating.MIXED, website: DOMAIN,
         badges: ['Manhwa', 'Manhua', 'Manga'], supportedLanguages: ['en_US'],
         developers: [{ name: 'Lucifers Circle', github: 'https://github.com/LucifersCircle' }]
@@ -88,7 +91,7 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
 
     async getPreferenceMenu(): Promise<Form> {
         return { sections: [UIListSection({ header: 'Content safety',
-            footer: 'On by default. Requires the site’s non-adult classification and real genres; excludes Adult, Mature, Smut, Hentai, Erotica and Ecchi tags. Unverifiable titles are hidden. Site labels may be incomplete and do not guarantee image content or all-ages suitability. Applies to discovery, search, details, chapters and image requests. The conservative Mature app badge is separate from adult exclusion.',
+            footer: 'Off unless explicitly saved. Mana’s supplied content-rating policy controls search, discovery and details. This optional extra source exclusion requires verified non-adult metadata and applies to chapters and image requests too. Missing rating metadata uses a Mature compatibility fallback, not a site-reported rating. Site labels do not guarantee image content or all-ages suitability.',
             children: [UIToggle({ id: 'excludeNSFW', title: 'Exclude NSFW content', value: await this.excludeNSFW(), didChange: async (value) => {
                 this.revision += 1
                 await ObjectStore.set(SETTING, value)
@@ -122,23 +125,24 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
 
     async search(request: SearchRequest<Filters>): Promise<PagedSearchResult> {
         return this.withSettings(async (exclude) => {
-            if (exclude && request.filters?.adult?.id === '1') return { results: [], isLastPage: true }
+            if ((request.context?.allowedContentRatings !== undefined && !request.context.allowedContentRatings.some((rating) => rating === ContentRating.MATURE || rating === ContentRating.EXPLICIT))
+                || (exclude && request.filters?.adult?.id === '1')) return { results: [], isLastPage: true }
             const page = request.page ?? 1
             if (!Number.isInteger(page) || page < 1 || page > 100) throw new Error('Invalid ManhwaNex page')
             if (request.listId) {
                 const home = await this.home(exclude)
                 if (['popular', 'latest'].includes(request.listId)) {
                     await this.classifyCards([...home.latest.items, ...home.popular], exclude)
-                    if (request.listId === 'popular') return { results: page === 1 ? await this.highlights(home.popular, exclude) : [], isLastPage: true }
+                    if (request.listId === 'popular') return { results: page === 1 ? await this.highlights(home.popular, exclude, request.context) : [], isLastPage: true }
                 }
                 const category = home.categories.find((item) => item.id === request.listId)
                 if (request.listId !== 'latest' && !category) throw new Error('Unknown ManhwaNex home section')
-                const listing = category ? await this.page(category.url, page, '.page-item-detail.manga', false, exclude)
-                    : await this.page(`${DOMAIN}/`, page, '.page-item-detail', false, exclude, home.latest)
-                return { results: await this.highlights(listing.items, exclude), isLastPage: !listing.next }
+                const listing = category ? await this.page(category.url, page, '.page-item-detail.manga', false, exclude, undefined, request.context)
+                    : await this.page(`${DOMAIN}/`, page, '.page-item-detail', false, exclude, home.latest, request.context)
+                return { results: await this.highlights(listing.items, exclude, request.context), isLastPage: !listing.next }
             }
-            const listing = await this.page(this.searchURL(request, exclude), page, '.c-tabs-item__content', true, exclude)
-            return { results: await this.highlights(listing.items, exclude), isLastPage: !listing.next }
+            const listing = await this.page(this.searchURL(request, exclude), page, '.c-tabs-item__content', true, exclude, undefined, request.context)
+            return { results: await this.highlights(listing.items, exclude, request.context), isLastPage: !listing.next }
         })
     }
 
@@ -152,12 +156,20 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
 
     async resolvePageSection(link: PageLink, sectionId: string): Promise<ResolvedPageSection> {
         this.checkHome(link)
-        const result = await this.search({ page: 1, listId: sectionId })
-        return { items: result.results, viewMoreLink: !result.isLastPage ? { request: { page: 1, listId: sectionId } } : undefined }
+        const result = await this.search({ page: 1, listId: sectionId, context: link.context })
+        return { items: result.results, viewMoreLink: !result.isLastPage ? { request: { page: 1, listId: sectionId, context: link.context } } : undefined }
     }
 
-    async getContent(contentId: string): Promise<Content> {
-        return this.withSettings((exclude) => this.content(contentId, exclude), (exclude) => this.checkAllowed(contentId, exclude))
+    async getContent(contentId: string, context?: SourceContext): Promise<Content> {
+        return this.withSettings(async (exclude) => {
+            if (context?.allowedContentRatings?.length === 0) throw new ExcludedContentError('This title is excluded by Mana’s content-rating policy')
+            const result = await this.content(contentId, exclude)
+            const metadata = this.fresh(this.metadata.get(`${exclude}:${contentId}`))
+            const content = metadata?.explicit ? { ...result, contentRating: ContentRating.EXPLICIT,
+                additionalInfo: result.additionalInfo?.filter((section) => section.id !== 'content-rating-metadata') } : result
+            if (!ratingAllowed(content.contentRating, context)) throw new ExcludedContentError('This title is excluded by Mana’s content-rating policy')
+            return content
+        }, (exclude) => this.checkAllowed(contentId, exclude))
     }
 
     async getChapters(contentId: string): Promise<Chapter[]> {
@@ -198,7 +210,7 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
     }
 
     private checkHome(link: PageLink): void { if (link.id !== 'home') throw new Error('Unknown ManhwaNex page') }
-    private async excludeNSFW(): Promise<boolean> { return (await ObjectStore.boolean(SETTING)) !== false }
+    private async excludeNSFW(): Promise<boolean> { return (await ObjectStore.boolean(SETTING)) === true }
     private async withSettings<T>(operation: (exclude: boolean) => Promise<T>, validate?: (exclude: boolean) => void): Promise<T> {
         const revision = this.revision, exclude = await this.excludeNSFW()
         if (revision !== this.revision) throw new Error('ManhwaNex settings changed during this request; refresh to continue')
@@ -257,7 +269,7 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
         try { return await request } finally { if (this.pending.get(key) === request) this.pending.delete(key) }
     }
 
-    private async page(firstURL: string, requestedPage: number, selector: string, isSearch: boolean, exclude: boolean, suppliedFirst?: Listing): Promise<Listing> {
+    private async page(firstURL: string, requestedPage: number, selector: string, isSearch: boolean, exclude: boolean, suppliedFirst?: Listing, context?: SourceContext): Promise<Listing> {
         let raw = suppliedFirst ?? await this.listing(firstURL, selector, isSearch, exclude), logicalPage = 1
         const seen = new Set<string>()
         for (let sourcePage = 1; sourcePage <= 100; sourcePage += 1) {
@@ -265,7 +277,10 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
             for (const item of raw.items) seen.add(item.id)
             if (!isSearch) await this.classifyCards(fresh, exclude, raw.items)
             else for (const item of raw.items) if (item.explicit) this.cardMetadata(item, exclude)
-            const items = fresh.filter((item) => !exclude || this.allowed(this.cardMetadata(item, exclude)))
+            const items = fresh.filter((item) => {
+                const metadata = this.cardMetadata(item, exclude)
+                return (!exclude || this.allowed(metadata)) && ratingAllowed(metadata.contentRating, context)
+            })
             // Mana stops on empty results, even with isLastPage=false. Reconstruct
             // stable logical pages from cached native pages and skip empty overlap
             // or exclusion pages without consuming a logical page number.
@@ -331,11 +346,11 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
         return metadata
     }
 
-    private async highlights(items: Series[], exclude: boolean): Promise<Highlight[]> {
+    private async highlights(items: Series[], exclude: boolean, context?: SourceContext): Promise<Highlight[]> {
         const results = items.flatMap((item): Highlight[] => {
             const metadata = this.cardMetadata(item, exclude)
-            if (exclude && !this.allowed(metadata)) return []
-            return [{ id: item.id, title: item.title, cover: item.cover, webUrl: item.webUrl, subtitle: item.subtitle, contentRating: metadata.contentRating }]
+            if ((exclude && !this.allowed(metadata)) || !ratingAllowed(metadata.contentRating, context)) return []
+            return [{ id: item.id, title: item.title, cover: item.cover, webUrl: item.webUrl, subtitle: item.subtitle, contentRating: nativeRating(metadata.contentRating), context }]
         })
         await this.recordImages(results.map((item) => ({ url: item.cover, id: item.id })))
         return results
