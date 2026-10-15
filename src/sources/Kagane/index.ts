@@ -70,10 +70,10 @@ type SearchPage = { result: PagedSearchResult, next: number, seenIDs: string[] }
 
 export class Target implements ContentSource, PageLinkResolver, ImageRequestHandler, SourcePreferenceProvider {
     readonly info: SourceInfo = {
-        id: 'Kagane', version: '0.0.1-alpha.2', name: 'Kagane',
+        id: 'Kagane', version: '0.0.1-alpha.3', name: 'Kagane',
         description: 'Kagane with current API support, grouped tags and global four-category content settings.',
         thumbnail: 'Kagane.png', rating: CatalogRating.MIXED, website: DOMAIN,
-        badges: ['Manga', 'Manhwa', 'Manhua', 'Comic'], supportedLanguages: ['en_US'],
+        badges: ['Manga', 'Manhwa', 'Manhua', 'Comic'],
         developers: [{ name: 'Lucifers Circle', github: 'https://github.com/LucifersCircle' }, { name: 'PoppingMango Sources', github: 'https://github.com/PoppingMangoSources' }]
     }
     readonly config = { cloudflareResolutionURL: `${DOMAIN}/`, owningLinks: ['kagane.org'] }

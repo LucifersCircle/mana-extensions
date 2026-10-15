@@ -97,6 +97,42 @@ export async function assertKaganeHostGuards({ freshSource } = {}) {
   assert(!redactURL(`${api}/books/page/book/image.jxl?token=not-a-live-token&is_datasaver=false`).includes('not-a-live-token'));
 }
 
+// Reuse this run's actual public series/books, changing only language fields.
+// Reader/image checks remain separate and use actual provider manifests and bytes.
+export async function assertKaganeChapterLanguages({ freshSource, id, detail, books, sources }) {
+  assert(detail && books?.length, 'No successful live Kagane sample for language boundaries');
+  const target = freshSource();
+  assert.equal(detail.translated_language, 'en', 'Need the actual live English sample before language mutation');
+  let translated = detail.translated_language;
+  const calls = { series: 0, books: 0, sources: 0 };
+  target.api.series = async () => { calls.series += 1; return { ...detail, translated_language: translated }; };
+  target.api.books = async () => { calls.books += 1; return books; };
+  target.api.sources = async () => { calls.sources += 1; return sources; };
+  const savedLanguages = (await target.settings()).languages;
+  // The real English series must not become Spanish when preferences reorder.
+  await target.save('languages', ['es', 'en']);
+  try {
+    const baseline = await target.getChapters(id);
+    assert(baseline.length);
+    assert(baseline.every((chapter) => chapter.language === 'en'));
+    const cases = [
+      [undefined, 'und'], [null, 'und'], ['', 'und'], ['  ', 'und'], ['unk', 'und'], ['und', 'und'], ['UNKNOWN', 'und'], [42, 'und'], [{}, 'und'], [[], 'und'],
+      ['en--US', 'und'], ['English', 'und'], ['https://invalid', 'und'], ['en-US-US', 'und'],
+      ['es', 'es'], [' es ', 'es'], ['pt-br', 'pt-BR'], ['pt-BR', 'pt-BR'], ['pt', 'pt'], ['es-la', 'es-419'], ['es-419', 'es-419'], ['zh-hk', 'zh-HK'], ['zh-Hans', 'zh-Hans'], ['zh-Hant', 'zh-Hant'], ['en_US', 'en-US'], ['iw', 'he'], ['in', 'id'], ['ji', 'yi'], ['ja-ro', 'ja-Latn'], ['fil', 'fil'], ['pt-la', 'pt-BR'], ['ko-ro', 'ko-Latn'], ['zh-ro', 'zh-Latn'],
+    ];
+    for (const [value, expected] of cases) {
+      translated = value;
+      await target.save('languages', ['es', 'en']);
+      const before = { ...calls };
+      const chapters = await target.getChapters(id);
+      assert(chapters.every((chapter) => chapter.language === expected));
+      assert.deepEqual(Object.fromEntries(Object.entries(calls).map(([key, value]) => [key, value - before[key]])), { series: 1, books: 1, sources: 1 }, 'Language classification added per-chapter requests');
+      assert.deepEqual(Array.from(chapters, ({ language, ...chapter }) => chapter), Array.from(baseline, ({ language, ...chapter }) => chapter));
+    }
+    assert.equal(target.info.supportedLanguages, undefined, 'Do not claim an unverified English-only catalogue');
+  } finally { await target.save('languages', savedLanguages); }
+}
+
 // Execute the native bundle against fresh public responses. Observability wrappers
 // record the data it actually consumed, never replace it with a parallel source.
 export async function testKagane({ source, check, highlights, searchResult, image, requests, freshSource, referenceFetch = globalThis.fetch }) {
@@ -170,7 +206,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   }
   let catalog, form, chapterList, index, content, blocked, readerData, safeBody;
   await check('Never-saved source categories follow native policy and explicit source selection persists', async () => {
-    assert.equal(source.info.version, '0.0.1-alpha.2');
+    assert.equal(source.info.version, '0.0.1-alpha.3');
     assert.deepEqual(Array.from((await preference('contentRatings')).value), allRatings);
     const start = requests.length, empty = await source.search({ page: 1, context: { allowedContentRatings: [] } });
     assert.equal(empty.results.length, 0); assert.equal(empty.isLastPage, true); assert.equal(requests.length, start);
@@ -325,6 +361,9 @@ export async function testKagane({ source, check, highlights, searchResult, imag
       const upstream = raw.find((book) => book.book_id === chapter.chapterId); assert(upstream);
       assert.equal(chapter.title, upstream.title.trim(), 'Original chapter title lost');
     }
+  });
+  await check('Current live series translation and unknown language preserve native chapter identity', async () => {
+    await assertKaganeChapterLanguages({ freshSource, id: sample, detail: details.get(sample), books: books.get(sample), sources: await source.api.sources() });
   });
   await check('Repeated chapter/detail calls reuse bulk data instead of N-plus-one requests', async () => {
     await source.getContent(sample);
