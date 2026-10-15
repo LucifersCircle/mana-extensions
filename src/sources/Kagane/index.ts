@@ -71,7 +71,7 @@ type SearchPage = { result: PagedSearchResult, next: number, seenIDs: string[] }
 
 export class Target implements ContentSource, PageLinkResolver, ImageRequestHandler, SourcePreferenceProvider {
     readonly info: SourceInfo = {
-        id: 'Kagane', version: '0.0.1-alpha.6', name: 'Kagane',
+        id: 'Kagane', version: '0.0.1-alpha.7', name: 'Kagane',
         description: 'Kagane with current API support, grouped tags and global four-category content settings.',
         thumbnail: 'Kagane.png', rating: CatalogRating.MIXED, website: DOMAIN,
         badges: ['Manga', 'Manhwa', 'Manhua', 'Comic'],
@@ -159,7 +159,7 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
                 SearchListSection({ header: 'Filters', children: [
                     SearchMultiPickerSheet({ id: 'content_rating', title: 'Content rating', options: options(settings.contentRatings) }),
                     SearchMultiPickerSheet({ id: 'format', title: 'Format', options: FORMATS }),
-                    SearchMultiPickerSheet({ id: 'upload_status', title: 'Status', options: STATUSES }),
+                    SearchMultiPickerSheet({ id: 'upload_status', title: 'Upload Status', options: STATUSES }),
                     SearchMultiPickerSheet({ id: 'source_id', title: 'Upload sources', options: sources.filter((source) => settings.uploadSource === 'all' || (settings.uploadSource === 'official' ? source.source_type === 'Official' : source.source_type !== 'Official')).map((source) => ({ id: source.source_id, title: source.title })) }),
                     SearchToggle({ id: 'exact_match', title: 'Exact title match' }),
                     SearchExcludableMultiPickerSheet({ id: 'genres', title: 'Genres', options: genres.map((genre) => ({ id: genre.id, title: genre.genre_name })) }),

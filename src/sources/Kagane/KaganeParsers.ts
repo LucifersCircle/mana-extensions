@@ -91,9 +91,20 @@ export function highlight(series: Series, settings: Settings, sources: UploadSou
     }
 }
 
+function statusLabel(value: unknown): string | undefined {
+    switch (typeof value === 'string' ? value.trim().toLowerCase() : '') {
+        case 'ongoing': return 'Ongoing'
+        case 'completed': return 'Completed'
+        case 'hiatus': return 'Hiatus'
+        case 'abandoned': return 'Cancelled'
+        default: return undefined
+    }
+}
+
 export function content(id: string, details: Detail, settings: Settings, sources: UploadSource[]): Content {
     const type = ({ Manga: ContentType.MANGA, Manhwa: ContentType.MANHWA, Manhua: ContentType.MANHUA, Comic: ContentType.COMIC } as Record<string, ContentType>)[details.format ?? '']
-    const status = ({ Ongoing: PublicationStatus.ONGOING, Completed: PublicationStatus.COMPLETED, Hiatus: PublicationStatus.HIATUS, Abandoned: PublicationStatus.CANCELLED } as Record<string, PublicationStatus>)[details.upload_status ?? '']
+    const status = ({ Ongoing: PublicationStatus.ONGOING, Completed: PublicationStatus.COMPLETED, Hiatus: PublicationStatus.HIATUS, Cancelled: PublicationStatus.CANCELLED } as Record<string, PublicationStatus>)[statusLabel(details.publication_status) ?? '']
+    const uploadStatus = statusLabel(details.upload_status)
     const covers = [...(details.series_covers ?? [])].sort((left, right) => Number(right.is_main) - Number(left.is_main)).map((cover) => imageURL(cover.image_id)).filter(Boolean)
     const tags = [
         ...(details.genres ?? []).filter((genre) => settings.showSpoilers || !genre.is_spoiler).map((genre) => ({ id: genre.genre_id ?? genre.genre_name, title: genre.genre_name })),
@@ -104,7 +115,8 @@ export function content(id: string, details: Detail, settings: Settings, sources
     const source = sources.find((item) => item.source_id === details.source_id)?.title
     const summary = [
         typeof details.average_rating === 'number' && details.average_rating > 0 ? `Rating: ${(details.average_rating / 10).toFixed(1)}/10` : '',
-        description, source ? `Source: ${source}` : '', details.edition_info ? `Edition: ${details.edition_info}` : ''
+        description, source ? `Source: ${source}` : '', details.edition_info ? `Edition: ${details.edition_info}` : '',
+        uploadStatus ? `Upload status: ${uploadStatus}` : ''
     ].filter(Boolean).join('\n\n')
     return {
         title: displayTitle(preferredTitle(details.title, details.title_language, details.series_alternate_titles), settings, sources, details.source_id, details.edition_info),
