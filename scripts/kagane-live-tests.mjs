@@ -191,6 +191,48 @@ export async function assertKaganeTagFilters({ freshSource, tags, response, opti
   } finally { await target.save('excludedTags', saved); }
 }
 
+// Reuse this run's actual count-sort response without extra provider requests.
+export async function assertKaganeSavedSorts({ freshSource, response }) {
+  assert(response?.content?.length, 'Need a successful count-sort response for saved sorts');
+  const target = freshSource(), calls = [];
+  target.api.client.request = async () => { assert.fail('Saved-sort checks must not request provider data'); };
+  target.api.search = async (...args) => { calls.push(args); return response; };
+  const request = { page: 1, query: 'saved count sort', filters: { exact_match: true } };
+  const search = (sort) => target.search({ ...request, ...(sort ? { sort } : {}) });
+  const canonical = await search({ id: 'current_books' });
+  assert.equal(calls.length, 1); assert.equal(calls[0][3], 'current_books,desc');
+  assert.equal(calls[0][1], 1); assert.equal(calls[0][2], 50);
+  assert.equal(calls[0][0].title, request.query); assert.equal(calls[0][4], true);
+  for (const sort of [{ id: 'books_count' }, { id: 'books_count', ascending: false }, { id: 'current_books', ascending: false }, { id: 'books_count,desc' }, { id: 'books_count,desc', ascending: true }]) {
+    assert.deepEqual(await search(sort), canonical);
+    assert.equal(calls.length, 1, 'Equivalent descending count sorts did not share their cache');
+  }
+  const ascending = await search({ id: 'current_books', ascending: true });
+  assert.equal(calls.length, 2); assert.equal(calls[1][3], 'current_books,asc');
+  assert.deepEqual(calls[1].slice(0, 3), calls[0].slice(0, 3)); assert.equal(calls[1][4], calls[0][4]);
+  for (const sort of [{ id: 'books_count', ascending: true }, { id: 'books_count,asc' }, { id: 'books_count,asc', ascending: false }]) {
+    assert.deepEqual(await search(sort), ascending);
+    assert.equal(calls.length, 2, 'Explicit saved direction must override the native ascending field and share its cache');
+  }
+  await search(); assert.equal(calls.length, 3); assert.equal(calls[2][3], '');
+  for (const ascending of [undefined, false, true]) {
+    await search({ id: 'relevance', ascending }); assert.equal(calls.length, 3, 'Relevance changed its empty provider sort');
+  }
+  await search({ id: 'total_views', ascending: true });
+  assert.equal(calls.length, 4); assert.equal(calls[3][3], 'total_views,desc', 'Unrelated sorts changed direction');
+  await target.search({ ...request, listId: 'popular', sort: { id: 'series_name' } });
+  assert.equal(calls.length, 5); assert.equal(calls.at(-1)[0].title, undefined, 'Native discovery lost its own body');
+  assert.equal(calls.at(-1)[3], 'total_views,desc', 'Native discovery lost its own sort');
+  for (const id of ['series_name', 'series_name,asc', 'series_name,desc', 'current_books,asc', 'books_count,invalid', 'total_views,asc', 'rating', 'popular_now']) {
+    const stale = freshSource(); let providerRequests = 0;
+    stale.api.client.request = async () => { providerRequests += 1; assert.fail('Unsupported sort reached the provider'); };
+    stale.api.search = async () => { providerRequests += 1; assert.fail('Unsupported sort reached search'); };
+    // A constrained tag query would request taxonomy if validation happened late.
+    await assert.rejects(stale.search({ page: 1, sort: { id }, filters: { tag_query: 'requires taxonomy' } }), /choose another sort/i);
+    assert.equal(providerRequests, 0, `Unsupported ${id} requested provider data before rejection`);
+  }
+}
+
 // Execute the native bundle against fresh public responses. Observability wrappers
 // record the data it actually consumed, never replace it with a parallel source.
 export async function testKagane({ source, check, highlights, searchResult, image, requests, freshSource, referenceFetch = globalThis.fetch }) {
@@ -264,7 +306,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   }
   let catalog, form, chapterList, index, content, blocked, readerData, safeBody;
   await check('Never-saved source categories follow native policy and explicit source selection persists', async () => {
-    assert.equal(source.info.version, '0.0.1-alpha.4');
+    assert.equal(source.info.version, '0.0.1-alpha.5');
     assert.deepEqual(Array.from((await preference('contentRatings')).value), allRatings);
     const start = requests.length, empty = await source.search({ page: 1, context: { allowedContentRatings: [] } });
     assert.equal(empty.results.length, 0); assert.equal(empty.isLastPage, true); assert.equal(requests.length, start);
@@ -335,12 +377,19 @@ export async function testKagane({ source, check, highlights, searchResult, imag
     assert(tags.length > 1000); assert.equal(new Set(tags.map((tag) => tag.id)).size, tags.length);
     assert(all.find((field) => field.id === 'genres').options.length > 30);
     assert(all.find((field) => field.id === 'source_id').options.length > 10);
-    assert.deepEqual(Array.from(await source.getSortOptions(), (sort) => sort.id), ['relevance', 'total_views', 'avg_views', 'avg_views_today', 'avg_views_week', 'avg_views_month', 'updated_at', 'series_name', 'books_count', 'created_at']);
+    assert.deepEqual(Array.from(await source.getSortOptions(), (sort) => sort.id), ['relevance', 'total_views', 'avg_views', 'avg_views_today', 'avg_views_week', 'avg_views_month', 'updated_at', 'current_books', 'created_at']);
   });
   await check('Every native sort and exact-title mode makes a valid live request', async () => {
     for (const sort of await source.getSortOptions()) {
       validResult(await source.search({ page: 1, sort: { id: sort.id } }));
       assert.equal(searches.at(-1).args[3], sort.id === 'relevance' ? '' : `${sort.id},desc`);
+      if (sort.id === 'current_books') {
+        const response = searches.at(-1).response, counts = Array.from(response.content, (item) => item.current_books);
+        assert(counts.length, 'Count sort returned no live titles');
+        assert(counts.every((count) => Number.isInteger(count) && Number.isFinite(count) && count >= 0), 'Count sort contains missing or invalid counts');
+        assert(counts.every((count, index) => index === 0 || counts[index - 1] >= count), 'Books Count is not nonincreasing; tied counts are valid');
+        await assertKaganeSavedSorts({ freshSource, response });
+      }
     }
     const title = seen.get(catalog.results[0].id).title;
     const result = await source.search({ page: 1, query: title, filters: { exact_match: true } }); searchResult(result);
