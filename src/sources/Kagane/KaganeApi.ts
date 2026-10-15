@@ -129,7 +129,7 @@ export class KaganeApi {
     tags(): Promise<TagEntry[]> {
         return this.taxonomy('tags', async () => {
             const items = await this.json<TagEntry[]>('/tags/list')
-            if (!Array.isArray(items) || !items.length || items.some((item) => !item || typeof item.id !== 'string' || typeof item.tag_name !== 'string')) throw new Error('Kagane tags are unavailable')
+            if (!Array.isArray(items) || !items.length || items.some((item) => !item || typeof item.id !== 'string' || !item.id.trim() || typeof item.tag_name !== 'string' || !item.tag_name.trim())) throw new Error('Kagane tags are unavailable')
             return items
         })
     }

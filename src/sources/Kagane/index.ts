@@ -59,6 +59,7 @@ import { hasHidden,
     hostRatingKey,
     includedTagGroups,
     matchesTagGroups,
+    needsTagTaxonomy,
     selectedOptions,
     searchBody,
     selectedRatings } from './KaganeSearch'
@@ -70,7 +71,7 @@ type SearchPage = { result: PagedSearchResult, next: number, seenIDs: string[] }
 
 export class Target implements ContentSource, PageLinkResolver, ImageRequestHandler, SourcePreferenceProvider {
     readonly info: SourceInfo = {
-        id: 'Kagane', version: '0.0.1-alpha.3', name: 'Kagane',
+        id: 'Kagane', version: '0.0.1-alpha.4', name: 'Kagane',
         description: 'Kagane with current API support, grouped tags and global four-category content settings.',
         thumbnail: 'Kagane.png', rating: CatalogRating.MIXED, website: DOMAIN,
         badges: ['Manga', 'Manhwa', 'Manhua', 'Comic'],
@@ -185,9 +186,11 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
             const ratings = selectedRatings(request, settings)
             const explicitSourceRatings = selectedOptions(request.filters, 'content_rating')
             if (!ratings.length) return { results: [], isLastPage: true }
-            const tags = typeof request.filters?.tag_query === 'string' && request.filters.tag_query.trim() ? await this.api.tags() : []
+            const tags = needsTagTaxonomy(request.filters, settings.excludedTags) ? await this.api.tags() : []
+            // Validate the original tag inputs even when discovery keeps its own body.
+            const filteredBody = searchBody(request, settings, tags)
             const conceptualTags = includedTagGroups(request.filters, tags)
-            const body = searchBody(section ? { ...request, query: undefined, filters: undefined } : request, settings, tags)
+            const body = section ? searchBody({ ...request, query: undefined, filters: undefined }, settings, tags) : filteredBody
             const sort = section?.sort ?? request.sort?.id ?? 'relevance'
             if (!SORTS.some((option) => option.id === sort)) throw new Error('Unknown Kagane sort')
             const sortParameter = sort === 'relevance' ? '' : `${sort},desc`
