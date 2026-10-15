@@ -32,7 +32,7 @@
       "path": "Kagane",
       "environment": "source",
       "intents": 6298637,
-      "hash": "102e442e102e442e102e442e102e442e102e442e102e442e102e442e102e442e"
+      "hash": "16e7db4c16e7db4c16e7db4c16e7db4c16e7db4c16e7db4c16e7db4c16e7db4c"
     },
     {
       "id": "MangaSushi",
@@ -57,7 +57,7 @@
       "path": "MangaSushi",
       "environment": "source",
       "intents": 6298637,
-      "hash": "01f0644201f0644201f0644201f0644201f0644201f0644201f0644201f06442"
+      "hash": "04c9331604c9331604c9331604c9331604c9331604c9331604c9331604c93316"
     },
     {
       "id": "VortexScans",
@@ -84,7 +84,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 6298636,
-      "hash": "6c57dfeb6c57dfeb6c57dfeb6c57dfeb6c57dfeb6c57dfeb6c57dfeb6c57dfeb"
+      "hash": "7311770873117708731177087311770873117708731177087311770873117708"
     }
   ]
 }
