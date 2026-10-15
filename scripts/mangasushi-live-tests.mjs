@@ -207,8 +207,185 @@ export async function testMangaSushiNativeRatings({ source, check, requests, fre
   await setting(source, true);
 }
 
+// Capture each real provider response once, then mutate only those fresh bodies
+// through the built search entrypoint. No committed HTML or offline fixture layer.
+export async function testMangaSushiGenreIntegrity({ check, requests, freshSource }) {
+  const domain = 'https://mangasushi.org', captured = new Map(), sent = new Map(), ids = (items) => Array.from(items, (item) => item.id);
+  const request = (genres, condition = 'or', page = 1) => ({ page, filters: {
+    genres: genres.map((id) => ({ id, title: id })), condition: { id: condition }
+  } });
+  const queryPattern = /var\s+__madara_query_vars\s*=\s*(\{[^\n]+\});/;
+  const rawIDs = (html) => { const $ = load(html); return $('.c-tabs-item__content').toArray().map((node) => $(node).find('.post-title a').attr('href').match(/\/manga\/([^/]+)/)[1]); };
+  const capture = (genre) => {
+    const cold = freshSource(), original = cold.api.text.bind(cold.api);
+    cold.api.text = async (url, body) => { const html = await original(url, body), key = `${genre}:${body ? Number(new URLSearchParams(body).get('page')) + 1 : 1}`; captured.set(key, html); sent.set(key, body); return html; };
+    return cold;
+  };
+  await check('Ordinary genre search proves native Action/Romance taxonomy and preserves exact continuation without added requests', async () => {
+    const cold = capture('action');
+    await (await cold.getPreferenceMenu()).sections[0].children[0].didChange(true);
+    const before = requests.length, first = await cold.search(request(['action']));
+    assert(first.results.length && !first.isLastPage); assert.equal(requests.length - before, 1);
+    const page2 = await cold.search(request(['action'], 'or', 2));
+    assert(page2.results.length); assert.equal(requests.length - before, 2);
+    assert(page2.results.every((item) => !ids(first.results).includes(item.id)));
+    const vars = JSON.parse(captured.get('action:1').match(queryPattern)[1]);
+    const body = new URLSearchParams(sent.get('action:2'));
+    assert.equal(body.get('vars[tax_query][0][terms][0]'), String(vars.tax_query[0].terms[0]));
+    assert.equal(body.get('vars[tax_query][relation]'), vars.tax_query.relation);
+    assert.equal(body.get('page'), '1');
+    for (const [page, result] of [[1, first], [2, page2]]) {
+      const $ = load(captured.get(`action:${page}`));
+      const expected = $('.c-tabs-item__content').toArray().filter((node) => {
+        const genres = $(node).find('.mg_genres .summary-content a').toArray().map((a) => $(a).attr('href').match(/\/manga-genre\/([^/]+)/)?.[1]);
+        assert(genres.includes('action'));
+        return genres.length && !genres.some((genre) => ['adult', 'mature', 'smut', 'hentai', 'erotica', 'ecchi'].includes(genre))
+          && !$(node).find('.adult-content, .manga-adult, .adult-warning, [data-adult="1"], [data-adult="true"]').length;
+      }).map((node) => $(node).find('.post-title a').attr('href').match(/\/manga\/([^/]+)/)[1]);
+      assert.deepEqual(ids(result.results), expected);
+    }
+    const warm = requests.length;
+    assert.deepEqual(ids((await cold.search(request(['action'], 'or', 2))).results), ids(page2.results));
+    assert.equal(requests.length, warm);
+    const romance = capture('romance'), start = requests.length;
+    const result = await romance.search(request(['romance'])); assert(result.results.length);
+    assert.equal(requests.length - start, 1);
+    assert.deepEqual(ids(result.results), rawIDs(captured.get('romance:1')));
+    const ecchi = capture('ecchi'), ecchiStart = requests.length;
+    const excluded = await ecchi.search(request(['ecchi']));
+    assert.equal(excluded.results.length, 0); assert.equal(excluded.isLastPage, true);
+    assert.equal(requests.length - ecchiStart, 1, 'A valid terminal rating-excluded genre needs no scan');
+    const page = load(captured.get('ecchi:1'));
+    assert(page('.c-tabs-item__content').length, 'Ecchi must exercise nonempty raw metadata, not a fabricated empty');
+    assert(page('.c-tabs-item__content').toArray().every((node) => page(node).find('.mg_genres a[href="https://mangasushi.org/manga-genre/ecchi/"]').length));
+  });
+  await check('Cooking ignored-filter response fails visibly after one request, never as unrelated or false empty results', async () => {
+    const cold = capture('cooking'), before = requests.length;
+    await assert.rejects(cold.search(request(['cooking'])), /did not apply the requested genre filter/);
+    assert.equal(requests.length - before, 1);
+    const html = captured.get('cooking:1'), $ = load(html), vars = JSON.parse(html.match(queryPattern)[1]);
+    assert($('.search-advanced-form input[name="genre[]"][value="cooking"][checked]').length);
+    assert($('.c-tabs-item__content').length); assert.equal(vars.tax_query, undefined);
+    assert.equal(cold.listings.size, 0, 'Ignored-filter results must not be cached as verified pages');
+    assert(Array.from(cold.metadata.values()).every((entry) => entry.value.explicit), 'Ignored-filter rows must not populate unrelated Safe metadata; positive warnings remain evidence');
+  });
+  const render = ({ genres = ['action'], condition = 'or', edit, tax } = {}) => {
+    assert(captured.get('action:1'), 'Fresh Action response was not captured');
+    const $ = load(captured.get('action:1'));
+    $('.search-advanced-form input[name="genre[]"]').removeAttr('checked').filter((_, node) => genres.includes($(node).attr('value'))).attr('checked', 'checked');
+    $('.search-advanced-form select[name="op"] option').removeAttr('selected').filter((_, node) => $(node).attr('value') === (condition === 'and' ? '1' : '')).attr('selected', 'selected');
+    if (edit) edit($);
+    let html = $.html();
+    if (tax) { const vars = JSON.parse(html.match(queryPattern)[1]); tax(vars); html = html.replace(queryPattern, `var __madara_query_vars = ${JSON.stringify(vars)};`); }
+    return html;
+  };
+  const probe = async (html, genres = ['action'], condition = 'or') => {
+    const cold = freshSource(); let calls = 0;
+    cold.api.text = async () => { calls += 1; return html; };
+    const pending = cold.search(request(genres, condition));
+    return { cold, pending, calls: () => calls };
+  };
+  await check('Genre proof rejects ambiguous query syntax, missing/wrong taxonomy, unknown terms and unrelated raw metadata', async () => {
+    const bad = [
+      ['missing taxonomy', render({ tax: (vars) => { delete vars.tax_query; } })],
+      ['missing serialized query on terminal nonempty results', render({ edit: ($) => { $('#navigation-ajax').remove(); } }).replace(queryPattern, '').replace(/var\s+manga_args\s*=\s*(\{[^\n]+\});/, '')],
+      ['wrong taxonomy', render({ tax: (vars) => { vars.tax_query[0].taxonomy = 'category'; } })],
+      ['wrong slug', render({ tax: (vars) => { vars.tax_query[0].field = 'slug'; vars.tax_query[0].terms = ['romance']; } })],
+      ['missing clause', render({ tax: (vars) => { delete vars.tax_query[0]; } })],
+      ['unsupported operator', render({ tax: (vars) => { vars.tax_query[0].operator = 'NOT IN'; } })],
+      ['wrong relation', render({ tax: (vars) => { vars.tax_query.relation = 'AND'; } })],
+      ['unsafe term ID', render({ tax: (vars) => { vars.tax_query[0].terms = [0]; } })],
+      ['multiple terms', render({ tax: (vars) => { vars.tax_query[0].terms.push(28); } })],
+      ['nested clause', render({ tax: (vars) => { vars.tax_query[0] = { relation: 'OR', 0: vars.tax_query[0] }; } })],
+      ['unrequested author sibling', render({ tax: (vars) => { vars.tax_query[1] = { taxonomy: 'wp-manga-author', field: 'term_id', terms: [489] }; } })],
+      ['surprise genre sibling', render({ tax: (vars) => { vars.tax_query[1] = { taxonomy: 'wp-manga-genre', field: 'term_id', terms: [28] }; } })],
+      ['unchecked selection', render({ genres: [] })],
+      ['unknown requested term', render(), ['not-a-source-genre']],
+      ['wrong condition form', render({ condition: 'and' })],
+      ['unrelated raw card', render({ edit: ($) => { $('.c-tabs-item__content').first().find('.mg_genres .summary-content a').filter((_, node) => $(node).attr('href').endsWith('/action/')).remove(); } })],
+      ['cross-origin genre', render({ edit: ($) => { $('.c-tabs-item__content').first().find('.mg_genres .summary-content a').filter((_, node) => $(node).attr('href').endsWith('/action/')).attr('href', 'https://example.com/manga-genre/action/'); } })],
+      ['ambiguous assignments', render() + '\n<script>var __madara_query_vars = {"post_type":"wp-manga"};</script>'],
+      ['duplicate terminal JSON key', captured.get('ecchi:1').replace(/var\s+manga_args\s*=\s*(\{[^\n]+\});/, (line) => line.replace('"tax_query":', '"tax_query":{},"tax_query":')), ['ecchi']],
+      ['ambiguous terminal assignments', captured.get('ecchi:1') + '\n<script>var manga_args = {"template":"search"};</script>', ['ecchi']],
+      ['duplicate JSON key', render().replace(queryPattern, (line) => line.replace('"tax_query":', '"tax_query":{},"tax_query":'))],
+      ['malformed JSON', render().replace(queryPattern, (line) => line.replace('"tax_query":', '"tax_query":,'))],
+      ['duplicate raw ID with unrelated metadata', render({ edit: ($) => { const clone = $('.c-tabs-item__content').first().clone(); clone.find('.mg_genres .summary-content').empty(); $('.c-tabs-item__content').last().after(clone); } })]
+    ];
+    for (const [label, html, genres] of bad) {
+      const run = await probe(html, genres); await assert.rejects(run.pending, /genre filter|pagination|JSON/, label);
+      assert.equal(run.calls(), 1, `${label} must not trigger fallback scans`);
+    }
+    const warm = freshSource(); warm.api.text = async () => captured.get('action:1');
+    const initial = await warm.search(request(['action'])), sample = initial.results.find((item) => item.contentRating === 0);
+    assert(sample);
+    const warning = render({ edit: ($) => { $('.c-tabs-item__content').filter((_, node) => $(node).find('.post-title a').attr('href') === sample.webUrl).append('<span class="adult-warning"></span>'); }, tax: (vars) => { delete vars.tax_query; } });
+    warm.api.text = async () => warning;
+    await assert.rejects(warm.search({ ...request(['action']), query: 'captured-ignored-filter-warning-probe' }), /genre filter/);
+    assert.equal(warm.metadata.get(`${await warm.excludeNSFW()}:${sample.id}`).value.contentRating, 3, 'A failed integrity response must still revoke a warm Safe classification');
+    assert(!(await warm.search(request(['action']))).results.some((item) => item.id === sample.id));
+  });
+  await check('OR/AND genre proof uses real raw memberships and accepts recognized genuine empty searches', async () => {
+    const genres = ['action', 'romance'];
+    const ids = genres.map((genre) => JSON.parse(captured.get(`${genre}:1`).match(queryPattern)[1]).tax_query[0].terms[0]);
+    const nativeTax = (vars, condition, duplicate = false) => {
+      const terms = duplicate ? [ids[0], ids[0]] : ids;
+      const clause = (values) => ({ taxonomy: 'wp-manga-genre', field: 'term_id', terms: values, operator: 'IN' });
+      vars.tax_query = condition === 'or' ? { relation: 'OR', 0: clause(terms) }
+        : { relation: 'OR', 0: [{ relation: 'AND', 0: clause([terms[0]]), 1: clause([terms[1]]) }] };
+    };
+    for (const condition of ['or', 'and']) {
+      const html = render({ genres, condition,
+        edit: ($) => { $('#navigation-ajax').remove(); if (condition === 'and') $('.c-tabs-item__content').filter((_, node) => !$(node).find('.mg_genres a[href="https://mangasushi.org/manga-genre/romance/"]').length).remove(); },
+        tax: (vars) => nativeTax(vars, condition)
+      });
+      const run = await probe(html, genres, condition), result = await run.pending;
+      assert(result.results.length && result.isLastPage); assert.equal(run.calls(), 1);
+      const $ = load(html); for (const item of result.results) {
+        const row = $('.c-tabs-item__content').filter((_, node) => $(node).find('.post-title a').attr('href') === item.webUrl);
+        const matches = genres.filter((genre) => row.find(`.mg_genres a[href="${domain}/manga-genre/${genre}/"]`).length).length;
+        assert(condition === 'and' ? matches === genres.length : matches > 0);
+      }
+      const wrongHTML = html.replace(queryPattern, (line, json) => { const vars = JSON.parse(json); nativeTax(vars, condition, true); return `var __madara_query_vars = ${JSON.stringify(vars)};`; });
+      const wrong = await probe(wrongHTML, genres, condition);
+      await assert.rejects(wrong.pending, /genre filter/, 'Repeated native term IDs are ambiguous');
+      if (condition === 'and') {
+        const ignoredAnd = await probe(render({ genres, condition, tax: (vars) => nativeTax(vars, condition) }), genres, condition);
+        await assert.rejects(ignoredAnd.pending, /genre filter/, 'AND must reject raw cards matching only one selection');
+      }
+    }
+    const empty = render({ edit: ($) => { $('.c-tabs-item__content, #navigation-ajax').remove(); $('.c-page-content').first().append('<div class="no-results not-found"><div class="not-found-content">No matches found.</div></div>'); }, tax: (vars) => { delete vars.tax_query; } });
+    const run = await probe(empty), result = await run.pending;
+    assert.equal(result.results.length, 0); assert.equal(result.isLastPage, true); assert.equal(run.calls(), 1);
+    const changed = await probe(empty.replace('No matches found.', 'Unexpected provider layout'));
+    await assert.rejects(changed.pending, /layout changed/);
+    const withNext = await probe(render({ edit: ($) => { $('.c-tabs-item__content').remove(); $('.c-page-content').first().append('<div class="no-results not-found"><div class="not-found-content">No matches found.</div></div>'); } }));
+    await assert.rejects(withNext.pending, /layout changed/);
+  });
+  await check('Continuation retains initial native genre scope and rejects ignored or altered taxonomy without scans', async () => {
+    for (const kind of ['unrelated raw cards', 'changed query']) {
+      const cold = freshSource(); let calls = 0, continuationBody, warningSample;
+      cold.api.text = async (_url, body) => {
+        calls += 1;
+        if (!body) return captured.get('action:1');
+        continuationBody = new URLSearchParams(body);
+        const $ = load(captured.get('action:2'));
+        if (kind === 'unrelated raw cards') { const row = $('.c-tabs-item__content').first(); row.find('.post-title a').attr('href', warningSample.webUrl); row.find('.mg_genres .summary-content').empty(); row.append('<span class="adult-warning"></span>'); }
+        else $.root().append('<script>var __madara_query_vars = {"post_type":"wp-manga","tax_query":{"relation":"OR","0":{"taxonomy":"wp-manga-genre","field":"term_id","terms":[28]}}};</script>');
+        return $.html();
+      };
+      warningSample = (await cold.search(request(['action']))).results.find((item) => item.contentRating === 0);
+      assert(warningSample);
+      await assert.rejects(cold.search(request(['action'], 'or', 2)), /genre filter/, kind);
+      assert.equal(calls, 2); assert.equal(continuationBody.get('vars[tax_query][relation]'), 'OR');
+      assert.equal(cold.listings.size, 1, 'Rejected continuation must not enter the page cache');
+      if (kind === 'unrelated raw cards') assert.equal(cold.metadata.get(`${await cold.excludeNSFW()}:${warningSample.id}`).value.contentRating, 3, 'Rejected continuation must retain a raw warning against a warm Safe ID');
+    }
+  });
+}
+
 export async function testMangaSushi({ source, check, highlights, searchResult, image, requests, freshSource, nativeStore }) {
   await testMangaSushiNativeRatings({ source, check, requests, freshSource, nativeStore });
+  await testMangaSushiGenreIntegrity({ check, requests, freshSource });
   const domain = 'https://mangasushi.org';
   const sample = 'welcome-to-the-cheap-restaurant-of-outcasts';
   const blockedTags = new Set(['adult', 'mature', 'smut', 'hentai', 'erotica', 'ecchi']);
@@ -334,6 +511,31 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
     const result = await source.search({ page: 1, filters: { release: year } }); searchResult(result);
     assert(requests.some((request) => new URL(request.url).searchParams.get('release') === year));
     assert(result.results.some((item) => item.id === catalog.results[0].id), 'Release filter lost the verified series');
+    const combinedRequest = { page: 1, filters: { genres, condition: { id: 'and' },
+      author: staff.find((item) => item.subtitle === 'Author').title,
+      artist: staff.find((item) => item.subtitle === 'Artist').title, release: year, status: [status] } };
+    const originalCombined = source.api.text; let combinedHTML, combined;
+    try {
+      source.api.text = async (...args) => { const html = await originalCombined.apply(source.api, args); if (!args[1]) combinedHTML = html; return html; };
+      combined = await source.search(combinedRequest);
+    } finally { source.api.text = originalCombined; }
+    searchResult(combined);
+    assert(combined.results.some((item) => item.id === catalog.results[0].id), 'Combined native genre/author/artist/year/status filters lost the verified series');
+    assert(combinedHTML, 'Combined-filter boundary mutations must reuse the actual new response');
+    for (const [label, mutate] of [
+      ['duplicate author taxonomy', (tax) => { const author = Object.values(tax).find((clause) => clause?.taxonomy === 'wp-manga-author'); tax[Object.keys(tax).length - 1] = author; }],
+      ['surprise sibling taxonomy', (tax) => { tax[1].taxonomy = 'wp-manga-genre'; }],
+      ['unsupported sibling operator', (tax) => { tax[1].operator = 'NOT IN'; }],
+      ['invalid sibling term', (tax) => { tax[1].terms = [0]; }],
+      ['OR-broadened AND genre expression', (tax) => { const group = tax[0][0]; tax[0] = { taxonomy: 'wp-manga-genre', field: 'term_id', terms: Object.values(group).filter((clause) => clause?.taxonomy === 'wp-manga-genre').flatMap((clause) => clause.terms) }; }]
+    ]) {
+      const html = combinedHTML.replace(/var\s+(__madara_query_vars|manga_args)\s*=\s*(\{[^\n]+\});/g,
+        (_, name, json) => { const vars = JSON.parse(json); mutate(vars.tax_query); return `var ${name} = ${JSON.stringify(vars)};`; });
+      const cold = freshSource(); let calls = 0;
+      cold.api.text = async () => { calls += 1; return html; };
+      await assert.rejects(cold.search(combinedRequest), /genre filter/, label);
+      assert.equal(calls, 1, `${label} must not trigger a broader fallback scan`);
+    }
   });
   await check('Negative search returns a genuinely empty terminal page', async () => {
     const result = await source.search({ page: 1, query: 'zzzxqv-mangasushi-no-such-title-843021' });
