@@ -30,7 +30,7 @@ content of every image.
 
 ## VortexScans features
 
-Version `0.0.1-alpha.8` follows the repository's shared alpha-version format.
+Releases follow the repository's shared alpha-version format.
 
 - Source-faithful Featured, Popular Today, Latest Releases, New, every published
   collection, and the rendered monthly Most Popular snapshot
@@ -49,7 +49,7 @@ Version `0.0.1-alpha.8` follows the repository's shared alpha-version format.
 ## MangaSushi
 
 [MangaSushi](https://mangasushi.org/) is a fresh native implementation, not a
-Paperback converter. Version `0.0.1-alpha.8` includes:
+Paperback converter. Features include:
 
 - The site's finite **Popular Series** carousel and **What's New** feed, in source
   order. What's New uses the site's actual AJAX Load More query and continuation.
@@ -100,7 +100,7 @@ Icon: [`assets/MangaSushi.png`](assets/MangaSushi.png), from the site's publishe
 
 ## ManhwaNex
 
-[ManhwaNex](https://manhwanex.com/) is a native Mana source, version `0.0.1-alpha.4`.
+[ManhwaNex](https://manhwanex.com/) is a native Mana source.
 It preserves the site's **Popular Series** carousel and **Latest Updates** feed,
 source order, real next-page links, English source titles and complete alternative
 fields, staff, publication metadata and separately grouped source SEO tags (ten
@@ -142,7 +142,7 @@ Icon: [`assets/ManhwaNex.png`](assets/ManhwaNex.png), the site's published 192-p
 
 ## Hijala
 
-[Hijala](https://en-hijala.com/) is a native source, version `0.0.1-alpha.3`:
+[Hijala](https://en-hijala.com/) is a native source:
 
 - Current Featured, Latest Releases, New, Most Popular and Latest Updates, in the
   site's published order. Latest/New use the verified current API continuation;
@@ -182,7 +182,7 @@ TanStack/Seroval decoder and GPL attribution are recorded in
 ## Kagane
 
 [Kagane](https://kagane.org/) is a native implementation on the repository's pinned
-Mana toolchain. Version `0.0.1-alpha.2` includes:
+Mana toolchain. Features include:
 
 - The six website discovery rows, all ten native search orders, exact-title mode,
   live genre/uploader taxonomy, format/status filters, and include/exclude matching.
