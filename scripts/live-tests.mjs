@@ -267,15 +267,46 @@ for (const name of names) {
     }
   });
   await check('Search and detail retain source originals including octet-stream WebP bytes', async () => {
+    const cold = new context.Target(), client = cold.api.client, original = client.request, evidence = [];
+    const query = 'Dao of the Bizarre Immortal', slug = 'dao-of-the-bizarre-immortal', id = `289:${slug}`;
+    // Capture the same native response bytes before the bundle parses them, not an unrelated homepage snapshot.
+    client.request = async function (...args) {
+      const response = await original.apply(this, args);
+      evidence.push({ url: response.request.url, data: response.data });
+      return response;
+    };
     const before = requests.length;
-    const result = await source.search({ page: 1, query: 'Dao of the Bizarre Immortal' });
-    const item = result.results.find((entry) => entry.id.endsWith(':dao-of-the-bizarre-immortal'));
-    assert(item, 'Published Dao sample disappeared');
-    const detail = await source.getContent(item.id);
+    let item, detail;
+    try {
+      const result = await cold.search({ page: 1, query });
+      item = result.results.find((entry) => entry.id === id);
+      assert(item, 'Published Dao sample disappeared');
+      detail = await cold.getContent(item.id);
+    } finally { client.request = original; }
     assert.equal(requests.length - before, 2, 'Search and detail must not add image metadata calls');
+    assert.equal(evidence.length, 2, 'Both native API responses must supply provenance');
+    const searchURL = new URL(evidence[0].url), detailURL = new URL(evidence[1].url);
+    assert.equal(`${searchURL.origin}${searchURL.pathname}`, 'https://api.vortexscans.org/api/query');
+    assert.equal(searchURL.searchParams.get('searchTerm'), query);
+    assert.equal(`${detailURL.origin}${detailURL.pathname}`, 'https://api.vortexscans.org/api/post');
+    assert.equal(detailURL.searchParams.get('postId'), '289');
+    const matches = JSON.parse(evidence[0].data).posts.filter((post) => post.id === 289 && post.slug === slug);
+    assert.equal(matches.length, 1, 'Search provenance must identify the exact canonical series once');
+    const searchPost = matches[0], detailPost = JSON.parse(evidence[1].data).post;
+    for (const post of [searchPost, detailPost]) {
+      assert.equal(post.id, 289, 'API provenance changed canonical post ID');
+      assert.equal(post.slug, slug, 'API provenance changed canonical slug');
+      assert.equal(post.postTitle, query, 'API provenance changed the fixed sample title');
+      nonempty(post.featuredImage, 'Source featuredImage');
+    }
+    assert.equal(item.title, searchPost.postTitle);
+    assert.equal(detail.title, detailPost.postTitle);
+    assert.equal(item.webUrl, `https://vortexscans.org/series/${slug}`);
+    assert.equal(detail.webUrl, item.webUrl);
+    assert.equal(item.cover, searchPost.featuredImage, 'Search retains its exact source featuredImage URL');
+    assert.equal(detail.cover, detailPost.featuredImage, 'Detail retains its exact source featuredImage URL');
     assert.equal(detail.cover, item.cover, 'Both API-backed surfaces retain the exact featuredImage URL');
-    assert(popularEvidence.includes(`featuredImage:${JSON.stringify(item.cover)}`), 'Original URL also appears verbatim in live homepage source metadata');
-    const measured = await coverDimensions(source, item.cover);
+    const measured = await coverDimensions(cold, item.cover);
     assert.equal(measured.format, 'WEBP', 'Verify the real WebP signature, not its MIME label');
     assert(measured.width > 400 && measured.height > 400);
     assert(measured.bytes > 0);
