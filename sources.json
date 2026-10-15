@@ -32,11 +32,11 @@
       "path": "Kagane",
       "environment": "source",
       "intents": 6298637,
-      "hash": "74f5a52074f5a52074f5a52074f5a52074f5a52074f5a52074f5a52074f5a520"
+      "hash": "2695329226953292269532922695329226953292269532922695329226953292"
     },
     {
       "id": "MangaSushi",
-      "version": "0.0.1-alpha.4",
+      "version": "0.0.1-alpha.5",
       "name": "MangaSushi",
       "description": "MangaSushi with the site’s discovery, search filters, and a global NSFW exclusion setting.",
       "thumbnail": "MangaSushi.png",
@@ -57,11 +57,11 @@
       "path": "MangaSushi",
       "environment": "source",
       "intents": 6298637,
-      "hash": "0a166fc80a166fc80a166fc80a166fc80a166fc80a166fc80a166fc80a166fc8"
+      "hash": "38b3daff38b3daff38b3daff38b3daff38b3daff38b3daff38b3daff38b3daff"
     },
     {
       "id": "VortexScans",
-      "version": "1.0.5",
+      "version": "0.0.1-alpha.6",
       "name": "VortexScans",
       "description": "Read manga, manhwa, and manhua from VortexScans.",
       "thumbnail": "VortexScans.png",
@@ -84,7 +84,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 6298636,
-      "hash": "5a613ce15a613ce15a613ce15a613ce15a613ce15a613ce15a613ce15a613ce1"
+      "hash": "3594691135946911359469113594691135946911359469113594691135946911"
     }
   ]
 }
