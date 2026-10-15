@@ -60,11 +60,11 @@ class ExcludedContentError extends Error {}
 
 export class Target implements ContentSource, PageLinkResolver, ImageRequestHandler, SourcePreferenceProvider {
     readonly info: SourceInfo = {
-        id: 'ManhwaNex', version: '0.0.1-alpha.1', name: 'ManhwaNex',
+        id: 'ManhwaNex', version: '0.0.1-alpha.2', name: 'ManhwaNex',
         description: 'ManhwaNex with native Popular Series, Latest Updates, search filters and persistent NSFW exclusion.',
         thumbnail: 'ManhwaNex.png', rating: CatalogRating.MIXED, website: DOMAIN,
         badges: ['Manhwa', 'Manhua', 'Manga'], supportedLanguages: ['en_US'],
-        developers: [{ name: 'LucifersCircle', github: 'https://github.com/LucifersCircle' }]
+        developers: [{ name: 'Lucifers Circle', github: 'https://github.com/LucifersCircle' }]
     }
     readonly config = { cloudflareResolutionURL: DOMAIN, owningLinks: ['manhwanex.com'] }
     private readonly api = new ManhwaNexApi()
