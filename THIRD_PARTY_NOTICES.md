@@ -13,3 +13,12 @@ are adapted from the GPL-3.0-or-later Kagane source in
 reference publication `ca243f65ceb69398713fc0d7d08f94eb155a43b2`, based on the source originally copyright © 2026 Inkdex.
 
 These adaptations remain licensed GPL-3.0-or-later, as is this repository. See LICENSE.
+
+## Hijala
+
+Hijala's icon, source taxonomy, bounded TanStack/Seroval literal decoder, and public
+catalog/detail/chapter/reader parsing rules are adapted from
+[LucifersCircle/pirate.vodka-extensions](https://github.com/LucifersCircle/pirate.vodka-extensions/tree/410d7e9aa659070d08458b889368b3eb6c746aa1/src/Hijala),
+commit `410d7e9aa659070d08458b889368b3eb6c746aa1`, copyright © 2026 Lucifers Circle,
+licensed GPL-3.0-or-later. The integration uses native Mana interfaces and does not
+execute downloaded site scripts. These adaptations remain GPL-3.0-or-later. See LICENSE.

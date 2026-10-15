@@ -4,6 +4,7 @@ import vm from 'node:vm';
 import { performance } from 'node:perf_hooks';
 import { createManaRuntime, redactURL, redactText } from './mana-runtime.mjs';
 import { testKagane } from './kagane-live-tests.mjs';
+import { testHijala } from './hijala-live-tests.mjs';
 import { createManaTestTransport } from './mana-test-browser.mjs';
 import { discoverSources } from './test-sources.mjs';
 import { testMangaSushi, coverDimensions } from './mangasushi-live-tests.mjs';
@@ -88,6 +89,8 @@ for (const name of names) {
   if (name !== 'VortexScans') {
     if (name === 'Kagane') {
       await testKagane({ source, check, referenceFetch: testTransport.fetch, highlights, searchResult, image, requests, freshSource: () => new context.Target() });
+    } else if (name === 'Hijala') {
+      await testHijala({ source, check, highlights, searchResult, image, requests, freshSource: () => new context.Target(), referenceFetch: testTransport.fetch });
     } else if (name === 'MangaSushi') {
       await testMangaSushi({ source, check, highlights, searchResult, image, requests, freshSource: () => new context.Target() });
     } else if (name === 'ManhwaNex') {
