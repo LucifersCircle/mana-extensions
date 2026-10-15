@@ -16,7 +16,7 @@ export const UPLOADS: Option[] = [{ id: 'all', title: 'All uploads' }, { id: 'of
 export const LANGUAGES: Option[] = [['en', 'English'], ['ja', 'Japanese'], ['ko', 'Korean'], ['zh-Hans', 'Chinese (Simplified)'], ['zh-Hant', 'Chinese (Traditional)'], ['es', 'Spanish'], ['es-419', 'Spanish (Latin America)'], ['fr', 'French'], ['de', 'German'], ['it', 'Italian'], ['pt', 'Portuguese'], ['pt-BR', 'Portuguese (Brazil)'], ['ru', 'Russian'], ['pl', 'Polish'], ['tr', 'Turkish'], ['ar', 'Arabic'], ['id', 'Indonesian'], ['th', 'Thai'], ['vi', 'Vietnamese'], ['hi', 'Hindi']].map(([id, title]) => ({ id: id ?? '', title: title ?? '' }))
 export const SORTS: SortOption[] = [
     { id: 'relevance', title: 'Relevance', isDefault: true },
-    ...[['total_views', 'Popular (Total Views)'], ['avg_views', 'Popular (Average Views)'], ['avg_views_today', 'Popular (Today)'], ['avg_views_week', 'Popular (Week)'], ['avg_views_month', 'Popular (Month)'], ['updated_at', 'Latest'], ['series_name', 'By Name'], ['books_count', 'Books Count'], ['created_at', 'Created At']].map(([id, title]) => ({ id: id ?? '', title: title ?? '' }))
+    ...[['total_views', 'Popular (Total Views)'], ['avg_views', 'Popular (Average Views)'], ['avg_views_today', 'Popular (Today)'], ['avg_views_week', 'Popular (Week)'], ['avg_views_month', 'Popular (Month)'], ['updated_at', 'Latest'], ['current_books', 'Books Count'], ['created_at', 'Created At']].map(([id, title]) => ({ id: id ?? '', title: title ?? '' }))
 ]
 export const SECTIONS = [
     { id: 'popular', title: 'Popular', sort: 'total_views', style: SectionStyle.SimpleHeroPaged },

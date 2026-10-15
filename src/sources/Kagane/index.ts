@@ -71,7 +71,7 @@ type SearchPage = { result: PagedSearchResult, next: number, seenIDs: string[] }
 
 export class Target implements ContentSource, PageLinkResolver, ImageRequestHandler, SourcePreferenceProvider {
     readonly info: SourceInfo = {
-        id: 'Kagane', version: '0.0.1-alpha.4', name: 'Kagane',
+        id: 'Kagane', version: '0.0.1-alpha.5', name: 'Kagane',
         description: 'Kagane with current API support, grouped tags and global four-category content settings.',
         thumbnail: 'Kagane.png', rating: CatalogRating.MIXED, website: DOMAIN,
         badges: ['Manga', 'Manhwa', 'Manhua', 'Comic'],
@@ -183,6 +183,16 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
             if (!Number.isSafeInteger(page) || page < 1 || page > 1000) throw new Error('Invalid Kagane page')
             const section = request.listId ? SECTIONS.find((entry) => entry.id === request.listId) : undefined
             if (request.listId && !section) throw new Error('Unknown Kagane discovery list')
+            const requestedSort = section?.sort ?? request.sort?.id ?? 'relevance'
+            if (['series_name', 'series_name,asc', 'series_name,desc'].includes(requestedSort)) throw new Error('Kagane no longer supports By Name; choose another sort')
+            // Only the known saved count IDs migrate. Other sorts keep their
+            // existing descending behavior, without accepting arbitrary suffixes.
+            const legacyCount = /^books_count(?:,(asc|desc))?$/.exec(requestedSort)
+            const sort = legacyCount ? 'current_books' : requestedSort
+            if (!SORTS.some((option) => option.id === sort)) throw new Error('Unknown Kagane sort; choose another sort')
+            // An explicit saved suffix wins over a conflicting native direction.
+            const ascending = sort === 'current_books' && (legacyCount?.[1] ? legacyCount[1] === 'asc' : request.sort?.ascending === true)
+            const sortParameter = sort === 'relevance' ? '' : `${sort},${ascending ? 'asc' : 'desc'}`
             const ratings = selectedRatings(request, settings)
             const explicitSourceRatings = selectedOptions(request.filters, 'content_rating')
             if (!ratings.length) return { results: [], isLastPage: true }
@@ -191,9 +201,6 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
             const filteredBody = searchBody(request, settings, tags)
             const conceptualTags = includedTagGroups(request.filters, tags)
             const body = section ? searchBody({ ...request, query: undefined, filters: undefined }, settings, tags) : filteredBody
-            const sort = section?.sort ?? request.sort?.id ?? 'relevance'
-            if (!SORTS.some((option) => option.id === sort)) throw new Error('Unknown Kagane sort')
-            const sortParameter = sort === 'relevance' ? '' : `${sort},desc`
             const exact = request.filters?.exact_match === true
             const key = `${JSON.stringify(settings)}:${JSON.stringify(body)}:${sortParameter}:${exact}:${JSON.stringify(conceptualTags)}:${request.filters?.match_all_tags === true}:${hostRatingKey(request.context?.allowedContentRatings)}`
             let cached = this.searchPages.get(key)
