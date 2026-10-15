@@ -1,6 +1,6 @@
 # Pirate Vodka Extensions for Mana
 
-This repository contains native Mana extensions for **VortexScans**, **MangaSushi** and **Kagane**.
+This repository contains native Mana extensions for **VortexScans**, **MangaSushi**, **Kagane** and **ManhwaNex**.
 
 Mana repository URL: `https://mana.pirate.vodka/sources.json`
 
@@ -77,6 +77,41 @@ verified source-title fallbacks; ordinary partial searches are unchanged.
 
 Source: [`src/sources/MangaSushi`](src/sources/MangaSushi).
 Icon: [`assets/MangaSushi.png`](assets/MangaSushi.png), from the site's published icon.
+
+## ManhwaNex
+
+[ManhwaNex](https://manhwanex.com/) is a native Mana source, version `0.0.1-alpha.1`.
+It preserves the site's **Popular Series** carousel and **Latest Updates** feed,
+source order, real next-page links, English source titles and complete alternative
+fields, staff, publication metadata and separately grouped source SEO tags (ten
+per group, matching Mana’s persistence limit). Search exposes the eight native genres with OR/AND matching, author,
+artist, release, all five statuses and adult filtering. Relevance is the only
+advertised site sort. Native chapter lists preserve available chapters, decimal
+numbers, labels and dates; any actual chapter pagination is traversed, not inferred
+from the largest chapter number. Reader pages retain source order.
+
+Covers use the largest valid rendition advertised in each existing response,
+without guessed originals or per-card detail requests. Both discovery sections
+share one homepage and one bounded canonical-ID metadata batch; caches are bounded
+and setting-aware. Reader selection is independent of cover selection.
+
+**Exclude NSFW content** is persistent and on by default. It requires native
+non-adult membership and verified source genres, rejects explicit Adult, Mature,
+Smut, Hentai, Erotica and Ecchi labels, and hides unknown classifications. BL/GL
+and demographics are not adult labels by themselves. This guards search, discovery,
+details, chapters, readers and previously issued image requests, including after
+preference changes. The site has no verified graded age-rating taxonomy, so no
+invented rating-category settings are shown. The conservative Mature app badge is
+separate from adult exclusion; source labels cannot guarantee image content.
+
+Source search has known upstream limitations: leading-numeric author names such as
+`3rd Studio` redirect to the homepage and fail visibly instead of returning unrelated
+results. Exact punctuation-heavy title searches can return unrelated source matches;
+queries are not broadly rewritten. Some series publish only a recent available
+chapter subset; missing older chapters are not invented or bypassed.
+
+Source: [`src/sources/ManhwaNex`](src/sources/ManhwaNex).
+Icon: [`assets/ManhwaNex.png`](assets/ManhwaNex.png), the site's published 192-pixel icon.
 
 ## Kagane
 
