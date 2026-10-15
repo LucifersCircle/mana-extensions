@@ -33,7 +33,51 @@ commits do not retrigger testing or publishing. Pull requests never publish sour
 
 <!-- LIVE_TEST_STATUS:START -->
 
-Not run in GitHub Actions yet. No passing status is assumed.
+Last checked: **2026-10-15 00:40:42 UTC** · [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38661349571)
+Started: 2026-10-15 00:40:19 UTC
+Tested commit: `498b904`
+
+| Extension | Result | Passed | Failed | Duration |
+| --- | --- | ---: | ---: | ---: |
+| VortexScans | ✅ Pass | 21/21 | 0 | 7.08s |
+
+<details>
+<summary>Test output</summary>
+
+| Extension | Test | Result | Duration | Failure |
+| --- | --- | --- | ---: | --- |
+| VortexScans | Built Mana bundle and source metadata | ✅ Pass | 0.04s | — |
+| VortexScans | Catalog search returns usable highlights | ✅ Pass | 0.25s | — |
+| VortexScans | Catalog pagination advances or explicitly ends | ✅ Pass | 0.23s | — |
+| VortexScans | Title search finds a live catalog title | ✅ Pass | 0.19s | — |
+| VortexScans | Live content details and cover image | ✅ Pass | 0.55s | — |
+| VortexScans | Search form exposes live genres and sort options | ✅ Pass | 0.15s | — |
+| VortexScans | Genre inclusion and exclusion affect live results | ✅ Pass | 1.00s | — |
+| VortexScans | Home discovers all published sections | ✅ Pass | 0.24s | — |
+| VortexScans | Home section: Popular Today (popular-today) | ✅ Pass | 0.91s | — |
+| VortexScans | Home section: Latest (latest) | ✅ Pass | 0.57s | — |
+| VortexScans | Home section: New (new) | ✅ Pass | 0.56s | — |
+| VortexScans | Home section: For beginners (collection:for-beginners) | ✅ Pass | 0.17s | — |
+| VortexScans | Home section: Top Picks (collection:top-picks) | ✅ Pass | 0.22s | — |
+| VortexScans | Home section: Fantasy Worlds (collection:fantasy-worlds) | ✅ Pass | 0.25s | — |
+| VortexScans | Home section: Marathon Reads (collection:marathon-reads) | ✅ Pass | 0.27s | — |
+| VortexScans | Home section: Completed Series (collection:completed-series) | ✅ Pass | 0.24s | — |
+| VortexScans | Home section: Most Popular (most-popular) | ✅ Pass | 0.49s | — |
+| VortexScans | Live chapter list has unique IDs and oldest-first order | ✅ Pass | 0.27s | — |
+| VortexScans | Chapter pages are nonempty unique URLs | ✅ Pass | 0.24s | — |
+| VortexScans | First and last chapter images load with source headers | ✅ Pass | 0.06s | — |
+| VortexScans | Series deep link resolves the same live content | ✅ Pass | 0.17s | — |
+
+</details>
+
+<details>
+<summary>Recent checks (last 24 runs)</summary>
+
+| Checked (UTC) | VortexScans | Run |
+| --- | --- | --- |
+| 2026-10-15 00:40:42 UTC | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38661349571) |
+
+</details>
 
 <!-- LIVE_TEST_STATUS:END -->
 
