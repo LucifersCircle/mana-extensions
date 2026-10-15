@@ -58,6 +58,8 @@ export interface VortexPost {
     seriesType?: string | null
     isNovel?: boolean | null
     genres?: VortexGenre[] | null
+    // Exact same-response names are rating evidence, never invented taxonomy IDs.
+    ratingGenres?: Pick<VortexGenre, 'name'>[]
     chapters?: VortexChapter[] | null
     author?: string | null
     artist?: string | null

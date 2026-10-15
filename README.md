@@ -30,10 +30,12 @@ content of every image.
 
 ## VortexScans features
 
-Version `0.0.1-alpha.7` follows the repository's shared alpha-version format.
+Version `0.0.1-alpha.8` follows the repository's shared alpha-version format.
 
-- Dynamic discovery rows for Popular Today, Latest, New, every published
-  collection, and Most Popular
+- Source-faithful Featured, Popular Today, Latest Releases, New, every published
+  collection, and the rendered monthly Most Popular snapshot
+- One shared homepage response preserves the site's row order; Latest continues
+  with the site's 36-item feed, while Featured and monthly rankings stay bounded
 - Search with the live VortexScans genre list, include/exclude genre selection,
   status, type, and sorting filters
 - Manga, manhwa, and manhua metadata
@@ -47,12 +49,14 @@ Version `0.0.1-alpha.7` follows the repository's shared alpha-version format.
 ## MangaSushi
 
 [MangaSushi](https://mangasushi.org/) is a fresh native implementation, not a
-Paperback converter. Version `0.0.1-alpha.7` includes:
+Paperback converter. Version `0.0.1-alpha.8` includes:
 
 - The site's finite **Popular Series** carousel and **What's New** feed, in source
   order. What's New uses the site's actual AJAX Load More query and continuation.
 - All seven native search orders, live genre taxonomy with OR/AND matching,
   author, artist, release year, all five statuses and the site's adult selector.
+  If the site ignores a requested genre filter, search reports that visibly rather
+  than returning unrelated titles.
 - Full titles, alternative-title text, available authors/artists/status/genres,
   synopsis, asynchronous chapter lists, original chapter labels and decimals.
 - Ordered lazy reader images, canonical series/chapter identity checks, duplicate
