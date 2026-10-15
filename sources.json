@@ -4,7 +4,7 @@
   "sources": [
     {
       "id": "MangaSushi",
-      "version": "0.0.1-alpha.1",
+      "version": "0.0.1-alpha.2",
       "name": "MangaSushi",
       "description": "MangaSushi with the site’s discovery, search filters, and a global NSFW exclusion setting.",
       "thumbnail": "MangaSushi.png",
@@ -25,7 +25,7 @@
       "path": "MangaSushi",
       "environment": "source",
       "intents": 6298637,
-      "hash": "1a645c031a645c031a645c031a645c031a645c031a645c031a645c031a645c03"
+      "hash": "437476dd437476dd437476dd437476dd437476dd437476dd437476dd437476dd"
     },
     {
       "id": "VortexScans",
@@ -52,7 +52,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 6298636,
-      "hash": "23e6e79e23e6e79e23e6e79e23e6e79e23e6e79e23e6e79e23e6e79e23e6e79e"
+      "hash": "32fb80c632fb80c632fb80c632fb80c632fb80c632fb80c632fb80c632fb80c6"
     }
   ]
 }
