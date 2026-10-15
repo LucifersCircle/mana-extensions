@@ -16,8 +16,9 @@ describe('VortexScans discovery', () => {
 
         expect(sections.map(({ id, title }) => ({ id, title })))
             .toEqual([
+                { id: 'featured', title: 'Featured' },
                 { id: 'popular-today', title: 'Popular Today' },
-                { id: 'latest', title: 'Latest' },
+                { id: 'latest', title: 'Latest Releases' },
                 { id: 'new', title: 'New' },
                 { id: 'collection:first', title: 'First' },
                 { id: 'collection:second', title: 'Second' },

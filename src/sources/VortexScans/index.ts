@@ -30,13 +30,16 @@ import { VortexScansApi } from './VortexScansApi'
 import {
     buildVortexHomeSections,
     parseCollectionHighlights,
-    parsePopularToday
+    parsePopularToday,
+    parseVortexHome,
+    VortexHomeData
 } from './VortexScansDiscover'
 import {
     VORTEX_DOMAIN,
     VORTEX_LANGUAGE,
     VORTEX_PAGE_SIZE,
     VortexFilterProps,
+    VortexCollectionsResponse,
     VortexQueryResponse,
     VortexQueryValue
 } from './VortexScansModels'
@@ -99,7 +102,7 @@ export class Target implements
     ImageRequestHandler {
     readonly info: SourceInfo = {
         id: 'VortexScans',
-        version: '0.0.1-alpha.7',
+        version: '0.0.1-alpha.8',
         name: 'VortexScans',
         description: 'Read manga, manhwa, and manhua from VortexScans.',
         thumbnail: 'VortexScans.png',
@@ -125,6 +128,10 @@ export class Target implements
     private readonly sparseLists = new Map<string, { at: number, value: Promise<Highlight[]> }>()
     private readonly rawPages = new Map<string, { at: number, value: { items: Highlight[], ids: string[], last: boolean, total?: number } }>()
     private readonly pendingPages = new Map<string, Promise<{ items: Highlight[], ids: string[], last: boolean, total?: number }>>()
+
+    private homeCache?: { at: number, value: Promise<string> }
+    private collectionsCache?: { at: number, value: Promise<VortexCollectionsResponse> }
+    private decodedHome?: { html: string, value: VortexHomeData }
 
     async getContent(contentId: string, context?: SourceContext): Promise<Content> {
         if (context?.allowedContentRatings?.length === 0) throw new Error('This title is excluded by Mana content-rating policy')
@@ -257,7 +264,7 @@ export class Target implements
         }
 
         if (link.context?.allowedContentRatings?.length === 0) return []
-        const collections = await this.api.getCollections()
+        const collections = await this.collections()
 
         return buildVortexHomeSections(collections).map((section) => ({
             id: section.id,
@@ -327,13 +334,32 @@ export class Target implements
         context: PageLink['context']
     ): Promise<ResolvedPageSection> {
         switch (sectionId) {
+            case 'featured':
+                return { items: this.visible(this.parser.parseHighlights((await this.home()).featured, true), context) }
             case 'popular-today':
                 return {
-                    items: this.visible(await this.sparseList('popular-today', async () => parsePopularToday(await this.api.getText(VORTEX_DOMAIN))), context)
+                    items: this.visible(await this.sparseList('popular-today', async () => {
+                        const items = parsePopularToday(await this.homeText())
+                        // Cover-only malformed strings retain the verified DOM
+                        // image; malformed identity/rating data must fail visibly.
+                        const home = parseVortexHome(await this.homeText(), true)
+                        const metadata = this.parser.parseHighlights([...home.today, ...home.featured, ...home.latest, ...home.popular])
+                        const byID = new Map(metadata.map((item) => [item.id, item]))
+                        return items.map((item) => {
+                            const exact = byID.get(item.id)
+                            if (!exact) throw new Error('VortexScans Popular Today is missing verified canonical rating metadata')
+                            return { ...item, contentRating: exact.contentRating }
+                        })
+                    }), context)
                 }
             case 'latest':
-            case 'new':
+                return {
+                    items: this.visible(this.parser.parseHighlights((await this.home()).latest, true), context),
+                    viewMoreLink: { request: { page: 1, listId: 'latest', context } }
+                }
             case 'most-popular':
+                return { items: this.visible(this.parser.parseHighlights((await this.home()).popular, true), context) }
+            case 'new':
                 return this.resolveSearchSection(sectionId, true, context)
             default:
                 if (sectionId.startsWith('collection:')) {
@@ -384,6 +410,34 @@ export class Target implements
         }
     }
 
+    private homeText(): Promise<string> {
+        if (this.homeCache && Date.now() - this.homeCache.at < 180000) return this.homeCache.value
+        const value = this.api.getText(VORTEX_DOMAIN).catch((error: unknown) => {
+            if (this.homeCache?.value === value) this.homeCache = undefined
+            throw error
+        })
+        this.homeCache = { at: Date.now(), value }
+        return value
+    }
+
+    private async home(): Promise<VortexHomeData> {
+        const html = await this.homeText()
+        if (this.decodedHome?.html === html) return this.decodedHome.value
+        const value = parseVortexHome(html)
+        this.decodedHome = { html, value }
+        return value
+    }
+
+    private collections(): Promise<VortexCollectionsResponse> {
+        if (this.collectionsCache && Date.now() - this.collectionsCache.at < 180000) return this.collectionsCache.value
+        const value = this.api.getCollections().catch((error: unknown) => {
+            if (this.collectionsCache?.value === value) this.collectionsCache = undefined
+            throw error
+        })
+        this.collectionsCache = { at: Date.now(), value }
+        return value
+    }
+
     private async sparseList(key: string, load: () => Promise<Highlight[]>): Promise<Highlight[]> {
         const cached = this.sparseLists.get(key)
         if (cached && Date.now() - cached.at < 180000) return cached.value
@@ -410,10 +464,14 @@ export class Target implements
         const pending = this.pendingPages.get(key)
         if (pending) return pending
         const load = (async () => {
-            const response = request.listId === 'latest' || request.listId === 'new'
-                ? await this.api.getTaggedPosts(request.listId === 'latest' ? 'latestUpdatePinned' : 'new', page, VORTEX_PAGE_SIZE)
-                : request.listId === 'most-popular' ? await this.api.query({ page, perPage: VORTEX_PAGE_SIZE, view: 'archive', orderBy: 'totalViews', orderDirection: 'desc', isNovel: false })
-                    : await this.searchCatalog(request, page)
+            const home = request.listId === 'latest' || request.listId === 'new' ? await this.home() : undefined
+            const pageSize = home?.perPage ?? VORTEX_PAGE_SIZE
+            const response = request.listId === 'latest' && page === 1
+                ? { posts: home!.latest }
+                : request.listId === 'latest' || request.listId === 'new'
+                    ? await this.api.getTaggedPosts(request.listId === 'latest' ? 'latestUpdatePinned' : 'new', page, pageSize)
+                    : request.listId === 'most-popular' ? await this.api.query({ page, perPage: VORTEX_PAGE_SIZE, view: 'archive', orderBy: 'totalViews', orderDirection: 'desc', isNovel: false })
+                        : await this.searchCatalog(request, page)
             if (!Array.isArray(response.posts)) throw new Error('VortexScans returned invalid catalog data')
             const ids = response.posts.map((post) => buildVortexContentId(post.id, post.slug))
             const total = !request.listId || request.listId === 'most-popular' ? response.totalCount : undefined
@@ -421,7 +479,7 @@ export class Target implements
             // Catalog totals are authoritative even when a physical page is
             // short. Tagged feeds expose an unrelated global total, so only
             // those feeds retain the short-page termination heuristic.
-            const value = { items: this.parser.parseHighlights(response.posts), ids, last: validTotal === undefined && response.posts.length < VORTEX_PAGE_SIZE, total: validTotal }
+            const value = { items: this.parser.parseHighlights(response.posts), ids, last: validTotal === undefined && response.posts.length < pageSize, total: validTotal }
             this.rawPages.delete(key)
             this.rawPages.set(key, { at: Date.now(), value })
             while (this.rawPages.size > 128) this.rawPages.delete(this.rawPages.keys().next().value as string)

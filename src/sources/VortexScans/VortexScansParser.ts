@@ -227,7 +227,10 @@ function validVortexGenres(post: VortexPost): VortexGenre[] {
 
 export function getVortexContentRating(post: VortexPost): ContentRating | undefined {
     const valid = validVortexGenres(post)
-    const genres = new Set(valid.map((genre) => genre.name.trim().toLowerCase()))
+    const genres = new Set([...(Array.isArray(post.genres) ? post.genres : []),
+        ...(Array.isArray(post.ratingGenres) ? post.ratingGenres : [])]
+        .filter((genre) => !!genre && typeof genre.name === 'string' && !!genre.name.trim())
+        .map((genre) => genre.name.trim().toLowerCase()))
 
     if (['adult', 'smut', 'hentai', 'erotica', 'pornographic', 'pornography'].some((genre) => genres.has(genre))) return ContentRating.EXPLICIT
     if (['mature', 'gore', 'blood', 'violence', 'terror']
