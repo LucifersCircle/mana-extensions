@@ -62,7 +62,7 @@ class ExcludedContentError extends Error {}
 export class Target implements ContentSource, PageLinkResolver, ImageRequestHandler, SourcePreferenceProvider {
     readonly info: SourceInfo = {
         id: 'MangaSushi',
-        version: '0.0.1-alpha.1',
+        version: '0.0.1-alpha.2',
         name: 'MangaSushi',
         description: 'MangaSushi with the site’s discovery, search filters, and a global NSFW exclusion setting.',
         thumbnail: 'MangaSushi.png',
@@ -77,6 +77,8 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
     private readonly listings = new Map<string, CacheEntry<Listing>>()
     private settingsRevision = 0
     private readonly metadata = new Map<string, CacheEntry<Series>>()
+    private readonly pendingListings = new Map<string, Promise<Listing>>()
+    private readonly pendingHomes = new Map<string, Promise<{ popular: Listing, latest: Listing }>>()
 
     async getPreferenceMenu(): Promise<Form> {
         return { sections: [UIListSection({
@@ -91,6 +93,8 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
                     await ObjectStore.set(SETTING, value)
                     this.listings.clear()
                     this.metadata.clear()
+                    this.pendingListings.clear()
+                    this.pendingHomes.clear()
                 }
             })]
         })] }
@@ -133,14 +137,14 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
         if (!Number.isInteger(page) || page < 1) throw new Error('Invalid MangaSushi page')
         if (request.listId === 'popular') {
             const home = await this.home(exclude)
-            return { results: page === 1 ? await this.visible(home.popular.items, exclude) : [], isLastPage: true }
+            return { results: page === 1 ? await this.visible(home.popular.items, exclude, home.latest, 1, home.latest.items.length + home.popular.items.length) : [], isLastPage: true }
         }
         if (request.listId === 'latest') {
             const home = await this.home(exclude)
             const result = page === 1 ? home.latest : home.latest.next
                 ? await this.continuation(home.latest, page, '.page-item-detail', `${exclude}:home`)
                 : { items: [], ended: true }
-            return { results: await this.visible(result.items, exclude), isLastPage: result.ended || (page === 1 && !result.next) }
+            return { results: await this.visible(result.items, exclude, home.latest, page, page === 1 ? home.latest.items.length + home.popular.items.length : undefined), isLastPage: result.ended || (page === 1 && !result.next) }
         }
         if (request.listId) throw new Error(`Unknown MangaSushi list: ${request.listId}`)
         const url = this.searchURL(request, exclude)
@@ -295,24 +299,79 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
         const latest = this.fresh(this.listings.get(key))
         const popular = this.fresh(this.listings.get(`${key}:popular`))
         if (latest && popular) return { latest, popular }
-        const html = await this.api.text(`${DOMAIN}/`)
-        const $ = load(html)
-        if (!/popular series/i.test($('.popular-slider .heading').text()) || !/what.s new/i.test($('.c-blog__heading h1').text())) {
-            throw new Error('MangaSushi home sections changed')
+        const pending = this.pendingHomes.get(key)
+        if (pending) return pending
+        const revision = this.settingsRevision
+        const request = (async () => {
+            const html = await this.api.text(`${DOMAIN}/`)
+            const $ = load(html)
+            if (!/popular series/i.test($('.popular-slider .heading').text()) || !/what.s new/i.test($('.c-blog__heading h1').text())) {
+                throw new Error('MangaSushi home sections changed')
+            }
+            const parsedPopular = parseListing(html, '.popular-slider .slider__item')
+            parsedPopular.next = undefined
+            parsedPopular.ended = true
+            const parsedLatest = parseListing(html, '#loop-content .page-item-detail')
+            if (!parsedPopular.items.length || !parsedLatest.items.length) throw new Error('MangaSushi home is incomplete')
+            if (revision !== this.settingsRevision) throw new Error('MangaSushi settings changed during this request; refresh to continue')
+            this.listings.set(key, { at: Date.now(), value: parsedLatest })
+            this.listings.set(`${key}:popular`, { at: Date.now(), value: parsedPopular })
+            return { popular: parsedPopular, latest: parsedLatest }
+        })()
+        this.pendingHomes.set(key, request)
+        try { return await request } finally {
+            if (this.pendingHomes.get(key) === request) this.pendingHomes.delete(key)
         }
-        const parsedPopular = parseListing(html, '.popular-slider .slider__item')
-        parsedPopular.next = undefined
-        parsedPopular.ended = true
-        const parsedLatest = parseListing(html, '#loop-content .page-item-detail')
-        if (!parsedPopular.items.length || !parsedLatest.items.length) throw new Error('MangaSushi home is incomplete')
-        this.listings.set(key, { at: Date.now(), value: parsedLatest })
-        this.listings.set(`${key}:popular`, { at: Date.now(), value: parsedPopular })
-        return { popular: parsedPopular, latest: parsedLatest }
     }
 
-    private async visible(items: Series[], exclude: boolean): Promise<Highlight[]> {
+    private async discoveryMetadata(first: Listing, page: number, exclude: boolean, size?: number): Promise<void> {
+        if (!exclude || !first.next) return
+        const original = first.next.vars
+        // Reuse the site's actual latest-update query and page boundaries. Its
+        // native search template includes genres for every title in one response.
+        if (original.meta_key !== '_latest_update' || original.orderby !== 'meta_value_num' || original.order !== 'desc') {
+            throw new Error('MangaSushi discovery metadata query changed')
+        }
+        const count = size ?? Number(original.posts_per_page)
+        if (!Number.isSafeInteger(count) || count < 1 || count > 100) throw new Error('MangaSushi discovery page size changed')
+        const vars = {
+            ...original,
+            s: '',
+            template: 'search',
+            posts_per_page: String(count),
+            manga_archives_item_layout: 'default',
+            // Native adult=0 is necessary, but insufficient: visible() still
+            // requires real genres and rejects every explicit tag, including Ecchi.
+            meta_query: { relation: 'AND', 0: original.meta_query ?? { relation: 'AND' }, 1: { key: 'manga_adult_content', value: '' } }
+        }
+        const key = `${exclude}:discovery:${page}:${JSON.stringify(vars)}`
+        const cached = this.fresh(this.listings.get(key))
+        if (cached) {
+            for (const item of cached.items) this.cacheMetadata(item, exclude)
+            return
+        }
+        const pending = this.pendingListings.get(key)
+        if (pending) { await pending; return }
+        const revision = this.settingsRevision
+        const request = (async () => {
+            const result = await this.api.more({ template: 'madara-core/content/content-search', vars }, page, '.c-tabs-item__content')
+            if (revision !== this.settingsRevision) throw new Error('MangaSushi settings changed during this request; refresh to continue')
+            this.listings.set(key, { at: Date.now(), value: result })
+            for (const item of result.items) this.cacheMetadata(item, exclude)
+            return result
+        })()
+        this.pendingListings.set(key, request)
+        try { await request } finally {
+            if (this.pendingListings.get(key) === request) this.pendingListings.delete(key)
+        }
+    }
+
+    private async visible(items: Series[], exclude: boolean, first?: Listing, page = 1, size?: number): Promise<Highlight[]> {
         const series = items.filter((item) => !EDITORIAL_IDS.has(item.id))
         if (!exclude) return series.map(this.highlight)
+        if (first && series.some((item) => !this.fresh(this.metadata.get(`${exclude}:${item.id}`)))) {
+            await this.discoveryMetadata(first, page, exclude, size)
+        }
         const checked = await Promise.all(series.map(async (item) => {
             try {
                 const metadata = await this.resolveMetadata(item.id, item.title, exclude)
