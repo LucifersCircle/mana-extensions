@@ -4,7 +4,7 @@ import { coverDimensions } from './mangasushi-live-tests.mjs';
 
 // All source behavior below runs through the real built native Mana bundle.
 // Negative cases mutate a fresh live response in memory, never saved fixtures.
-export async function testHijala({ source, check, highlights, searchResult, image, requests, freshSource, referenceFetch = fetch }) {
+export async function testHijala({ source, check, highlights, searchResult, image, requests, freshSource, referenceFetch = fetch, nativeStore }) {
   const domain = 'https://en-hijala.com', api = 'https://api.en-hijala.com';
   const raw = async (url) => { const response = await referenceFetch(url, { signal: AbortSignal.timeout(30_000) }); assert(response.ok, `Reference HTTP ${response.status}`); return response.text(); };
   const field = async (id, target = source) => (await target.getPreferenceMenu()).sections.flatMap((section) => section.children ?? []).find((item) => item.id === id);
@@ -17,12 +17,18 @@ export async function testHijala({ source, check, highlights, searchResult, imag
   let form, catalog, content, full, chapters, reader, explicit, originalTitles, largeTitle;
 
   await check('Native metadata and persistent defaults are honest about genre-based safety', async () => {
-    assert.equal(source.info.version, '0.0.1-alpha.2'); assert.equal(source.info.rating, 1);
+    assert.equal(source.info.version, '0.0.1-alpha.3'); assert.equal(source.info.rating, 1);
     for (const path of ['/series', '/series/', '/series/?page=1', '/series-other/title']) assert.equal(isSeriesDetailRequest({ url: `${domain}${path}` }), false);
     for (const path of ['/series/mimosa', '/series/mimosa/chapter-56']) assert.equal(isSeriesDetailRequest({ url: `${domain}${path}` }), true);
-    assert.equal((await field('excludeNSFW')).value, true); assert.equal((await field('hidePaid')).value, true);
+    assert.equal((await field('excludeNSFW')).value, false); assert.equal((await field('hidePaid')).value, true);
     const footer = (await source.getPreferenceMenu()).sections[0].footer;
-    assert.match(footer, /Missing or invalid genres are hidden/); assert.match(footer, /not a four-category/);
+    assert.match(footer, /Mature compatibility/); assert.match(footer, /not a four-category/);
+    assert(nativeStore, 'Missing actual native host store for migration test');
+    await nativeStore.set('Hijala.preferences', { excludeNSFW: true, hidePaid: false, types: ['MANGA'], sections: ['latest'], excludedGenres: ['4'] });
+    const migrated = freshSource(), saved = await migrated.preferences(); assert.equal(saved.excludeNSFW, false); assert.equal(saved.hidePaid, false); assert.deepEqual(Array.from(saved.types), ['MANGA']); assert.deepEqual(Array.from(saved.excludedGenres), ['4']);
+    await nativeStore.remove('Hijala.preferences');
+    await setting('excludeNSFW', true); assert.equal((await nativeStore.get('Hijala.preferences')).ratingPreferenceVersion, 1);
+    assert.equal((await field('excludeNSFW', freshSource())).value, true);
   });
   await check('Search form exposes every live genre, eight statuses, five types and site filters', async () => {
     form = await source.getSearchForm(); const fields = form.sections.flatMap((section) => section.children ?? []);
@@ -258,12 +264,30 @@ export async function testHijala({ source, check, highlights, searchResult, imag
     const target = transformed((text, url) => url === `${domain}/series/mimosa` ? replaceRequired(text, 'name:"Action"', 'name:""') : text);
     await setting('excludeNSFW', false, target);
     try {
-      const details = await target.getContent('mimosa'); assert(details.tags.some((tag) => tag.id === '3')); assert.equal(details.contentRating, undefined);
+      const details = await target.getContent('mimosa'); assert(details.tags.some((tag) => tag.id === '3')); assert.equal(details.contentRating, 2); assert(details.additionalInfo.some((section) => section.id === 'content-rating-metadata'));
       await setting('excludedGenres', ['27'], target);
       await assert.rejects(target.getContent('mimosa'), /excluded/);
       const catalogTarget = transformed((text, url) => { if (!url.includes('/api/query?')) return text; const data = JSON.parse(text); data.posts.forEach((post) => { post.genres = [...(post.genres ?? []), { id: 999999, name: '' }]; }); return JSON.stringify(data); });
       const result = await catalogTarget.search({ page: 1 }); assert.equal(result.results.length, 0); assert.equal(result.isLastPage, true);
     } finally { await setting('excludedGenres', [], target); await setting('excludeNSFW', true, target); }
+  });
+  await check('Native rating authority includes fallback metadata, isolates warm caches and preserves explicit choices', async () => {
+    await setting('excludeNSFW', false);
+    try {
+      const target = transformed((text, url) => url === `${domain}/series/mimosa` ? replaceRequired(text, 'name:"Action"', 'name:""') : text);
+      const mature = await target.getContent('mimosa', { allowedContentRatings: [2] }); assert.equal(mature.contentRating, 2);
+      assert(mature.additionalInfo.some((section) => section.id === 'content-rating-metadata'));
+      await assert.rejects(target.getContent('mimosa', { allowedContentRatings: [0, 1, 3] }), /excluded/);
+      assert.equal((await target.getContent('mimosa')).contentRating, 2, 'No supplied policy must not imply Safe-only');
+      const emptyStart = requests.length; await assert.rejects(target.getContent('mimosa', { allowedContentRatings: [] }), /excluded/); assert.equal(requests.length, emptyStart);
+      const fallback = transformed((text, url) => { if (!url.includes('/api/query?')) return text; const data = JSON.parse(text); data.posts.forEach((post) => { delete post.genres; }); return JSON.stringify(data); });
+      const first = await fallback.search({ page: 1, context: { allowedContentRatings: [2] } }); assert(first.results.length); assert(first.results.every((item) => item.contentRating === 2));
+      const excluded = await fallback.search({ page: 1, context: { allowedContentRatings: [0] } }); assert.equal(excluded.results.length, 0); assert.equal(excluded.isLastPage, true);
+      assert.deepEqual(ids((await fallback.search({ page: 1, context: { allowedContentRatings: [2] } })).results), ids(first.results));
+      const link = await source.resolvePageSection({ id: 'home', context: { allowedContentRatings: [0, 1, 2, 3] } }, 'new'); assert(link.viewMoreLink); assert.deepEqual(Array.from(link.viewMoreLink.request.context.allowedContentRatings), [0, 1, 2, 3]);
+      await setting('excludeNSFW', true); assert((await nativeStore.get('Hijala.preferences')).ratingPreferenceVersion === 1);
+      await assert.rejects(target.getContent('mimosa', { allowedContentRatings: [2] }), /excluded/);
+    } finally { await setting('excludeNSFW', true); }
   });
   await check('Filtered-empty first page advances native continuation from the consumed API page', async () => {
     const seen = [];

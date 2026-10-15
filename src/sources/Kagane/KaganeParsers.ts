@@ -10,6 +10,7 @@ import { Chapter,
     ReadingMode,
     staff } from '@mana-app/types'
 import { decode } from 'html-entities'
+import { incompleteRatingInfo } from '../../ContentRatingPolicy'
 import { AlternateTitle,
     Book,
     chapterURL,
@@ -26,6 +27,8 @@ import { AlternateTitle,
 export function classify(value: Classification): Rating | undefined {
     const legacyValue = value.content_rating
     const legacy = typeof legacyValue === 'string' ? RATINGS.find((rating) => rating.toLowerCase() === legacyValue.trim().toLowerCase()) : undefined
+    // Positive explicit evidence must never be downgraded by incomplete/conflicting fields.
+    if (value.is_pornographic === true || legacy === 'Pornographic') return 'Pornographic'
     if (value.age_rating === undefined && value.is_pornographic === undefined) return legacy
     if (typeof value.is_pornographic !== 'boolean') return undefined
     let rating: Rating
@@ -41,14 +44,15 @@ export function manaRating(value: Classification): ContentRating {
         case 'Safe': return ContentRating.SAFE
         case 'Suggestive': return ContentRating.SUGGESTIVE
         case 'Erotica': return ContentRating.MATURE
-        default: return ContentRating.EXPLICIT
+        case 'Pornographic': return ContentRating.EXPLICIT
+        default: return ContentRating.MATURE
     }
 }
 
 export function allowed(value: Classification, settings: Settings, selected?: readonly string[], host?: readonly ContentRating[]): boolean {
     const rating = classify(value)
-    if (!rating || !settings.contentRatings.includes(rating)) return false
-    if (selected?.length && (!rating || !selected.includes(rating))) return false
+    if (rating ? !settings.contentRatings.includes(rating) : settings.contentRatings.length !== RATINGS.length) return false
+    if (selected?.length && !selected.includes(rating ?? 'Erotica')) return false
     return host === undefined || host.includes(manaRating(value))
 }
 
@@ -107,7 +111,7 @@ export function content(id: string, details: Detail, settings: Settings, sources
         additionalTitles: [...new Set([details.title.trim(), ...(details.series_alternate_titles ?? []).map((entry) => entry.title.trim())].filter(Boolean))],
         contentRating: manaRating(details), webUrl: seriesURL(id),
         recommendedPanelMode: tags.some((tag) => /^(?:webtoon|long strip)$/i.test(tag.title)) ? ReadingMode.WEBTOON : type === ContentType.MANHWA || type === ContentType.MANHUA || type === ContentType.COMIC ? ReadingMode.PAGED_COMIC : ReadingMode.PAGED_MANGA,
-        additionalInfo: people.length ? [staff.section({ id: 'staff', title: 'Staff', hasMore: false, items: people })] : undefined
+        additionalInfo: [...(people.length ? [staff.section({ id: 'staff', title: 'Staff', hasMore: false, items: people })] : []), ...(!classify(details) ? [incompleteRatingInfo()] : [])]
     }
 }
 

@@ -12,6 +12,8 @@ import {
     tags
 } from '@mana-app/types'
 import { load } from 'cheerio'
+import { incompleteRatingInfo,
+    nativeRating } from '../../ContentRatingPolicy'
 
 export const DOMAIN = 'https://manhwanex.com'
 export const VERIFIED_GENRES = new Set(['action', 'adventure', 'cultivation-manhwa', 'fantasy', 'ghost-manhwa', 'martial-arts', 'romance', 'system-manhwa'])
@@ -163,7 +165,7 @@ function fields($: ReturnType<typeof load>, root: cheerio.Cheerio, detail: boole
         explicit,
         classified: genres.length > 0 && genres.every((genre) => VERIFIED_GENRES.has(genre.id)),
         // Source non-adult labels do not establish all-ages suitability.
-        contentRating: explicit ? ContentRating.EXPLICIT : ContentRating.MATURE
+        contentRating: explicit ? ContentRating.EXPLICIT : genres.length ? ContentRating.MATURE : undefined
     }
 }
 
@@ -257,10 +259,10 @@ export function parseContent(html: string, id: string, bulk?: Series): { content
     return { metadata, content: { title, cover: metadata.cover, webUrl: metadata.webUrl,
         summary: summary.text().replace(/[ \t]+/g, ' ').replace(/\n\s*\n/g, '\n\n').trim(),
         additionalTitles: metadata.alternatives, tags: metadata.genres, status: metadata.status,
-        contentType: typeMap[type], contentRating: metadata.contentRating, recommendedPanelMode: ReadingMode.WEBTOON,
+        contentType: typeMap[type], contentRating: nativeRating(metadata.contentRating), recommendedPanelMode: ReadingMode.WEBTOON,
         additionalInfo: [...(people.length ? [staff.section({ id: 'staff', title: 'Staff', hasMore: false, items: people })] : []),
             ...(details.length ? [tags.section({ id: 'publication', title: 'Publication', items: details })] : []),
-            ...sourceTagSections] } }
+            ...sourceTagSections, ...(metadata.contentRating === undefined ? [incompleteRatingInfo()] : [])] } }
 }
 
 function chapterDate(value: string): Date {

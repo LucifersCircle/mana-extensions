@@ -11,6 +11,8 @@ import { Chapter,
     ReadingMode,
     staff } from '@mana-app/types'
 import { load } from 'cheerio'
+import { incompleteRatingInfo,
+    nativeRating } from '../../ContentRatingPolicy'
 import { Catalog,
     DOMAIN,
     Genre,
@@ -44,17 +46,16 @@ const validGenre = (genre: Genre): boolean => !!genre && Number.isSafeInteger(ge
 export function genres(post: Post): Genre[] {
     return Array.isArray(post.genres) ? post.genres.filter(validGenre) : []
 }
-const completeGenres = (post: Post): boolean => Array.isArray(post.genres) && post.genres.length > 0 && post.genres.every(validGenre)
+export const completeGenres = (post: Post): boolean => Array.isArray(post.genres) && post.genres.length > 0 && post.genres.every(validGenre)
 const explicitGenre = /^(adult|hentai|erotica|pornographic|pornography|smut)$/i
 const matureGenre = /^mature$/i
 const suggestiveGenre = /^(ecchi|suggestive)$/i
 export function rating(post: Post): ContentRating | undefined {
     const tags = genres(post)
-    if (!completeGenres(post)) return undefined
     if (tags.some((tag) => explicitGenre.test(tag.name.trim()))) return ContentRating.EXPLICIT
     if (tags.some((tag) => matureGenre.test(tag.name.trim()))) return ContentRating.MATURE
     if (tags.some((tag) => suggestiveGenre.test(tag.name.trim()))) return ContentRating.SUGGESTIVE
-    return ContentRating.SAFE
+    return completeGenres(post) ? ContentRating.SAFE : undefined
 }
 export const blockedGenre = (name: string): boolean => explicitGenre.test(name.trim()) || matureGenre.test(name.trim()) || suggestiveGenre.test(name.trim())
 export function imageURL(value: string): string {
@@ -67,7 +68,7 @@ export function highlight(post: Post): Highlight {
     if (!post.postTitle?.trim() || !post.featuredImage) throw new Error('Hijala returned an incomplete series card')
     const id = slugToId(post.slug)
     return { id, title: post.postTitle.trim(), cover: imageURL(post.featuredImage), webUrl: seriesURL(id),
-        subtitle: post.seriesType ? LABELS[post.seriesType] ?? post.seriesType : undefined, contentRating: rating(post) }
+        subtitle: post.seriesType ? LABELS[post.seriesType] ?? post.seriesType : undefined, contentRating: nativeRating(rating(post)) }
 }
 export function catalog(text: string): Catalog {
     const data = JSON.parse(text) as Catalog
@@ -128,7 +129,7 @@ export function content(data: Detail, id: string, hidePaid: boolean): Content {
         tags: genres(post).map((genre) => ({ id: String(genre.id), title: genre.name.trim() })), status: statuses[post.seriesStatus ?? ''],
         contentType: post.isNovel ? ContentType.NOVEL : types[post.seriesType ?? ''] ?? ContentType.COMIC,
         recommendedPanelMode: post.seriesType === 'MANGA' ? ReadingMode.PAGED_MANGA : ReadingMode.WEBTOON,
-        additionalInfo: people.length ? [staff.section({ id: 'staff', title: 'Staff', hasMore: false, items: people })] : undefined,
+        additionalInfo: [...(people.length ? [staff.section({ id: 'staff', title: 'Staff', hasMore: false, items: people })] : []), ...(rating(post) === undefined ? [incompleteRatingInfo()] : [])],
         chapters: nativeChapters(data, id, hidePaid) }
 }
 export function reader(html: string, id: string, chapterId: string): ChapterData {

@@ -5,6 +5,7 @@ import {
     Content,
     ContentSource,
     DeepLinkContext,
+    Highlight,
     ImageRequestHandler,
     NetworkRequest,
     Option,
@@ -20,8 +21,11 @@ import {
     SearchRequest,
     SearchSortSection,
     SortOption,
+    SourceContext,
     SourceInfo
 } from '@mana-app/types'
+import { nativeRating,
+    ratingAllowed } from '../../ContentRatingPolicy'
 import { VortexScansApi } from './VortexScansApi'
 import {
     buildVortexHomeSections,
@@ -33,12 +37,12 @@ import {
     VORTEX_LANGUAGE,
     VORTEX_PAGE_SIZE,
     VortexFilterProps,
-    VortexPost,
     VortexQueryResponse,
     VortexQueryValue
 } from './VortexScansModels'
 import { VortexScansParser } from './VortexScansParser'
 import {
+    buildVortexContentId,
     normalizeVortexSearchTerm,
     parseVortexContentId
 } from './VortexScansUtils'
@@ -95,7 +99,7 @@ export class Target implements
     ImageRequestHandler {
     readonly info: SourceInfo = {
         id: 'VortexScans',
-        version: '0.0.1-alpha.6',
+        version: '0.0.1-alpha.7',
         name: 'VortexScans',
         description: 'Read manga, manhwa, and manhua from VortexScans.',
         thumbnail: 'VortexScans.png',
@@ -118,15 +122,21 @@ export class Target implements
 
     private readonly api = new VortexScansApi()
     private readonly parser = new VortexScansParser()
+    private readonly sparseLists = new Map<string, { at: number, value: Promise<Highlight[]> }>()
+    private readonly rawPages = new Map<string, { at: number, value: { items: Highlight[], ids: string[], last: boolean, total?: number } }>()
+    private readonly pendingPages = new Map<string, Promise<{ items: Highlight[], ids: string[], last: boolean, total?: number }>>()
 
-    async getContent(contentId: string): Promise<Content> {
+    async getContent(contentId: string, context?: SourceContext): Promise<Content> {
+        if (context?.allowedContentRatings?.length === 0) throw new Error('This title is excluded by Mana content-rating policy')
         const { id } = parseVortexContentId(contentId)
         const response = await this.api.getPost(id)
 
         if (!response.post || response.post.id.toString() !== id) {
             throw new Error(`VortexScans returned invalid content data for ${contentId}`)
         }
-        return this.parser.parseContent(response.post)
+        const content = this.parser.parseContent(response.post)
+        if (!ratingAllowed(content.contentRating, context)) throw new Error('This title is excluded by Mana content-rating policy')
+        return content
     }
 
     async getChapters(contentId: string): Promise<Chapter[]> {
@@ -207,59 +217,38 @@ export class Target implements
         return SORT_OPTIONS
     }
 
-    async search(
-        request: SearchRequest<VortexFilterProps>
-    ): Promise<PagedSearchResult> {
+    async search(request: SearchRequest<VortexFilterProps>): Promise<PagedSearchResult> {
         const page = request.page ?? 1
-
-        switch (request.listId) {
-            case 'latest':
-                return this.toTaggedSearchResult(
-                    await this.api.getTaggedPosts(
-                        'latestUpdatePinned',
-                        page,
-                        VORTEX_PAGE_SIZE
-                    )
-                )
-            case 'new':
-                return this.toTaggedSearchResult(
-                    await this.api.getTaggedPosts('new', page, VORTEX_PAGE_SIZE)
-                )
-            case 'most-popular':
-                return this.toSearchResult(await this.api.query({
-                    page,
-                    perPage: VORTEX_PAGE_SIZE,
-                    view: 'archive',
-                    orderBy: 'totalViews',
-                    orderDirection: 'desc',
-                    isNovel: false
-                }), page, false)
-            default:
-                if (request.listId?.startsWith('collection:')) {
-                    const slug = request.listId.slice('collection:'.length)
-                    if (!/^[A-Za-z0-9_-]+$/.test(slug)) {
-                        throw new Error('Invalid VortexScans collection')
-                    }
-
-                    const results = parseCollectionHighlights(
-                        await this.api.getCollection(slug)
-                    )
-                    return {
-                        results,
-                        isLastPage: true,
-                        totalResultCount: results.length
-                    }
-                }
-                if (request.listId) {
-                    throw new Error(`Unknown VortexScans section: ${request.listId}`)
-                }
-
-                return this.toSearchResult(
-                    await this.searchCatalog(request, page),
-                    page,
-                    false
-                )
+        if (!Number.isSafeInteger(page) || page < 1 || page > 100) throw new Error('Invalid VortexScans page')
+        if (request.context?.allowedContentRatings?.length === 0) return { results: [], isLastPage: true }
+        if (request.listId?.startsWith('collection:')) {
+            const slug = request.listId.slice('collection:'.length)
+            if (!/^[A-Za-z0-9_-]+$/.test(slug)) throw new Error('Invalid VortexScans collection')
+            if (page > 1) return { results: [], isLastPage: true }
+            const items = await this.sparseList(`collection:${slug}`, async () => parseCollectionHighlights(await this.api.getCollection(slug)))
+            return { results: this.visible(items, request.context), isLastPage: true }
         }
+        if (request.listId && !['latest', 'new', 'most-popular'].includes(request.listId)) throw new Error(`Unknown VortexScans section: ${request.listId}`)
+        // Reconstruct each logical page from cached unfiltered physical pages.
+        // Native policy is request-scoped, never a reader-global or raw-cache cap.
+        const seen = new Set<string>()
+        let logical = 0, noProgress = 0
+        for (let physical = 1; physical <= 100; physical++) {
+            const raw = await this.rawPage(request, physical)
+            const fresh = raw.items.filter((item) => !seen.has(item.id))
+            const before = seen.size
+            raw.ids.forEach((id) => seen.add(id))
+            noProgress = seen.size === before ? noProgress + 1 : 0
+            const results = this.visible(fresh, request.context)
+            if (!raw.ids.length && raw.total !== undefined && seen.size < raw.total) throw new Error('VortexScans returned an incomplete catalog page before its total was reached; refresh')
+            const last = raw.last || (raw.total !== undefined && seen.size >= raw.total)
+            if (!last && noProgress >= 10) throw new Error('VortexScans returned ten repeated catalog pages without new IDs; refresh')
+            if (!results.length && !last) continue
+            logical += 1
+            if (logical === page) return { results, isLastPage: last, ...(request.context?.allowedContentRatings === undefined && raw.total !== undefined ? { totalResultCount: raw.total } : {}) }
+            if (last) return { results: [], isLastPage: true }
+        }
+        throw new Error('VortexScans pagination exceeded100 physical pages; refresh or narrow your search')
     }
 
     async getSectionsForPage(link: PageLink): Promise<PageSection[]> {
@@ -267,6 +256,7 @@ export class Target implements
             throw new Error(`Unknown VortexScans page: ${link.id}`)
         }
 
+        if (link.context?.allowedContentRatings?.length === 0) return []
         const collections = await this.api.getCollections()
 
         return buildVortexHomeSections(collections).map((section) => ({
@@ -284,6 +274,7 @@ export class Target implements
             throw new Error(`Unknown VortexScans page: ${link.id}`)
         }
 
+        if (link.context?.allowedContentRatings?.length === 0) return { items: [] }
         return this.resolveHomeSection(sectionId, link.context)
     }
 
@@ -338,9 +329,7 @@ export class Target implements
         switch (sectionId) {
             case 'popular-today':
                 return {
-                    items: parsePopularToday(
-                        await this.api.getText(VORTEX_DOMAIN)
-                    )
+                    items: this.visible(await this.sparseList('popular-today', async () => parsePopularToday(await this.api.getText(VORTEX_DOMAIN))), context)
                 }
             case 'latest':
             case 'new':
@@ -395,37 +384,50 @@ export class Target implements
         }
     }
 
-    private toTaggedSearchResult(
-        response: VortexQueryResponse
-    ): PagedSearchResult {
-        const posts: VortexPost[] = Array.isArray(response.posts)
-            ? response.posts
-            : []
-
-        return {
-            results: this.parser.parseHighlights(posts),
-            // VortexScans currently returns the global catalog totalCount for
-            // tagged feeds, so page length is the reliable pagination signal.
-            isLastPage: posts.length < VORTEX_PAGE_SIZE
-        }
+    private async sparseList(key: string, load: () => Promise<Highlight[]>): Promise<Highlight[]> {
+        const cached = this.sparseLists.get(key)
+        if (cached && Date.now() - cached.at < 180000) return cached.value
+        const value = load().catch((error: unknown) => { if (this.sparseLists.get(key)?.value === value) this.sparseLists.delete(key); throw error })
+        this.sparseLists.delete(key)
+        this.sparseLists.set(key, { at: Date.now(), value })
+        while (this.sparseLists.size > 32) this.sparseLists.delete(this.sparseLists.keys().next().value as string)
+        return value
     }
 
-    private toSearchResult(
-        response: VortexQueryResponse,
-        page: number,
-        home: boolean
-    ): PagedSearchResult {
-        const posts: VortexPost[] = Array.isArray(response.posts)
-            ? response.posts
-            : []
-        const totalCount = response.totalCount
+    private visible(items: Highlight[], context?: SourceContext): Highlight[] {
+        const seen = new Set<string>()
+        return items.filter((item) => {
+            if (seen.has(item.id) || !ratingAllowed(item.contentRating, context)) return false
+            seen.add(item.id)
+            return true
+        }).map((item) => ({ ...item, contentRating: nativeRating(item.contentRating), context }))
+    }
 
-        return {
-            results: this.parser.parseHighlights(posts, home),
-            isLastPage: typeof totalCount === 'number'
-                ? page * VORTEX_PAGE_SIZE >= totalCount
-                : posts.length < VORTEX_PAGE_SIZE,
-            ...(typeof totalCount === 'number' ? { totalResultCount: totalCount } : {})
-        }
+    private async rawPage(request: SearchRequest<VortexFilterProps>, page: number): Promise<{ items: Highlight[], ids: string[], last: boolean, total?: number }> {
+        const key = JSON.stringify({ ...request, page, context: undefined })
+        const cached = this.rawPages.get(key)
+        if (cached && Date.now() - cached.at < 180000) return cached.value
+        const pending = this.pendingPages.get(key)
+        if (pending) return pending
+        const load = (async () => {
+            const response = request.listId === 'latest' || request.listId === 'new'
+                ? await this.api.getTaggedPosts(request.listId === 'latest' ? 'latestUpdatePinned' : 'new', page, VORTEX_PAGE_SIZE)
+                : request.listId === 'most-popular' ? await this.api.query({ page, perPage: VORTEX_PAGE_SIZE, view: 'archive', orderBy: 'totalViews', orderDirection: 'desc', isNovel: false })
+                    : await this.searchCatalog(request, page)
+            if (!Array.isArray(response.posts)) throw new Error('VortexScans returned invalid catalog data')
+            const ids = response.posts.map((post) => buildVortexContentId(post.id, post.slug))
+            const total = !request.listId || request.listId === 'most-popular' ? response.totalCount : undefined
+            const validTotal = typeof total === 'number' && Number.isSafeInteger(total) && total >= 0 ? total : undefined
+            // Catalog totals are authoritative even when a physical page is
+            // short. Tagged feeds expose an unrelated global total, so only
+            // those feeds retain the short-page termination heuristic.
+            const value = { items: this.parser.parseHighlights(response.posts), ids, last: validTotal === undefined && response.posts.length < VORTEX_PAGE_SIZE, total: validTotal }
+            this.rawPages.delete(key)
+            this.rawPages.set(key, { at: Date.now(), value })
+            while (this.rawPages.size > 128) this.rawPages.delete(this.rawPages.keys().next().value as string)
+            return value
+        })()
+        this.pendingPages.set(key, load)
+        try { return await load } finally { if (this.pendingPages.get(key) === load) this.pendingPages.delete(key) }
     }
 }

@@ -3,6 +3,7 @@ import {
     Chapter,
     ChapterData,
     Content,
+    ContentRating,
     ContentSource,
     DeepLinkContext,
     Form,
@@ -24,12 +25,15 @@ import {
     SearchTextField,
     SectionStyle,
     SortOption,
+    SourceContext,
     SourceInfo,
     SourcePreferenceProvider,
     UIListSection,
     UIToggle
 } from '@mana-app/types'
 import { load } from 'cheerio'
+import { nativeRating,
+    ratingAllowed } from '../../ContentRatingPolicy'
 import { MangaSushiApi } from './MangaSushiApi'
 import { englishTitle,
     searchTitle } from './MangaSushiTitles'
@@ -38,6 +42,7 @@ import {
     Listing,
     parseChapters,
     parseContent,
+    parseDetailMetadata,
     parseListing,
     parseReader,
     Series,
@@ -64,9 +69,9 @@ class ExcludedContentError extends Error {}
 export class Target implements ContentSource, PageLinkResolver, ImageRequestHandler, SourcePreferenceProvider {
     readonly info: SourceInfo = {
         id: 'MangaSushi',
-        version: '0.0.1-alpha.6',
+        version: '0.0.1-alpha.7',
         name: 'MangaSushi',
-        description: 'MangaSushi with the site’s discovery, search filters, and a global NSFW exclusion setting.',
+        description: 'MangaSushi with native discovery, search filters and Mana content-rating policy.',
         thumbnail: 'MangaSushi.png',
         rating: CatalogRating.MIXED,
         website: DOMAIN,
@@ -85,7 +90,7 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
     async getPreferenceMenu(): Promise<Form> {
         return { sections: [UIListSection({
             header: 'Content safety',
-            footer: 'Enabled by default. Uses the site’s adult filter and excludes explicit Adult, Mature, Smut, Hentai, Erotica and Ecchi tags. Unrated or unverifiable titles are hidden. Site labels may be incomplete; this is not a guarantee of image content. Applies to discovery, search, details, chapters and reading.',
+            footer: 'Off unless explicitly saved. Mana’s supplied content-rating policy controls search, discovery and details. This optional extra source exclusion uses the site’s non-adult filter and verified genres and applies to chapters and reading too. Missing rating metadata uses a Mature compatibility fallback, not a site-reported rating. Site labels do not guarantee image content.',
             children: [UIToggle({
                 id: 'excludeNSFW',
                 title: 'Exclude NSFW content',
@@ -136,29 +141,43 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
 
     private async searchPage(request: SearchRequest<Filters>, exclude: boolean): Promise<PagedSearchResult> {
         const page = request.page ?? 1
-        if (!Number.isInteger(page) || page < 1) throw new Error('Invalid MangaSushi page')
+        if (!Number.isInteger(page) || page < 1 || page > 100) throw new Error('Invalid MangaSushi page')
+        if ((request.context?.allowedContentRatings !== undefined && !request.context.allowedContentRatings.some((rating) => [ContentRating.SAFE, ContentRating.MATURE, ContentRating.EXPLICIT].includes(rating))) || (exclude && request.filters?.adult?.id === '1')) return { results: [], isLastPage: true }
         if (request.listId === 'popular') {
             const home = await this.home(exclude)
-            return { results: page === 1 ? await this.visible(home.popular.items, exclude, home.latest, 1, home.latest.items.length + home.popular.items.length) : [], isLastPage: true }
+            return { results: page === 1 ? await this.visible(home.popular.items, exclude, home.latest, 1,
+                home.latest.items.length + home.popular.items.length, request.context) : [], isLastPage: true }
         }
-        if (request.listId === 'latest') {
-            const home = await this.home(exclude)
-            const result = page === 1 ? home.latest : home.latest.next
-                ? await this.continuation(home.latest, page, '.page-item-detail', `${exclude}:home`)
-                : { items: [], ended: true }
-            return { results: await this.visible(result.items, exclude, home.latest, page, page === 1 ? home.latest.items.length + home.popular.items.length : undefined), isLastPage: result.ended || (page === 1 && !result.next) }
+        if (request.listId && request.listId !== 'latest') throw new Error(`Unknown MangaSushi list: ${request.listId}`)
+        const home = request.listId === 'latest' ? await this.home(exclude) : undefined
+        const url = home ? 'home' : this.searchURL({ ...request, query: searchTitle(request.query ?? '') }, exclude)
+        const first = home?.latest ?? await this.firstListing(url, exclude)
+        const selector = home ? '.page-item-detail' : '.c-tabs-item__content'
+        const scope = `${exclude}:${url}`
+        let listing = first, logicalPage = 1, noRawProgress = 0
+        const seen = new Set<string>()
+        for (let physicalPage = 1; physicalPage <= 100; physicalPage += 1) {
+            if (!home) for (const item of listing.items) this.cacheMetadata(item, exclude)
+            const fresh = listing.items.filter((item) => !seen.has(item.id))
+            noRawProgress = fresh.length ? 0 : noRawProgress + 1
+            if (noRawProgress >= 10 && !listing.ended) throw new Error('MangaSushi provider repeated catalog pages without new raw series IDs; refresh or narrow your search')
+            for (const item of listing.items) seen.add(item.id)
+            const results = home
+                ? await this.visible(fresh, exclude, first, physicalPage, physicalPage === 1 ? home.latest.items.length + home.popular.items.length : undefined, request.context)
+                : fresh.map((item) => this.fresh(this.metadata.get(`${exclude}:${item.id}`)) ?? item)
+                    .filter((item) => !EDITORIAL_IDS.has(item.id) && (!exclude || (item.classified && !item.explicit))
+                        && ratingAllowed(item.contentRating, request.context)).map((item) => ({ ...this.highlight(item), context: request.context }))
+            // Only eligible, nonduplicate pages consume a logical page. Mana stops
+            // on zero results even when isLastPage is false.
+            if (results.length) {
+                if (logicalPage === page) return { results, isLastPage: listing.ended || !first.next }
+                logicalPage += 1
+            }
+            if (listing.ended || !first.next) return { results: [], isLastPage: true }
+            if (physicalPage === 100) throw new Error('MangaSushi listing traversal exceeded its verified bounds')
+            listing = await this.continuation(first, physicalPage + 1, selector, scope)
         }
-        if (request.listId) throw new Error(`Unknown MangaSushi list: ${request.listId}`)
-        const url = this.searchURL({ ...request, query: searchTitle(request.query ?? '') }, exclude)
-        const first = await this.firstListing(url, exclude)
-        const listing = page === 1 ? first : first.next
-            ? await this.continuation(first, page, '.c-tabs-item__content', `${exclude}:${url}`)
-            : { items: [], ended: true }
-        for (const item of listing.items) this.cacheMetadata(item, exclude)
-        return {
-            results: listing.items.filter((item) => !EDITORIAL_IDS.has(item.id) && (!exclude || (item.classified && !item.explicit))).map(this.highlight),
-            isLastPage: listing.ended || (page === 1 && !listing.next)
-        }
+        throw new Error('MangaSushi listing traversal exceeded its verified bounds')
     }
 
     async getSectionsForPage(link: PageLink): Promise<PageSection[]> {
@@ -174,21 +193,47 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
 
     async resolvePageSection(link: PageLink, sectionId: string): Promise<ResolvedPageSection> {
         this.checkHome(link)
-        const result = await this.search({ page: 1, listId: sectionId })
+        const result = await this.search({ page: 1, listId: sectionId, context: link.context })
         return {
             items: result.results,
-            viewMoreLink: sectionId === 'latest' && !result.isLastPage ? { request: { page: 1, listId: sectionId } } : undefined
+            viewMoreLink: sectionId === 'latest' && !result.isLastPage ? { request: { page: 1, listId: sectionId, context: link.context } } : undefined
         }
     }
 
-    async getContent(contentId: string): Promise<Content> {
-        return this.withSettings((exclude) => this.content(contentId, exclude))
+    async getContent(contentId: string, context?: SourceContext): Promise<Content> {
+        return this.withSettings(async (exclude) => {
+            if (context?.allowedContentRatings?.length === 0) throw new ExcludedContentError('This title is excluded by Mana’s content-rating policy')
+            const result = await this.content(contentId, exclude)
+            const metadata = this.fresh(this.metadata.get(`${exclude}:${contentId}`))
+            const content = metadata?.explicit ? { ...result, contentRating: nativeRating(metadata.contentRating),
+                additionalInfo: result.additionalInfo?.filter((section) => section.id !== 'content-rating-metadata') } : result
+            if (!ratingAllowed(content.contentRating, context)) throw new ExcludedContentError('This title is excluded by Mana’s content-rating policy')
+            return content
+        })
     }
 
     private async content(contentId: string, exclude: boolean): Promise<Content> {
+        if (EDITORIAL_IDS.has(contentId)) throw new ExcludedContentError('This MangaSushi entry is an editorial notice, not a series')
         const html = await this.api.text(seriesURL(contentId))
         const title = text(load(html)('.post-title h1').first().text())
-        const meta = await this.resolveMetadata(contentId, title, exclude)
+        const detail = parseDetailMetadata(html, contentId)
+        let meta: Series
+        try { meta = await this.resolveMetadata(contentId, title, exclude) } catch (error) {
+            if (!(error instanceof ExcludedContentError) || exclude) throw error
+            meta = detail
+        }
+        if (meta.contentRating === undefined && detail.contentRating !== undefined) {
+            meta = { ...detail, authors: detail.authors.length ? detail.authors : meta.authors,
+                artists: detail.artists.length ? detail.artists : meta.artists,
+                alternatives: detail.alternatives.length ? detail.alternatives : meta.alternatives }
+        }
+        // A direct warning is positive evidence, not incomplete metadata. Never
+        // downgrade it using a non-adult catalog row or an unknown fallback.
+        if (detail.explicit || meta.explicit) {
+            meta = { ...meta, explicit: true, contentRating: Math.max(nativeRating(meta.contentRating), nativeRating(detail.contentRating)) }
+        }
+        this.cacheMetadata(meta, exclude)
+        if (exclude && (!meta.classified || meta.explicit)) throw new ExcludedContentError('This title is excluded by the saved NSFW setting')
         const content = parseContent(html, meta)
         const display = englishTitle(contentId, title, meta.alternatives)
         return {
@@ -225,7 +270,7 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
         return { url, headers: { Referer: `${DOMAIN}/`, Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5' } }
     }
 
-    private async excludeNSFW(): Promise<boolean> { return (await ObjectStore.boolean(SETTING)) !== false }
+    private async excludeNSFW(): Promise<boolean> { return (await ObjectStore.boolean(SETTING)) === true }
 
     private async withSettings<T>(operation: (exclude: boolean) => Promise<T>): Promise<T> {
         const revision = this.settingsRevision
@@ -243,7 +288,7 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
     }
 
     private highlight(item: Series): Highlight {
-        return { id: item.id, title: englishTitle(item.id, item.title, item.alternatives), cover: item.cover, webUrl: item.webUrl, subtitle: item.subtitle, contentRating: item.contentRating }
+        return { id: item.id, title: englishTitle(item.id, item.title, item.alternatives), cover: item.cover, webUrl: item.webUrl, subtitle: item.subtitle, contentRating: nativeRating(item.contentRating) }
     }
 
     private fresh<T>(entry: CacheEntry<T> | undefined): T | undefined {
@@ -251,7 +296,12 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
     }
 
     private cacheMetadata(item: Series, exclude: boolean): void {
-        this.metadata.set(`${exclude}:${item.id}`, { at: Date.now(), value: item })
+        const key = `${exclude}:${item.id}`, entry = this.metadata.get(key), prior = this.fresh(entry)
+        const explicit = item.explicit || prior?.explicit === true
+        const base = prior?.classified && !item.classified ? { ...prior, title: item.title, cover: item.cover,
+            webUrl: item.webUrl, subtitle: item.subtitle ?? prior.subtitle } : item
+        const value = explicit ? { ...base, explicit, contentRating: Math.max(nativeRating(item.contentRating), nativeRating(prior?.contentRating)) } : base
+        this.metadata.set(key, { at: prior?.explicit && entry ? entry.at : Date.now(), value })
     }
 
     private async firstListing(url: string, exclude: boolean): Promise<Listing> {
@@ -265,6 +315,7 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
         if (!result.items.length && !/^No matches found\./i.test(emptyMessage)) {
             throw new Error('MangaSushi search result layout changed without a verified empty state')
         }
+        for (const prior of this.listings.keys()) if (prior.startsWith(`${key}:page:`)) this.listings.delete(prior)
         this.listings.set(key, { at: Date.now(), value: result })
         for (const item of result.items) this.cacheMetadata(item, exclude)
         return result
@@ -290,16 +341,19 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
 
     private async continuation(first: Listing, page: number, selector: string, scope: string): Promise<Listing> {
         if (!first.next) return { items: [], ended: true }
-        const result = await this.api.more(first.next, page, selector)
-        const ids = result.items.map((item) => item.id).join('\n')
-        const previous = [first, ...[...this.listings.entries()]
-            .filter(([key]) => key.startsWith(`${scope}:page:`) && key !== `${scope}:page:${page}`)
-            .map(([, entry]) => this.fresh(entry)).filter((entry): entry is Listing => Boolean(entry))]
-        if (ids && previous.some((entry) => entry.items.map((item) => item.id).join('\n') === ids)) {
-            throw new Error('MangaSushi continuation repeated a catalog page')
-        }
-        this.listings.set(`${scope}:page:${page}`, { at: Date.now(), value: result })
-        return result
+        const key = `${scope}:page:${page}`, cached = this.fresh(this.listings.get(key))
+        if (cached) return cached
+        const pending = this.pendingListings.get(key)
+        if (pending) return pending
+        const revision = this.settingsRevision
+        const request = (async () => {
+            const result = await this.api.more(first.next as NonNullable<Listing['next']>, page, selector)
+            if (revision !== this.settingsRevision) throw new Error('MangaSushi settings changed during this request; refresh to continue')
+            this.listings.set(key, { at: Date.now(), value: result })
+            return result
+        })()
+        this.pendingListings.set(key, request)
+        try { return await request } finally { if (this.pendingListings.get(key) === request) this.pendingListings.delete(key) }
     }
 
     private async home(exclude: boolean): Promise<{ popular: Listing, latest: Listing }> {
@@ -322,6 +376,7 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
             const parsedLatest = parseListing(html, '#loop-content .page-item-detail')
             if (!parsedPopular.items.length || !parsedLatest.items.length) throw new Error('MangaSushi home is incomplete')
             if (revision !== this.settingsRevision) throw new Error('MangaSushi settings changed during this request; refresh to continue')
+            for (const prior of this.listings.keys()) if (prior.startsWith(`${key}:page:`)) this.listings.delete(prior)
             this.listings.set(key, { at: Date.now(), value: parsedLatest })
             this.listings.set(`${key}:popular`, { at: Date.now(), value: parsedPopular })
             return { popular: parsedPopular, latest: parsedLatest }
@@ -374,22 +429,21 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
         }
     }
 
-    private async visible(items: Series[], exclude: boolean, first?: Listing, page = 1, size?: number): Promise<Highlight[]> {
+    private async visible(items: Series[], exclude: boolean, first?: Listing, page = 1, size?: number, context?: SourceContext): Promise<Highlight[]> {
         const series = items.filter((item) => !EDITORIAL_IDS.has(item.id))
+        for (const item of series) if (item.explicit) this.cacheMetadata(item, exclude)
         if (first && series.some((item) => !this.fresh(this.metadata.get(`${exclude}:${item.id}`)))) {
             await this.discoveryMetadata(first, page, exclude, size)
         }
-        if (!exclude) return series.map((item) => this.highlight({
-            ...item,
-            alternatives: this.fresh(this.metadata.get(`${exclude}:${item.id}`))?.alternatives ?? item.alternatives
-        }))
-        const checked = await Promise.all(series.map(async (item) => {
+        const checked = await Promise.all(series.map(async (item): Promise<Highlight | undefined> => {
             try {
-                const metadata = await this.resolveMetadata(item.id, item.title, exclude)
-                return this.highlight({ ...item, alternatives: metadata.alternatives, contentRating: metadata.contentRating })
+                const cached = this.fresh(this.metadata.get(`${exclude}:${item.id}`))
+                const metadata = exclude ? await this.resolveMetadata(item.id, item.title, true) : cached ?? item
+                if (exclude && item.explicit) return undefined
+                const contentRating = item.explicit ? Math.max(nativeRating(item.contentRating), nativeRating(metadata.contentRating)) : metadata.contentRating
+                if (!ratingAllowed(contentRating, context)) return undefined
+                return { ...this.highlight({ ...item, alternatives: metadata.alternatives, contentRating }), context }
             } catch (error) {
-                // Explicit exclusion is not a source outage. Network, challenge and
-                // changed markup errors must remain visible instead of empty rows.
                 if (error instanceof ExcludedContentError) return undefined
                 throw error
             }

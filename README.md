@@ -7,9 +7,30 @@ Mana repository URL: `https://mana.pirate.vodka/sources.json`
 The VortexScans implementation is a native Mana port of the Paperback VortexScans source
 from [pirate.vodka extensions](https://github.com/LucifersCircle/pirate.vodka-extensions/tree/0.9/stable/src/VortexScans).
 
+## Native content-rating policy
+
+The pinned native SDK supports Safe, Suggestive, Mature and Explicit item ratings.
+Sources honor a supplied `SourceContext.allowedContentRatings` on search, Discover,
+continuation and details. An empty list permits no titles; an omitted policy does
+not silently imply Safe-only. Native context stays request-scoped, not a global
+reader setting. Source catalogs remain `CatalogRating.MIXED`, a separate enum.
+
+The SDK has no Unknown item rating. Missing or unreliable rating metadata uses
+`ContentRating.MATURE` as an **app-compatibility fallback**, not a site-reported age
+classification. Details include a single incomplete-metadata note; titles/cards
+are not renamed. Known source rating evidence is preserved, including explicit
+warnings. BL/GL, demographics and relationship tags alone do not imply sexuality.
+
+Previously implicit source adult caps are no longer enabled for never-saved
+preferences. Identifiable deliberate source selections remain extra filters.
+Native preference hooks are advertised for four sources, but this does not prove
+where an installed Mana app exposes their UI. Paid/access restrictions and explicit
+content-type/genre filters remain independent. Source labels cannot guarantee the
+content of every image.
+
 ## VortexScans features
 
-Version `0.0.1-alpha.6` follows the repository's shared alpha-version format.
+Version `0.0.1-alpha.7` follows the repository's shared alpha-version format.
 
 - Dynamic discovery rows for Popular Today, Latest, New, every published
   collection, and Most Popular
@@ -26,7 +47,7 @@ Version `0.0.1-alpha.6` follows the repository's shared alpha-version format.
 ## MangaSushi
 
 [MangaSushi](https://mangasushi.org/) is a fresh native implementation, not a
-Paperback converter. Version `0.0.1-alpha.6` includes:
+Paperback converter. Version `0.0.1-alpha.7` includes:
 
 - The site's finite **Popular Series** carousel and **What's New** feed, in source
   order. What's New uses the site's actual AJAX Load More query and continuation.
@@ -47,25 +68,20 @@ title displays; reader images and existing-cover fallbacks are unchanged.
 Discovery shares its homepage response and page-sized native AJAX metadata batch
 between concurrent sections rather than fetching classification one title at a time.
 Short-lived, setting-keyed caches avoid repeat requests on warm loads. Original
-homepage order, upstream continuation, explicit-tag exclusions and unknown-title
-blocking are preserved; missing batch IDs retain the existing canonical search fallback.
+homepage order, upstream continuation and deliberately selected explicit-tag
+exclusions are preserved; missing batch IDs retain the existing canonical search fallback.
 
-**Exclude NSFW content** is a persistent global preference, enabled by default.
-It combines the native `adult=0` filter with explicit Adult, Mature, Smut, Hentai,
-Erotica and Ecchi tags. BL, Yuri and demographic genres are not adult classifications
-by themselves. Discovery, continuation, search, details, chapters and reading use
-the same setting; changing it clears setting-keyed caches and invalidates in-flight
-responses. Unknown or unverifiable classifications are hidden, not assumed safe.
-Site labels can be incomplete, so this cannot guarantee the content of every image.
+**Exclude NSFW content** remains an optional persistent source preference. An
+explicitly saved choice is honored, while an unset record follows native rating
+policy without adding `adult=0`. A chosen exclusion combines the site's filter
+with recognized Adult, Mature, Smut, Hentai, Erotica and Ecchi labels; it applies
+to discovery, search, details, chapters and reading and invalidates stale work.
 
-MangaSushi omits some detail metadata, so canonical-ID-matched search rows supply
-available genres and staff. Missing information is not invented. Consequently,
-legitimate but unclassified titles can be hidden by default, including the tested
-*Welcome to the Cheap Restaurant of Outcasts!* sample as of 2026-10-15. Disable the
-preference to access such titles. Rows can be shorter or empty after exclusion;
-no unrelated titles replace them, and continuation follows upstream results rather
-than the filtered count. The two verified donation/recruitment notices are excluded
-regardless of this preference because they are not reading content.
+Canonical-ID-matched search rows supply genres/staff omitted by some details.
+Missing rating information is not invented or silently classified Safe: it uses
+the Mature fallback and a details note. Logical native pages skip excluded-only
+or duplicate-only physical pages while retaining all eligible canonical IDs.
+The verified donation/recruitment notices remain excluded as non-reading content.
 
 MangaSushi prefers audited English aliases only while the exact complete alias is
 still present in current source metadata. Original titles and full alternative text
@@ -80,7 +96,7 @@ Icon: [`assets/MangaSushi.png`](assets/MangaSushi.png), from the site's publishe
 
 ## ManhwaNex
 
-[ManhwaNex](https://manhwanex.com/) is a native Mana source, version `0.0.1-alpha.3`.
+[ManhwaNex](https://manhwanex.com/) is a native Mana source, version `0.0.1-alpha.4`.
 It preserves the site's **Popular Series** carousel and **Latest Updates** feed,
 source order, real next-page links, English source titles and complete alternative
 fields, staff, publication metadata and separately grouped source SEO tags (ten
@@ -102,14 +118,14 @@ Repeated canonical IDs are omitted across a pagination chain, including
 duplicate-only or excluded-only intermediate pages; distinct source entries
 remain separate even when they share titles or artwork.
 
-**Exclude NSFW content** is persistent and on by default. It requires native
-non-adult membership and verified source genres, rejects explicit Adult, Mature,
-Smut, Hentai, Erotica and Ecchi labels, and hides unknown classifications. BL/GL
-and demographics are not adult labels by themselves. This guards search, discovery,
-details, chapters, readers and previously issued image requests, including after
-preference changes. The site has no verified graded age-rating taxonomy, so no
-invented rating-category settings are shown. The conservative Mature app badge is
-separate from adult exclusion; source labels cannot guarantee image content.
+**Exclude NSFW content** is optional and persistent; a saved boolean remains
+honored, while an unset preference imposes no extra adult cap. Native rating
+policy is applied per request to the unfiltered cached metadata and continuation.
+Known adult warnings stay authoritative across cached and in-flight work,
+including previously issued image requests. The source has no verified graded
+age taxonomy: its non-adult titles retain the conservative Mature app bucket,
+adult warnings use Explicit, and incomplete metadata carries the fallback note.
+No invented four-category source setting is added.
 
 Source search has known upstream limitations: leading-numeric author names such as
 `3rd Studio` redirect to the homepage and fail visibly instead of returning unrelated
@@ -122,18 +138,20 @@ Icon: [`assets/ManhwaNex.png`](assets/ManhwaNex.png), the site's published 192-p
 
 ## Hijala
 
-[Hijala](https://en-hijala.com/) is a native source, version `0.0.1-alpha.2`:
+[Hijala](https://en-hijala.com/) is a native source, version `0.0.1-alpha.3`:
 
 - Current Featured, Latest Releases, New, Most Popular and Latest Updates, in the
   site's published order. Latest/New use the verified current API continuation;
   Popular is the site's first nine ranked titles, not a substituted lifetime sort.
 - All live genres in native search, six sorts, include/exclude genres, statuses,
   types, direction, chapter-count bounds and creation-date filters.
-- Persistent default-on genre-based NSFW exclusion and paid-chapter hiding,
-  content types, excluded genres and discovery rows. Unknown genre metadata is
-  hidden by default; explicit exclusions still fail closed after NSFW opt-out.
-  The site does not supply a reliable four-category rating, and BL/GL/demographics
-  are not treated as adult labels.
+- Native request rating policy, optional genre-based source NSFW exclusion,
+  and persistent paid-chapter hiding/content types/excluded genres/discovery rows.
+  Old preference writes materialized an indistinguishable default exclusion;
+  that legacy value no longer silently overrides native policy. Future deliberate
+  source exclusions carry a version marker. Incomplete rating metadata uses the
+  Mature fallback; explicit genre exclusions still fail closed when unverifiable.
+  The site does not supply a reliable four-category age taxonomy.
 - Source-provided full covers everywhere, original titles/aliases, complete
   source-count-validated chapter lists, native decimal numbers and public readers.
   Paid/login/protected content remains on the website.
@@ -147,7 +165,7 @@ Mana has series-only Highlights, so Latest Updates shows the latest visible
 chapter per series. Genre browsing uses native search rather than fabricated
 covered cards. Chapter links resolve to the series under the pinned native API.
 The built-bundle checks exercise real 410-chapter/159-decimal data, a chapter 112.5
-reader, image bytes, safe defaults, settings races and exact site continuation.
+reader, image bytes, native rating policy, settings races and exact site continuation.
 
 Source: [`src/sources/Hijala`](src/sources/Hijala). The bounded non-evaluating
 TanStack/Seroval decoder and GPL attribution are recorded in
@@ -160,7 +178,7 @@ TanStack/Seroval decoder and GPL attribution are recorded in
 ## Kagane
 
 [Kagane](https://kagane.org/) is a native implementation on the repository's pinned
-Mana toolchain. Version `0.0.1-alpha.1` includes:
+Mana toolchain. Version `0.0.1-alpha.2` includes:
 
 - The six website discovery rows, all ten native search orders, exact-title mode,
   live genre/uploader taxonomy, format/status filters, and include/exclude matching.
@@ -178,19 +196,20 @@ Mana toolchain. Version `0.0.1-alpha.1` includes:
   image headers, normal public-reader token refresh, and supported data-saver URLs.
   Login, paid and unavailable chapters are not bypassed.
 
-**Content ratings to show** is a persistent four-choice setting: Safe, Suggestive,
-Erotica and Pornographic. Safe and Suggestive are selected by default; selecting
-none shows none. Per-search choices can narrow, never expand, the global selection.
-The setting applies to discovery, title searches, continuation, details, chapter
-lists and reading. Changes invalidate setting-dependent caches and active results.
+**Content ratings to show** remains a persistent four-choice source preference:
+Safe, Suggestive, Erotica and Pornographic. All are available when no selection
+was saved; native rating policy determines request visibility. An explicitly
+saved source selection remains an additional cap, and selecting none shows none.
+Per-search source-rating choices narrow it. Changes invalidate setting-dependent
+caches and active reader results.
 
-Kagane's API does not reliably enforce its legacy rating filter. The source therefore
-maps the current `age_rating` and `is_pornographic` fields locally, distinguishes
-Erotica from Pornographic, and rejects unknown or conflicting classifications.
-BL/GL and demographic labels are not adult classifications by themselves. Site
-labels can be incomplete, so a selected rating is not a guarantee about every image.
-Filtered rows may be shorter; continuation follows the upstream response rather
-than treating a short filtered page as the end.
+Kagane's API does not reliably enforce legacy rating filters, so current
+`age_rating`/`is_pornographic` evidence is classified locally. Erotica and
+Pornographic remain distinct; positive explicit evidence cannot be downgraded by
+incomplete/conflicting fields. Unclassified metadata uses the native Mature
+fallback and details note rather than a hidden default exclusion. Native pages
+retain cumulative canonical IDs and skip duplicate-only/filtered-out physical
+pages to later eligible entries within bounded traversal.
 
 An explicitly English-labeled title is preferred in detail metadata, with the original
 and aliases retained. Bulk search alternatives currently have no language labels, and
