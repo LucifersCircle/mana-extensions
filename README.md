@@ -1,6 +1,6 @@
 # Pirate Vodka Extensions for Mana
 
-This repository contains native Mana extensions for **VortexScans** and **MangaSushi**.
+This repository contains native Mana extensions for **VortexScans**, **MangaSushi** and **Kagane**.
 
 Mana repository URL: `https://mana.pirate.vodka/sources.json`
 
@@ -67,6 +67,51 @@ verified source-title fallbacks; ordinary partial searches are unchanged.
 
 Source: [`src/sources/MangaSushi`](src/sources/MangaSushi).
 Icon: [`assets/MangaSushi.png`](assets/MangaSushi.png), from the site's published icon.
+
+## Kagane
+
+[Kagane](https://kagane.org/) is a native implementation on the repository's pinned
+Mana toolchain. Version `0.0.1-alpha.1` includes:
+
+- The six website discovery rows, all ten native search orders, exact-title mode,
+  live genre/uploader taxonomy, format/status filters, and include/exclude matching.
+- PoppingMango's grouped tag sheets, spelling/duplicate normalization, any/all tag
+  matching, and typed tag names with optional `-` exclusions. Unknown tags retain an
+  Other Tags group. Global hidden genres/tags and upload-source choices also guard
+  direct reading; language choices filter browsing. Taxonomy and identical in-flight
+  requests are reused.
+- Full titles, alternate titles, available staff/status/genres, spoiler-tag control,
+  source/edition display options, and original chapter-title mode.
+- Current chapter index plus complete 200-item `before`-cursor traversal, checked
+  for missing/repeated IDs and nonadvancing cursors. The removed `series_books`
+  detail field is not required. Native resume indexes start with the earliest chapter.
+- Chapter ownership/availability checks, ordered validated reader manifests, source
+  image headers, normal public-reader token refresh, and supported data-saver URLs.
+  Login, paid and unavailable chapters are not bypassed.
+
+**Content ratings to show** is a persistent four-choice setting: Safe, Suggestive,
+Erotica and Pornographic. Safe and Suggestive are selected by default; selecting
+none shows none. Per-search choices can narrow, never expand, the global selection.
+The setting applies to discovery, title searches, continuation, details, chapter
+lists and reading. Changes invalidate setting-dependent caches and active results.
+
+Kagane's API does not reliably enforce its legacy rating filter. The source therefore
+maps the current `age_rating` and `is_pornographic` fields locally, distinguishes
+Erotica from Pornographic, and rejects unknown or conflicting classifications.
+BL/GL and demographic labels are not adult classifications by themselves. Site
+labels can be incomplete, so a selected rating is not a guarantee about every image.
+Filtered rows may be shorter; continuation follows the upstream response rather
+than treating a short filtered page as the end.
+
+An explicitly English-labeled title is preferred in detail metadata, with the original
+and aliases retained. Bulk search alternatives currently have no language labels, and
+many detail alternatives are labeled `unknown`; these are not guessed from their
+script or translated language. Catalog rows are not expanded into per-title requests
+just to infer an English title.
+
+Source: [`src/sources/Kagane`](src/sources/Kagane).
+GPL-3.0-or-later attribution and pinned upstream references are in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). Upstream repositories are unchanged.
 
 ## Live extension tests
 
@@ -174,18 +219,34 @@ discovered source needs an explicit live contract; an unimplemented source fails
 closed. MangaSushi additionally checks all native orders and filters, setting
 persistence and in-flight invalidation, exact home order/continuation, explicit and
 unknown exclusions, editorial notices, malformed markup and reader identity/page
-integrity against freshly fetched live responses.
+integrity against freshly fetched live responses. Kagane additionally checks all
+four rating selections and an empty selection, grouped live tags and matching,
+all ten orders and six rows, exact identity, a real 200-plus-chapter index/cursor
+traversal, complete native chapter metadata, first/last chapter reader image bytes,
+data saver, bulk request reuse, explicit English-title metadata, cross-series rejection
+and setting invalidation.
 
 Mana's official [development CLI](https://github.com/Mana-iOS/mana-dev) provides
 build/serve commands, not a dedicated live source test suite. Its build-time
 emulator mocks HTTP, so it is not used for these live checks. This adapter is not
 the iOS app: it does not validate UI rendering, persistent cookies/stores, WebViews
-or interactive Cloudflare/vShield resolution. A challenge fails visibly rather
-than being silently bypassed. New sources must support the exercised contract;
-unsupported host APIs or incomplete suites fail closed and need explicit support.
-The host supports only GET/HEAD plus MangaSushi’s two verified read-only AJAX
-operations. Its small process-local ObjectStore exercises preference callbacks and
-new source instances, not iOS persistence. No new offline fixtures or permanent
+or interactive Cloudflare/vShield resolution. CI explicitly opts into a test-only
+Chromium transport for Kagane's exact public API routes and cover images, using an
+anonymous, short-lived FlareSolverr session. JSON POST bodies and actual binary
+image bytes are preserved. Warm-up waits for ordinary noninteractive managed
+checks only: CAPTCHA controls are never clicked, and an explicit CAPTCHA or browser
+security warning stops the test. TLS verification stays enabled. The native source
+still uses Mana's built-in CloudflareError flow; no helper is bundled in extensions.
+Without FLARESOLVERR_URL, local checks use ordinary direct requests and challenges
+fail visibly. New sources must support the exercised contract; unsupported host
+APIs or incomplete suites fail closed and need explicit support.
+The host supports GET/HEAD, MangaSushi’s two verified read-only AJAX operations,
+and Kagane’s exact public search, uploader-list and reader bootstrap/manifest POST
+routes. Other POST operations fail closed. Ephemeral reader tokens are redacted
+from retained logs; browser cookies, integrity tokens and reader responses are not
+logged. Reader image requests, including kstatic.to, stay direct and their real
+first/last image bytes are checked. Its small process-local ObjectStore exercises
+preference callbacks and new source instances, not iOS persistence. No new offline fixtures or permanent
 parser tests are added.
 
 Run the same checks locally with Node 24:
@@ -198,6 +259,17 @@ npm run lint
 npm run build -- --output dist
 npm run test:extensions
 ```
+
+To use the same optional Kagane browser transport locally:
+
+```sh
+docker compose up -d --build --wait
+FLARESOLVERR_URL=http://127.0.0.1:8191 npm run test:extensions
+docker compose down
+```
+
+The helper port is bound only to 127.0.0.1. CI does not retain browser logs or
+response bodies.
 
 ## Development
 

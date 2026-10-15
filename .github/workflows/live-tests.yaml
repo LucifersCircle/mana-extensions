@@ -11,6 +11,7 @@ on:
       - "src/**"
       - "assets/**"
       - "scripts/**"
+      - "compose*.yaml"
       - "tsconfig.json"
       - "jest.config.cjs"
       - ".eslintrc.js"
@@ -22,6 +23,7 @@ on:
       - "src/**"
       - "assets/**"
       - "scripts/**"
+      - "compose*.yaml"
       - "tsconfig.json"
       - "jest.config.cjs"
       - ".eslintrc.js"
@@ -62,8 +64,12 @@ jobs:
           npm run typecheck
           npm run lint
           npm run build -- --output dist
+      - name: Start test-only Chromium transport
+        run: docker compose up -d --build --wait --wait-timeout 90
       - name: Run Mana live tests
         id: tests
+        env:
+          FLARESOLVERR_URL: http://127.0.0.1:8191
         run: |
           set -o pipefail
           mkdir -p bundles/live-status
@@ -89,6 +95,10 @@ jobs:
           name: live-test-results
           retention-days: 7
           path: bundles/live-status/
+
+      - name: Stop test-only Chromium transport
+        if: always()
+        run: docker compose down
 
   publish-status:
     name: Update README status

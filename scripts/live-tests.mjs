@@ -2,11 +2,14 @@ import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { performance } from 'node:perf_hooks';
-import { createManaRuntime } from './mana-runtime.mjs';
+import { createManaRuntime, redactURL, redactText } from './mana-runtime.mjs';
+import { testKagane } from './kagane-live-tests.mjs';
+import { createManaTestTransport } from './mana-test-browser.mjs';
 import { discoverSources } from './test-sources.mjs';
 import { testMangaSushi } from './mangasushi-live-tests.mjs';
 
 const report = {};
+const testTransport = createManaTestTransport();
 const names = discoverSources();
 const manifest = JSON.parse(readFileSync('dist/sources.json', 'utf8'));
 const nonempty = (value, label) => assert(typeof value === 'string' && value.trim(), `${label} is empty`);
@@ -25,20 +28,29 @@ function searchResult(result) {
 async function image(source, imageUrl) {
   const request = await source.willRequestImage(imageUrl);
   url(request.url);
-  const response = await fetch(request.url, {
+  const response = await testTransport.fetch(request.url, {
     headers: request.headers,
     signal: AbortSignal.timeout(30_000),
   });
-  console.log(`IMAGE ${response.status} ${request.url}`);
-  assert(response.ok, `Image HTTP ${response.status}: ${request.url}`);
+  console.log(`IMAGE ${response.status} ${redactURL(request.url)}`);
+  assert(response.ok, `Image HTTP ${response.status}: ${redactURL(request.url)}`);
   assert(response.headers.get('content-type')?.startsWith('image/'), 'Response is not an image');
   const reader = response.body.getReader();
   try {
     const { value } = await reader.read();
     assert(value?.length > 0, 'Image has no bytes');
+    if (new URL(request.url).hostname === 'kagane.org') {
+      const bytes = Buffer.from(value), signature = bytes.subarray(0, 12).toString('hex');
+      assert(signature.startsWith('ffd8ff') || signature.startsWith('89504e470d0a1a0a')
+        || signature.startsWith('47494638') || signature.startsWith('ff0a')
+        || signature === '0000000c4a584c200d0a870a'
+        || (bytes.subarray(0, 4).toString() === 'RIFF' && bytes.subarray(8, 12).toString() === 'WEBP')
+        || bytes.subarray(4, 8).toString() === 'ftyp', 'Unrecognized Kagane cover image bytes');
+    }
   } finally { await reader.cancel(); }
 }
 
+try {
 for (const name of names) {
   const tests = [];
   const started = performance.now();
@@ -49,22 +61,24 @@ for (const name of names) {
       tests.push({ name: label, status: 'pass', duration: performance.now() - start });
       console.log(`PASS ${name}: ${label}`);
     } catch (error) {
-      tests.push({ name: label, status: 'fail', duration: performance.now() - start, error: error.stack ?? String(error) });
-      console.error(`FAIL ${name}: ${label}\n${error.stack ?? error}`);
+      tests.push({ name: label, status: 'fail', duration: performance.now() - start, error: redactText(error.stack ?? String(error)) });
+      console.error(`FAIL ${name}: ${label}\n${redactText(error.stack ?? error)}`);
     }
   }
   let source, catalog, content, chapters, pages, sections, form, context;
   const requests = [];
   await check('Built Mana bundle and source metadata', () => {
     assert(manifest.sources.some((entry) => entry.id === name), 'Source missing from built manifest');
-    context = vm.createContext(createManaRuntime({ logger: (request) => { requests.push(request); console.log(`[http] ${request.status ?? 'ERROR'} ${request.url} (${request.durationMs}ms)${request.error ? `: ${request.error}` : ''}`); } }));
+    context = vm.createContext(createManaRuntime({ fetchImpl: testTransport.fetch, logger: (request) => { requests.push(request); console.log(`[http] ${request.status ?? 'ERROR'} ${request.url} (${request.durationMs}ms)${request.error ? `: ${request.error}` : ''}`); } }));
     vm.runInContext(readFileSync(`dist/sources/${name}.mana`, 'utf8'), context, { timeout: 10_000 });
     source = new context.Target();
     assert.equal(source.info.id, name);
     nonempty(source.info.version, 'Version'); url(source.info.website);
   });
   if (name !== 'VortexScans') {
-    if (name === 'MangaSushi') {
+    if (name === 'Kagane') {
+      await testKagane({ source, check, referenceFetch: testTransport.fetch, highlights, searchResult, image, requests, freshSource: () => new context.Target() });
+    } else if (name === 'MangaSushi') {
       await testMangaSushi({ source, check, highlights, searchResult, image, requests, freshSource: () => new context.Target() });
     } else await check('Supported source-specific live contract', () => assert.fail(`No live contract implemented for ${name}`));
     report[name] = { tests, summary: { total: tests.length, passed: tests.filter((test) => test.status === 'pass').length,
@@ -175,6 +189,10 @@ for (const name of names) {
     summary: { total: tests.length, passed: tests.filter((test) => test.status === 'pass').length,
       failed: tests.filter((test) => test.status === 'fail').length, duration: performance.now() - started },
   };
+}
+} finally {
+  try { await testTransport.close(); }
+  catch (error) { console.error(redactText(error.message)); process.exitCode = 1; }
 }
 mkdirSync('bundles', { recursive: true });
 writeFileSync('bundles/live-test-results.json', `${JSON.stringify(report, null, 2)}\n`);
