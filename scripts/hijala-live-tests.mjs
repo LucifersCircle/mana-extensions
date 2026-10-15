@@ -15,7 +15,7 @@ export async function testHijala({ source, check, highlights, searchResult, imag
   let form, catalog, content, full, chapters, reader, explicit, originalTitles, largeTitle;
 
   await check('Native metadata and persistent defaults are honest about genre-based safety', async () => {
-    assert.equal(source.info.version, '0.0.1-alpha.1'); assert.equal(source.info.rating, 1);
+    assert.equal(source.info.version, '0.0.1-alpha.2'); assert.equal(source.info.rating, 1);
     assert.equal((await field('excludeNSFW')).value, true); assert.equal((await field('hidePaid')).value, true);
     const footer = (await source.getPreferenceMenu()).sections[0].footer;
     assert.match(footer, /Missing or invalid genres are hidden/); assert.match(footer, /not a four-category/);
@@ -24,7 +24,11 @@ export async function testHijala({ source, check, highlights, searchResult, imag
     form = await source.getSearchForm(); const fields = form.sections.flatMap((section) => section.children ?? []);
     for (const id of ['genres', 'statuses', 'types', 'direction', 'minChapters', 'maxChapters', 'createdAfter', 'createdBefore']) assert(fields.some((item) => item.id === id), id);
     const taxonomy = fields.find((item) => item.id === 'genres').options;
-    const archive = await raw(`${domain}/series`), serialized = archive.match(/genres:\$R\[\d+\]=\[([\s\S]*?)\],/);
+    const canonical = `${domain}/series/`, response = await referenceFetch(canonical, { redirect: 'error', signal: AbortSignal.timeout(30_000) });
+    assert.equal(response.status, 200); assert.equal(response.redirected, false); assert.equal(response.url, canonical);
+    const archiveRequests = requests.filter((request) => new URL(request.url).origin === domain && ['/series', '/series/'].includes(new URL(request.url).pathname));
+    assert(archiveRequests.length); assert(archiveRequests.every((request) => request.url === canonical), 'Native taxonomy must request canonical HTTPS directly');
+    const archive = await response.text(), serialized = archive.match(/genres:\$R\[\d+\]=\[([\s\S]*?)\],/);
     assert(serialized, 'Current serialized taxonomy not found');
     const expected = [...serialized[1].matchAll(/id:(\d+),name:("(?:\\.|[^"\\])*")/g)].map((match) => ({ id: match[1], title: JSON.parse(match[2]).trim() }));
     assert(expected.length); assert.deepEqual(Array.from(taxonomy, (item) => ({ id: item.id, title: item.title })), expected);
@@ -364,7 +368,7 @@ export async function testHijalaPagination({ source, check, freshSource, publicD
   const scenario = (pageData) => {
     const target = freshSource(), calls = [], original = target.api.text.bind(target.api);
     target.api.text = async (url) => {
-      if (url === `${domain}/series`) return archive;
+      if (url === `${domain}/series/`) return archive;
       const parsed = new URL(url);
       if (parsed.origin !== api || parsed.pathname !== '/api/query') return original(url);
       const page = Number(parsed.searchParams.get('page')); calls.push({ page, query: parsed.searchParams.get('searchTerm'), order: parsed.searchParams.get('orderBy') });
@@ -378,7 +382,7 @@ export async function testHijalaPagination({ source, check, freshSource, publicD
   const preference = async (target, id, value) => { const field = (await target.getPreferenceMenu()).sections.flatMap((section) => section.children ?? []).find((item) => item.id === id); assert(field?.didChange); await field.didChange(value); };
 
   await check('Pagination mutation seed is captured once from current public metadata', async () => {
-    archive = publicData?.archive ?? await source.api.text(`${domain}/series`);
+    archive = publicData?.archive ?? await source.api.text(`${domain}/series/`);
     livePosts = publicData?.posts ?? JSON.parse(await source.api.text(`${api}/api/query?page=1&perPage=100&orderBy=lastChapterAddedAt&orderDirection=desc`)).posts;
     const safe = livePosts.filter(hijalaSafePost), count = Math.floor(Math.min(60, safe.length) / 20) * 20;
     assert(count >= 40, 'Need at least forty current safe source records for two real-size pages');
@@ -388,7 +392,7 @@ export async function testHijalaPagination({ source, check, freshSource, publicD
   await check('Native Most Chapters accepts the current source response and complete terminal catalog shape', async () => {
     const target = freshSource(), original = target.api.text.bind(target.api); let published;
     target.api.text = async (url) => {
-      if (url === `${domain}/series`) return archive;
+      if (url === `${domain}/series/`) return archive;
       const text = await original(url);
       if (url.includes('/api/query?') && new URL(url).searchParams.get('orderBy') === 'chaptersCount') published = JSON.parse(text);
       return text;

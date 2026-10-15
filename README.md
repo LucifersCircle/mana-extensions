@@ -115,7 +115,7 @@ Icon: [`assets/ManhwaNex.png`](assets/ManhwaNex.png), the site's published 192-p
 
 ## Hijala
 
-[Hijala](https://en-hijala.com/) is a native source, version `0.0.1-alpha.1`:
+[Hijala](https://en-hijala.com/) is a native source, version `0.0.1-alpha.2`:
 
 - Current Featured, Latest Releases, New, Most Popular and Latest Updates, in the
   site's published order. Latest/New use the verified current API continuation;
