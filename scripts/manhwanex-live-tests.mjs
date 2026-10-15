@@ -25,8 +25,39 @@ async function imageBytes(source, url) {
   console.log(`IMAGE ${bytes.length}B ${url}`);
   return bytes;
 }
-function webpDimensions(bytes) {
+function imageDimensions(bytes) {
+  if (bytes.subarray(0, 8).toString('hex') === '89504e470d0a1a0a') {
+    assert(bytes.length >= 45, 'Truncated PNG');
+    assert.equal(bytes.readUInt32BE(8), 13, 'Invalid PNG IHDR length');
+    assert.equal(bytes.subarray(12, 16).toString(), 'IHDR', 'PNG has no initial IHDR');
+    const dimensions = [bytes.readUInt32BE(16), bytes.readUInt32BE(20)];
+    assert(dimensions.every((value) => value > 0 && value <= 0x7fffffff), 'Invalid PNG dimensions');
+    let imageData = false;
+    for (let offset = 8; offset < bytes.length;) {
+      assert(offset + 12 <= bytes.length, 'Truncated PNG chunk');
+      const size = bytes.readUInt32BE(offset), kind = bytes.subarray(offset + 4, offset + 8).toString();
+      assert(size <= bytes.length - offset - 12, 'Truncated PNG chunk data');
+      assert(offset === 8 || kind !== 'IHDR', 'Duplicate PNG IHDR');
+      if (kind === 'IDAT') imageData = true;
+      offset += size + 12;
+      if (kind === 'IEND') {
+        assert(size === 0 && imageData && offset === bytes.length, 'PNG has no image data or is incomplete');
+        return dimensions;
+      }
+    }
+    assert.fail('PNG has no IEND');
+  }
+  assert(bytes.length >= 26, 'Truncated WebP');
   assert.equal(bytes.subarray(0, 4).toString(), 'RIFF');
+  assert.equal(bytes.subarray(8, 12).toString(), 'WEBP');
+  assert.equal(bytes.readUInt32LE(4) + 8, bytes.length, 'WebP is incomplete');
+  for (let offset = 12; offset < bytes.length;) {
+    assert(offset + 8 <= bytes.length, 'Truncated WebP chunk');
+    const size = bytes.readUInt32LE(offset + 4);
+    assert(size + (size % 2) <= bytes.length - offset - 8, 'Truncated WebP chunk data');
+    offset += 8 + size + (size % 2);
+  }
+  assert(bytes.readUInt32LE(16) >= (bytes.subarray(12, 16).toString() === 'VP8L' ? 5 : 10), 'Truncated WebP dimensions');
   const kind = bytes.subarray(12, 16).toString();
   if (kind === 'VP8X') return [1 + bytes.readUIntLE(24, 3), 1 + bytes.readUIntLE(27, 3)];
   if (kind === 'VP8L') { const n = bytes.readUInt32LE(21); return [(n & 0x3fff) + 1, ((n >>> 14) & 0x3fff) + 1]; }
@@ -172,8 +203,8 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
   await check('Largest source-advertised covers have real intrinsic image dimensions', async () => {
     const popular = home.popular.items[0], latest = home.latest.items.find((item) => item.id === popular.id);
     assert(latest);
-    assert.deepEqual(webpDimensions(await imageBytes(source, popular.cover)), [193, 278]);
-    assert.deepEqual(webpDimensions(await imageBytes(source, latest.cover)), [350, 476]);
+    assert.deepEqual(imageDimensions(await imageBytes(source, popular.cover)), [193, 278]);
+    assert.deepEqual(imageDimensions(await imageBytes(source, latest.cover)), [350, 476]);
   });
   await check('Native safe search returns exact source page and next-page identities', async () => {
     catalog = await source.search({ page: 1 });
@@ -590,7 +621,7 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
     const large = await cold.getContent('global-class-change-i-am-the-invincible-shadow-monarch');
     const largeReference = await html(large.webUrl);
     assert.equal(large.cover, largeReference('meta[property="og:image"]').attr('content'));
-    assert.deepEqual(webpDimensions(await imageBytes(cold, large.cover)), [1087, 1447]);
+    assert.deepEqual(imageDimensions(await imageBytes(cold, large.cover)), [1087, 1447]);
     const largeTags = Array.from(large.additionalInfo).filter((section) => /^source-tags(?:-\d+)?$/.test(section.id));
     assert(largeTags.every((section) => section.items.length <= 10));
     assert(largeTags.flatMap((section) => Array.from(section.items)).some((tag) => /%[a-f0-9]{2}/i.test(tag.id)), 'Encoded Unicode source tag IDs were not retained');
