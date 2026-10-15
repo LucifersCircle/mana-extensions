@@ -23,6 +23,36 @@ function selection(filters: Filters | undefined, id: string): { included: string
     const pick = typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Selection : undefined
     return { included: (pick?.included ?? []).map((item) => item.id), excluded: (pick?.excluded ?? []).map((item) => item.id) }
 }
+
+/** Validate native tag values without turning malformed or stale picks into no filter. */
+export function needsTagTaxonomy(filters: Filters | undefined, excluded: string[]): boolean {
+    const ids = new Set(['tags', ...TAG_GROUPS.map((group) => tagFilterId(group.id))])
+    let selected = excluded.length > 0
+    for (const [id, value] of Object.entries(filters ?? {})) {
+        if (id !== 'tags' && !id.startsWith('tags:')) continue
+        if (!ids.has(id) || !value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some((key) => key !== 'included' && key !== 'excluded')) throw invalidTagFilter()
+        const pick = value as Selection
+        for (const side of [pick.included, pick.excluded]) {
+            if (side === undefined) continue
+            if (!Array.isArray(side) || side.some((option) => !option || typeof option !== 'object' || typeof option.id !== 'string' || !option.id.trim())) throw invalidTagFilter()
+            if (side.length) selected = true
+        }
+    }
+    if (filters?.tag_query !== undefined && typeof filters.tag_query !== 'string') throw invalidTagFilter()
+    if (filters?.match_all_tags !== undefined && typeof filters.match_all_tags !== 'boolean') throw invalidTagFilter()
+    return selected || (typeof filters?.tag_query === 'string' && !!filters.tag_query.trim())
+}
+
+function invalidTagFilter(): Error { return new Error('Invalid Kagane tag filter. Refresh tag choices or remove this filter.') }
+
+function validateTagIds(values: string[], tags: TagEntry[]): void {
+    const valid = new Set(tags.map((tag) => tag.id))
+    for (const value of values) {
+        const ids = value.split('+')
+        if (ids.some((id) => !id || !valid.has(id))) throw new Error(`Unknown Kagane tag "${value}". Refresh tag choices or remove this filter.`)
+    }
+}
+
 function compound(included: string[], excluded: string[], match: boolean): Record<string, unknown> | undefined {
     const values = [...new Set(included)]
     const exclude = [...new Set(excluded)]
@@ -52,6 +82,9 @@ export function selectedRatings(request: SearchRequest<Filters>, settings: Setti
     return RATINGS.filter((rating) => settings.contentRatings.includes(rating) && (!selected.length || selected.includes(rating)) && (request.context?.allowedContentRatings === undefined || request.context.allowedContentRatings.includes(manaRating({ content_rating: rating }))))
 }
 export function searchBody(request: SearchRequest<Filters>, settings: Settings, tags: TagEntry[]): Record<string, unknown> {
+    needsTagTaxonomy(request.filters, settings.excludedTags)
+    const pooled = ['tags', ...TAG_GROUPS.map((group) => tagFilterId(group.id))].map((id) => selection(request.filters, id))
+    validateTagIds([...pooled.flatMap((pick) => [...pick.included, ...pick.excluded]), ...settings.excludedTags], tags)
     const ratings = selectedRatings(request, settings)
     const body: Record<string, unknown> = {
         content_rating: ratings,
@@ -77,7 +110,6 @@ export function searchBody(request: SearchRequest<Filters>, settings: Settings, 
     const genres = selection(request.filters, 'genres')
     const genreFilter = compound(genres.included, [...genres.excluded, ...settings.excludedGenres], request.filters?.match_all_genres === true)
     if (genreFilter) body.genres = genreFilter
-    const pooled = ['tags', ...TAG_GROUPS.map((group) => tagFilterId(group.id))].map((id) => selection(request.filters, id))
     const typed = resolveTypedTags(typeof request.filters?.tag_query === 'string' ? request.filters.tag_query : '', Object.fromEntries(tags.map((tag) => [tag.id, tag.tag_name])))
     // API cannot express (alias A OR alias B) AND a second conceptual tag.
     // Ask for the broad union in that case, then enforce groups on bulk rows locally.

@@ -329,8 +329,8 @@ export type TypedTags = { included: string[]; excluded: string[] };
  *
  * A name is read the same way two spellings of one tag are folded together, so `Big Ass`,
  * `big ass` and `BigAss` all find the same tag and bring every id it was published under.
- * A name with `-` in front of it is asked to be excluded instead, and a name the site does
- * not carry is passed over rather than narrowing the search to nothing.
+ * A name with `-` in front of it is asked to be excluded instead. Unknown names are
+ * rejected rather than silently removing the user's constraint.
  */
 export function resolveTypedTags(input: string, tagsById: Record<string, string>): TypedTags {
     const typed = input.trim()
@@ -349,14 +349,26 @@ export function resolveTypedTags(input: string, tagsById: Record<string, string>
 
     const included: string[] = []
     const excluded: string[] = []
+    const exact = new Map<string, string[]>()
+    for (const [id, name] of Object.entries(tagsById)) {
+        const key = name.trim().toLowerCase()
+        exact.set(key, [...(exact.get(key) ?? []), id])
+    }
 
     for (const entry of typed.split(',')) {
         const name = entry.trim()
         if (!name) continue
 
         const exclude = name.startsWith('-')
-        const ids = index.get(clusterKey(exclude ? name.slice(1) : name))
-        if (ids) (exclude ? excluded : included).push(...ids)
+        const value = (exclude ? name.slice(1) : name).trim()
+        if (!value) throw new Error('Invalid Kagane tag filter. Enter a tag name after "-".')
+        // Raw IDs stay exact. Existing folded aliases still expand to their verified
+        // IDs; exact source names omitted by display cleanup remain resolvable.
+        const ids = Object.prototype.hasOwnProperty.call(tagsById, value) ? [value]
+            : index.get(clusterKey(value)) ?? exact.get(value.toLowerCase())
+        if (!ids?.length) throw new Error(`Unknown Kagane tag "${value}". Refresh tag choices or remove this filter.`)
+        const output = exclude ? excluded : included
+        output.push(...ids)
     }
 
     return { included, excluded }

@@ -133,6 +133,64 @@ export async function assertKaganeChapterLanguages({ freshSource, id, detail, bo
   } finally { await target.save('languages', savedLanguages); }
 }
 
+// Replay this run's taxonomy and bulk search response at native entrypoints. This
+// validates serialization/errors, not whether a server obeys these tag filters.
+export async function assertKaganeTagFilters({ freshSource, tags, response, option, groupId }) {
+  const tag = tags.find((entry) => entry.id === option.id.split('+')[0]);
+  assert(tag && response?.content?.length, 'Need actual Kagane taxonomy/search seeds');
+  const target = freshSource(), bodies = [];
+  target.api.tags = async () => tags;
+  target.api.search = async (body) => { bodies.push(JSON.parse(JSON.stringify(body))); return { ...response, last: true }; };
+  const saved = (await target.settings()).excludedTags;
+  await target.save('excludedTags', []);
+  const search = (filters, listId) => target.search({ query: response.content[0].title, filters, ...(listId ? { listId } : {}) });
+  try {
+    for (const filters of [
+      { tag_query: '__kagane_unknown_filter__' }, { tag_query: '-__kagane_unknown_filter__' },
+      { tag_query: `${tag.id}, __kagane_unknown_filter__` }, { tag_query: '-' }, { tag_query: 42 },
+      { [groupId]: { included: [{ id: '__stale_tag__' }], excluded: [] } },
+      { [groupId]: { included: [], excluded: [{ id: `${tag.id}+__stale_tag__` }] } },
+      { [groupId]: { included: [{ id: `${tag.id}+` }] } },
+      { [groupId]: [] }, { [groupId]: { included: null } }, { [groupId]: { included: [null] } },
+      { [groupId]: { include: [option] } }, { 'tags:__stale_group__': { included: [option] } },
+      { match_all_tags: 'true' },
+    ]) {
+      for (const listId of [undefined, 'popular']) {
+        const before = bodies.length;
+        await assert.rejects(search(filters, listId), /(?:Unknown|Invalid) Kagane tag/);
+        assert.equal(bodies.length, before, 'Invalid tag reached the search API');
+      }
+    }
+    for (const [filters, values, exclude] of [
+      [{ tag_query: tag.id }, [tag.id], undefined],
+      [{ tag_query: `-${tag.id}` }, [], [tag.id]],
+      [{ [groupId]: { included: [option], excluded: [] } }, option.id.split('+'), undefined],
+      [{ [groupId]: { included: [], excluded: [option] } }, [], option.id.split('+')],
+    ]) {
+      await search(filters);
+      assert.deepEqual(bodies.at(-1).tags.values, values);
+      assert.deepEqual(bodies.at(-1).tags.exclude, exclude);
+    }
+    for (const filters of [undefined, {}, { tag_query: ' , , ' }, { [groupId]: { included: [], excluded: [] } }]) {
+      await search(filters);
+      assert.equal(bodies.at(-1).tags, undefined, 'Empty selection added a tag filter');
+    }
+    for (const filters of [{ tag_query: tag.id }, { [groupId]: { included: [option], excluded: [] } }]) {
+      await search(filters, 'popular');
+      assert.equal(bodies.at(-1).tags, undefined, 'Discovery changed its pre-existing provider body');
+    }
+    await target.save('excludedTags', ['__stale_tag__']);
+    const before = bodies.length;
+    await assert.rejects(search(), /Unknown Kagane tag/);
+    assert.equal(bodies.length, before, 'Stale saved exclusion reached the search API');
+    await target.save('excludedTags', []);
+    const unavailable = new Error('Kagane taxonomy network unavailable');
+    target.api.tags = async () => { throw unavailable; };
+    await assert.rejects(search({ tag_query: tag.id }), (error) => error === unavailable);
+    assert.equal(bodies.length, before, 'Unavailable taxonomy reached the search API');
+  } finally { await target.save('excludedTags', saved); }
+}
+
 // Execute the native bundle against fresh public responses. Observability wrappers
 // record the data it actually consumed, never replace it with a parallel source.
 export async function testKagane({ source, check, highlights, searchResult, image, requests, freshSource, referenceFetch = globalThis.fetch }) {
@@ -206,7 +264,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   }
   let catalog, form, chapterList, index, content, blocked, readerData, safeBody;
   await check('Never-saved source categories follow native policy and explicit source selection persists', async () => {
-    assert.equal(source.info.version, '0.0.1-alpha.3');
+    assert.equal(source.info.version, '0.0.1-alpha.4');
     assert.deepEqual(Array.from((await preference('contentRatings')).value), allRatings);
     const start = requests.length, empty = await source.search({ page: 1, context: { allowedContentRatings: [] } });
     assert.equal(empty.results.length, 0); assert.equal(empty.isLastPage, true); assert.equal(requests.length, start);
@@ -311,6 +369,11 @@ export async function testKagane({ source, check, highlights, searchResult, imag
     assert(searches.at(-1).args[0].tags.values.some((id) => tag.id.split('+').includes(id)));
     validResult(await source.search({ page: 1, filters: { tag_query: `-${tag.title}` } }));
     assert(searches.at(-1).args[0].tags.exclude.some((id) => tag.id.split('+').includes(id)));
+  });
+  await check('Unknown malformed and stale tags fail before search; valid native payloads remain exact', async () => {
+    const group = fields(form).find((field) => field.id?.startsWith('tags:') && field.options.some((option) => option.id.includes('+')));
+    assert(group, 'Need an actual legacy composite tag option');
+    await assertKaganeTagFilters({ freshSource, tags: await source.api.tags(), response: searches[0].response, option: group.options.find((option) => option.id.includes('+')), groupId: group.id });
   });
   await check('Format, status and uploader filters round-trip through the native request', async () => {
     const raw = seen.get(catalog.results[0].id), all = fields(form);
