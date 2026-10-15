@@ -235,207 +235,212 @@ commits do not retrigger testing or publishing. Pull requests never publish sour
 
 <!-- LIVE_TEST_STATUS:START -->
 
-Last checked: **2026-10-15 07:57:10 UTC** · [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38701544623)
+Last checked: **2026-10-15 08:04:00 UTC** · [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38702080694)
 Live scope: all; 5/5 sources selected; 5 complete reports. Non-PR events run the full live suite
-Selected tests: 183/183 passed; 0 failed.
-Started: 2026-10-15 07:51:10 UTC
-Tested commit: `95568ed`
+Selected tests: 188/188 passed; 0 failed.
+Started: 2026-10-15 07:57:33 UTC
+Tested commit: `5cd27db`
 
 | Extension | Result | Passed | Failed | Duration |
 | --- | --- | ---: | ---: | ---: |
-| Hijala | ✅ Pass | 55/55 | 0 | 62.98s |
-| Kagane | ✅ Pass | 27/27 | 0 | 37.59s |
-| MangaSushi | ✅ Pass | 35/35 | 0 | 70.94s |
-| ManhwaNex | ✅ Pass | 38/38 | 0 | 145.68s |
-| VortexScans | ✅ Pass | 28/28 | 0 | 9.35s |
+| Hijala | ✅ Pass | 55/55 | 0 | 68.24s |
+| Kagane | ✅ Pass | 27/27 | 0 | 36.18s |
+| MangaSushi | ✅ Pass | 40/40 | 0 | 95.61s |
+| ManhwaNex | ✅ Pass | 38/38 | 0 | 144.08s |
+| VortexScans | ✅ Pass | 28/28 | 0 | 9.21s |
 
 <details>
 <summary>Test output</summary>
 
 | Extension | Test | Result | Duration | Failure |
 | --- | --- | --- | ---: | --- |
-| Hijala | Built Mana bundle and source metadata | ✅ Pass | 0.02s | — |
-| Hijala | Native metadata and persistent defaults are honest about genre-based safety | ✅ Pass | 1.26s | — |
-| Hijala | Search form exposes every live genre, eight statuses, five types and site filters | ✅ Pass | 0.45s | — |
-| Hijala | Catalog is bulk-classified with no per-title detail requests | ✅ Pass | 0.71s | — |
-| Hijala | Entire live native catalog has unique accumulated IDs, no lost returned titles and stable reset/repeats | ✅ Pass | 2.05s | — |
-| Hijala | Title search and true empty search use source-published titles | ✅ Pass | 0.53s | — |
-| Hijala | Every six native site sort orders returns usable live data | ✅ Pass | 2.03s | — |
-| Hijala | Native submitted filters are exactly encoded and inclusion/exclusion works | ✅ Pass | 1.29s | — |
-| Hijala | Native validation rejects invalid dates, huge integers and inverted ranges | ✅ Pass | 0.19s | — |
+| Hijala | Built Mana bundle and source metadata | ✅ Pass | 0.03s | — |
+| Hijala | Native metadata and persistent defaults are honest about genre-based safety | ✅ Pass | 1.39s | — |
+| Hijala | Search form exposes every live genre, eight statuses, five types and site filters | ✅ Pass | 0.44s | — |
+| Hijala | Catalog is bulk-classified with no per-title detail requests | ✅ Pass | 0.91s | — |
+| Hijala | Entire live native catalog has unique accumulated IDs, no lost returned titles and stable reset/repeats | ✅ Pass | 2.16s | — |
+| Hijala | Title search and true empty search use source-published titles | ✅ Pass | 0.54s | — |
+| Hijala | Every six native site sort orders returns usable live data | ✅ Pass | 1.91s | — |
+| Hijala | Native submitted filters are exactly encoded and inclusion/exclusion works | ✅ Pass | 1.31s | — |
+| Hijala | Native validation rejects invalid dates, huge integers and inverted ranges | ✅ Pass | 0.25s | — |
 | Hijala | Empty native allowed-rating context returns none without network | ✅ Pass | 0.00s | — |
-| Hijala | Actual source title, aliases, metadata, full cover and inline chapters agree | ✅ Pass | 0.65s | — |
-| Hijala | Complete chapter list is reused, sequentially indexed and paid hidden by default | ✅ Pass | 0.15s | — |
-| Hijala | Paid preference persists across instances without enabling paid reading | ✅ Pass | 1.10s | — |
-| Hijala | Reader produces ordered native page objects and actual first/middle/last image bytes | ✅ Pass | 0.97s | — |
-| Hijala | A second real public chapter reads actual image bytes too | ✅ Pass | 0.41s | — |
+| Hijala | Actual source title, aliases, metadata, full cover and inline chapters agree | ✅ Pass | 0.60s | — |
+| Hijala | Complete chapter list is reused, sequentially indexed and paid hidden by default | ✅ Pass | 0.17s | — |
+| Hijala | Paid preference persists across instances without enabling paid reading | ✅ Pass | 1.19s | — |
+| Hijala | Reader produces ordered native page objects and actual first/middle/last image bytes | ✅ Pass | 0.83s | — |
+| Hijala | A second real public chapter reads actual image bytes too | ✅ Pass | 0.43s | — |
 | Hijala | Source headers are attached to native metadata and image requests | ✅ Pass | 0.00s | — |
-| Hijala | Every current native discovery section resolves without stale Hot or fabricated genre cards | ✅ Pass | 6.77s | — |
-| Hijala | Source-disabled known release tabs disappear and stale links do not fetch them | ✅ Pass | 0.80s | — |
-| Hijala | Latest and rendered first-nine Popular snapshots match fresh website DOM ordering | ✅ Pass | 1.49s | — |
-| Hijala | Canonical New and latest listings match public feed evidence | ✅ Pass | 2.69s | — |
-| Hijala | Highest-chapter-count safe title has a complete real large chapter list | ✅ Pass | 1.56s | — |
-| Hijala | A genuine live decimal chapter retains its number and reads actual image bytes | ✅ Pass | 0.86s | — |
-| Hijala | Deep links preserve encoded IDs and reader links safely resolve to native series | ✅ Pass | 0.98s | — |
-| Hijala | NSFW preference persists, known mature titles are excluded end to end | ✅ Pass | 3.00s | — |
-| Hijala | Empty types and sections stay empty and native excluded genres are enforced | ✅ Pass | 3.15s | — |
-| Hijala | Concurrent native preference callbacks merge without losing fields | ✅ Pass | 0.89s | — |
-| Hijala | A read begun during a queued safety save waits before using old permissive cached results | ✅ Pass | 2.24s | — |
-| Hijala | Unknown genre metadata fails closed using a fresh live catalog response | ✅ Pass | 2.49s | — |
-| Hijala | Partial genre metadata retains valid tags and never bypasses an explicit genre exclusion | ✅ Pass | 4.14s | — |
-| Hijala | Native rating authority includes fallback metadata, isolates warm caches and preserves explicit choices | ✅ Pass | 5.00s | — |
-| Hijala | Filtered-empty first page advances native continuation from the consumed API page | ✅ Pass | 1.18s | — |
-| Hijala | Repeated API pages fail explicitly instead of looping or duplicating native pages | ✅ Pass | 0.67s | — |
-| Hijala | Settings changed during a live page2 request reject its stale result | ✅ Pass | 1.22s | — |
-| Hijala | Native decimal numbers and semantic chapter titles survive live-derived mutation | ✅ Pass | 0.32s | — |
+| Hijala | Every current native discovery section resolves without stale Hot or fabricated genre cards | ✅ Pass | 7.73s | — |
+| Hijala | Source-disabled known release tabs disappear and stale links do not fetch them | ✅ Pass | 1.21s | — |
+| Hijala | Latest and rendered first-nine Popular snapshots match fresh website DOM ordering | ✅ Pass | 1.87s | — |
+| Hijala | Canonical New and latest listings match public feed evidence | ✅ Pass | 3.01s | — |
+| Hijala | Highest-chapter-count safe title has a complete real large chapter list | ✅ Pass | 1.60s | — |
+| Hijala | A genuine live decimal chapter retains its number and reads actual image bytes | ✅ Pass | 1.05s | — |
+| Hijala | Deep links preserve encoded IDs and reader links safely resolve to native series | ✅ Pass | 0.88s | — |
+| Hijala | NSFW preference persists, known mature titles are excluded end to end | ✅ Pass | 3.18s | — |
+| Hijala | Empty types and sections stay empty and native excluded genres are enforced | ✅ Pass | 3.37s | — |
+| Hijala | Concurrent native preference callbacks merge without losing fields | ✅ Pass | 0.87s | — |
+| Hijala | A read begun during a queued safety save waits before using old permissive cached results | ✅ Pass | 2.08s | — |
+| Hijala | Unknown genre metadata fails closed using a fresh live catalog response | ✅ Pass | 2.59s | — |
+| Hijala | Partial genre metadata retains valid tags and never bypasses an explicit genre exclusion | ✅ Pass | 4.59s | — |
+| Hijala | Native rating authority includes fallback metadata, isolates warm caches and preserves explicit choices | ✅ Pass | 5.22s | — |
+| Hijala | Filtered-empty first page advances native continuation from the consumed API page | ✅ Pass | 1.28s | — |
+| Hijala | Repeated API pages fail explicitly instead of looping or duplicating native pages | ✅ Pass | 0.68s | — |
+| Hijala | Settings changed during a live page2 request reject its stale result | ✅ Pass | 1.32s | — |
+| Hijala | Native decimal numbers and semantic chapter titles survive live-derived mutation | ✅ Pass | 0.38s | — |
 | Hijala | Earliest paid chapter is filtered before assigning zero-based native indexes | ✅ Pass | 0.38s | — |
-| Hijala | Incomplete total and missing access status reject real detail data | ✅ Pass | 0.82s | — |
-| Hijala | Protected, mismatched and malformed readers are rejected from fresh live responses | ✅ Pass | 2.66s | — |
-| Hijala | Expired native pagination and raw caches refresh instead of pinning Latest forever | ✅ Pass | 1.49s | — |
-| Hijala | Ordinary forbidden responses do not become Cloudflare or cross an access boundary | ✅ Pass | 0.29s | — |
-| Hijala | Verified challenge responses use the source resolution URL | ✅ Pass | 0.20s | — |
-| Hijala | No downloaded script execution or cross-series/invalid chapter fallback occurs | ✅ Pass | 0.93s | — |
-| Hijala | Pagination mutation seed is captured once from current public metadata | ✅ Pass | 0.86s | — |
-| Hijala | Native Most Chapters accepts the current source response and complete terminal catalog shape | ✅ Pass | 0.35s | — |
-| Hijala | Only a complete unique first-page catalog may exceed the requested page size | ✅ Pass | 0.21s | — |
-| Hijala | Partial physical-page overlap emits every ID once beyond the nominal last offset | ✅ Pass | 0.19s | — |
-| Hijala | Duplicate-only nonterminal physical page is skipped and later fresh rows are never lost | ✅ Pass | 0.14s | — |
-| Hijala | Repeated pages, page1 reset and TTL refresh do not carry emitted-ID exclusions | ✅ Pass | 0.77s | — |
-| Hijala | Changed query and sort keep independent native continuation and emitted-ID state | ✅ Pass | 0.50s | — |
-| Hijala | Changed persistent settings reset continuation without hiding prior IDs | ✅ Pass | 0.54s | — |
-| Hijala | Another Target toggling off/on cannot revive an old same-value cursor or raw snapshot | ✅ Pass | 0.35s | — |
-| Hijala | Allowed-rating contexts isolate cumulative IDs even across locally filtered pages | ✅ Pass | 0.07s | — |
-| Hijala | Changed total fails explicitly and page1 can reset the failed snapshot | ✅ Pass | 0.25s | — |
-| Hijala | Missing titles after duplicates and endless repeated pages fail instead of claiming terminal completion | ✅ Pass | 0.15s | — |
-| Hijala | Untrusted totals, page counts and cumulative-ID state fail before unbounded traversal or allocation | ✅ Pass | 0.25s | — |
-| Hijala | Malformed internal continuation fails before reading an unconsumed provider offset | ✅ Pass | 0.35s | — |
+| Hijala | Incomplete total and missing access status reject real detail data | ✅ Pass | 0.74s | — |
+| Hijala | Protected, mismatched and malformed readers are rejected from fresh live responses | ✅ Pass | 2.69s | — |
+| Hijala | Expired native pagination and raw caches refresh instead of pinning Latest forever | ✅ Pass | 1.27s | — |
+| Hijala | Ordinary forbidden responses do not become Cloudflare or cross an access boundary | ✅ Pass | 0.30s | — |
+| Hijala | Verified challenge responses use the source resolution URL | ✅ Pass | 0.19s | — |
+| Hijala | No downloaded script execution or cross-series/invalid chapter fallback occurs | ✅ Pass | 1.12s | — |
+| Hijala | Pagination mutation seed is captured once from current public metadata | ✅ Pass | 0.82s | — |
+| Hijala | Native Most Chapters accepts the current source response and complete terminal catalog shape | ✅ Pass | 0.38s | — |
+| Hijala | Only a complete unique first-page catalog may exceed the requested page size | ✅ Pass | 0.29s | — |
+| Hijala | Partial physical-page overlap emits every ID once beyond the nominal last offset | ✅ Pass | 0.26s | — |
+| Hijala | Duplicate-only nonterminal physical page is skipped and later fresh rows are never lost | ✅ Pass | 0.20s | — |
+| Hijala | Repeated pages, page1 reset and TTL refresh do not carry emitted-ID exclusions | ✅ Pass | 1.09s | — |
+| Hijala | Changed query and sort keep independent native continuation and emitted-ID state | ✅ Pass | 0.71s | — |
+| Hijala | Changed persistent settings reset continuation without hiding prior IDs | ✅ Pass | 0.76s | — |
+| Hijala | Another Target toggling off/on cannot revive an old same-value cursor or raw snapshot | ✅ Pass | 0.49s | — |
+| Hijala | Allowed-rating contexts isolate cumulative IDs even across locally filtered pages | ✅ Pass | 0.11s | — |
+| Hijala | Changed total fails explicitly and page1 can reset the failed snapshot | ✅ Pass | 0.34s | — |
+| Hijala | Missing titles after duplicates and endless repeated pages fail instead of claiming terminal completion | ✅ Pass | 0.21s | — |
+| Hijala | Untrusted totals, page counts and cumulative-ID state fail before unbounded traversal or allocation | ✅ Pass | 0.35s | — |
+| Hijala | Malformed internal continuation fails before reading an unconsumed provider offset | ✅ Pass | 0.50s | — |
 | Kagane | Built Mana bundle and source metadata | ✅ Pass | 0.02s | — |
-| Kagane | Never-saved source categories follow native policy and explicit source selection persists | ✅ Pass | 9.47s | — |
-| Kagane | Search pagination follows upstream completion, not the filtered result count | ✅ Pass | 0.52s | — |
-| Kagane | Full title search, details, cover and series deep link retain identity | ✅ Pass | 2.15s | — |
+| Kagane | Never-saved source categories follow native policy and explicit source selection persists | ✅ Pass | 9.58s | — |
+| Kagane | Search pagination follows upstream completion, not the filtered result count | ✅ Pass | 0.55s | — |
+| Kagane | Full title search, details, cover and series deep link retain identity | ✅ Pass | 1.98s | — |
 | Kagane | English titles require explicit metadata and retain the original plus aliases | ✅ Pass | 0.00s | — |
-| Kagane | Native search form preserves live taxonomy and grouped tag sheets | ✅ Pass | 0.05s | — |
-| Kagane | Every native sort and exact-title mode makes a valid live request | ✅ Pass | 5.01s | — |
-| Kagane | Include/exclude genres, grouped tags and typed tags use live IDs | ✅ Pass | 2.95s | — |
-| Kagane | Format, status and uploader filters round-trip through the native request | ✅ Pass | 0.54s | — |
-| Kagane | Negative search is an empty terminal page and invalid pages are rejected | ✅ Pass | 0.32s | — |
+| Kagane | Native search form preserves live taxonomy and grouped tag sheets | ✅ Pass | 0.06s | — |
+| Kagane | Every native sort and exact-title mode makes a valid live request | ✅ Pass | 4.56s | — |
+| Kagane | Include/exclude genres, grouped tags and typed tags use live IDs | ✅ Pass | 2.96s | — |
+| Kagane | Format, status and uploader filters round-trip through the native request | ✅ Pass | 0.45s | — |
+| Kagane | Negative search is an empty terminal page and invalid pages are rejected | ✅ Pass | 0.34s | — |
 | Kagane | All six native discovery sorts preserve live API order and continuation | ✅ Pass | 0.00s | — |
 | Kagane | A real 200-plus chapter list matches every live index ID exactly | ✅ Pass | 1.85s | — |
 | Kagane | Repeated chapter/detail calls reuse bulk data instead of N-plus-one requests | ✅ Pass | 0.01s | — |
-| Kagane | First and last actual chapter readers load image bytes with source headers | ✅ Pass | 2.15s | — |
-| Kagane | Expired reader sessions refresh once per chapter and retain the actual page identity | ✅ Pass | 0.80s | — |
-| Kagane | Data saver uses the supported query and still loads actual reader images | ✅ Pass | 3.07s | — |
-| Kagane | Reader rejects a book from another series before requesting access | ✅ Pass | 1.07s | — |
-| Kagane | Every rating category selects its exact modern class and an empty selection shows none | ✅ Pass | 3.78s | — |
-| Kagane | Mixed rating selections and per-search or host limits cannot widen global choices | ✅ Pass | 1.21s | — |
-| Kagane | Previously issued reader URLs cannot evade changed rating settings | ✅ Pass | 0.08s | — |
-| Kagane | Setting persistence and explicit content exclusion apply even to title search | ✅ Pass | 1.61s | — |
+| Kagane | First and last actual chapter readers load image bytes with source headers | ✅ Pass | 1.80s | — |
+| Kagane | Expired reader sessions refresh once per chapter and retain the actual page identity | ✅ Pass | 0.72s | — |
+| Kagane | Data saver uses the supported query and still loads actual reader images | ✅ Pass | 2.95s | — |
+| Kagane | Reader rejects a book from another series before requesting access | ✅ Pass | 1.05s | — |
+| Kagane | Every rating category selects its exact modern class and an empty selection shows none | ✅ Pass | 3.55s | — |
+| Kagane | Mixed rating selections and per-search or host limits cannot widen global choices | ✅ Pass | 1.08s | — |
+| Kagane | Previously issued reader URLs cannot evade changed rating settings | ✅ Pass | 0.09s | — |
+| Kagane | Setting persistence and explicit content exclusion apply even to title search | ✅ Pass | 1.60s | — |
 | Kagane | Unknown and conflicting ratings fail closed for details, chapters and reading | ✅ Pass | 0.00s | — |
-| Kagane | Incomplete rating metadata uses native Mature fallback without overriding known explicit evidence | ✅ Pass | 0.09s | — |
-| Kagane | Native rating policy and accumulated IDs survive partial overlap and duplicate-only physical pages | ✅ Pass | 0.07s | — |
-| Kagane | Changing safety preference invalidates an in-flight unfiltered response | ✅ Pass | 0.72s | — |
-| Kagane | Malformed pagination and reader manifests are errors, not empty successes | ✅ Pass | 0.01s | — |
+| Kagane | Incomplete rating metadata uses native Mature fallback without overriding known explicit evidence | ✅ Pass | 0.10s | — |
+| Kagane | Native rating policy and accumulated IDs survive partial overlap and duplicate-only physical pages | ✅ Pass | 0.09s | — |
+| Kagane | Changing safety preference invalidates an in-flight unfiltered response | ✅ Pass | 0.75s | — |
+| Kagane | Malformed pagination and reader manifests are errors, not empty successes | ✅ Pass | 0.00s | — |
 | Kagane | Test host permits only exact public Kagane operations and redacts reader tokens | ✅ Pass | 0.01s | — |
 | MangaSushi | Built Mana bundle and source metadata | ✅ Pass | 0.02s | — |
-| MangaSushi | Native rating policy is authoritative with no never-saved source cap and reusable context-neutral caches | ✅ Pass | 2.06s | — |
-| MangaSushi | Live native parsers map incomplete metadata to Mature and keep actual adult warnings Explicit | ✅ Pass | 4.13s | — |
-| MangaSushi | Native singleton ratings use only verified coarse source markers and never infer a Suggestive taxonomy | ✅ Pass | 4.59s | — |
-| MangaSushi | Warm native search pages retain a newly observed adult warning instead of relabeling it Safe | ✅ Pass | 1.41s | — |
-| MangaSushi | Native logical pagination passes excluded-only physical pages without losing later eligible IDs | ✅ Pass | 1.83s | — |
-| MangaSushi | Native logical pagination passes duplicate-only physical pages without losing later eligible IDs | ✅ Pass | 1.37s | — |
-| MangaSushi | Explicitly saved NSFW exclusion uses native adult=0 | ✅ Pass | 1.05s | — |
-| MangaSushi | Native catalog pagination advances without using filtered counts | ✅ Pass | 0.83s | — |
-| MangaSushi | Full title search and safe details retain the canonical identity | ✅ Pass | 0.75s | — |
-| MangaSushi | English aliases retain canonical IDs, original titles and complete comma-containing alternatives | ✅ Pass | 4.92s | — |
-| MangaSushi | Japanese-only alternatives retain the original title in search and details | ✅ Pass | 1.66s | — |
-| MangaSushi | Cold metadata classification still queries the source original, not its English display alias | ✅ Pass | 0.87s | — |
-| MangaSushi | Removing an English alias from live metadata restores the original search and detail display | ✅ Pass | 0.83s | — |
-| MangaSushi | Search exposes live genres, all statuses, site fields and seven orders | ✅ Pass | 0.49s | — |
-| MangaSushi | Every native search order returns live results | ✅ Pass | 4.22s | — |
-| MangaSushi | Native OR and AND genre conditions and author/artist/year/status filters | ✅ Pass | 6.15s | — |
-| MangaSushi | Negative search returns a genuinely empty terminal page | ✅ Pass | 0.75s | — |
-| MangaSushi | Preference callback persists across instances and unfiltered catalog is usable | ✅ Pass | 4.29s | — |
-| MangaSushi | Discovery mirrors both site rows exactly with no invented popular continuation | ✅ Pass | 2.25s | — |
-| MangaSushi | Popular, latest, search and detail covers use the largest advertised same-asset images | ✅ Pass | 2.72s | — |
-| MangaSushi | Cover fallbacks reject malformed or unrelated metadata and retain explicitly advertised originals | ✅ Pass | 1.31s | — |
-| MangaSushi | Unfiltered discovery keeps English titles with two cold requests and zero warm requests | ✅ Pass | 0.78s | — |
-| MangaSushi | Sample details, asynchronous chapters, decimals and original labels | ✅ Pass | 0.65s | — |
-| MangaSushi | Multiple readers preserve ordered lazy images and image bytes | ✅ Pass | 0.71s | — |
-| MangaSushi | Editorial notices never become reading content, even with exclusion off | ✅ Pass | 1.95s | — |
-| MangaSushi | Reader rejects mismatched identity, duplicate URLs and numbered page gaps | ✅ Pass | 0.26s | — |
-| MangaSushi | Changing the preference invalidates an in-flight unfiltered response | ✅ Pass | 0.82s | — |
-| MangaSushi | Unknown classification is blocked and malformed search is not an empty success | ✅ Pass | 2.41s | — |
-| MangaSushi | Re-enabling global exclusion blocks cached NSFW detail, chapters, reader and deep links | ✅ Pass | 1.93s | — |
-| MangaSushi | Filtered discovery preserves rows and only returns verifiably safe titles | ✅ Pass | 10.39s | — |
-| MangaSushi | Setting changes invalidate a pending discovery metadata batch | ✅ Pass | 0.84s | — |
-| MangaSushi | Malformed discovery metadata fails visibly instead of trusting home titles | ✅ Pass | 0.47s | — |
+| MangaSushi | Native rating policy is authoritative with no never-saved source cap and reusable context-neutral caches | ✅ Pass | 2.13s | — |
+| MangaSushi | Live native parsers map incomplete metadata to Mature and keep actual adult warnings Explicit | ✅ Pass | 4.46s | — |
+| MangaSushi | Native singleton ratings use only verified coarse source markers and never infer a Suggestive taxonomy | ✅ Pass | 8.60s | — |
+| MangaSushi | Warm native search pages retain a newly observed adult warning instead of relabeling it Safe | ✅ Pass | 1.40s | — |
+| MangaSushi | Native logical pagination passes excluded-only physical pages without losing later eligible IDs | ✅ Pass | 1.97s | — |
+| MangaSushi | Native logical pagination passes duplicate-only physical pages without losing later eligible IDs | ✅ Pass | 1.57s | — |
+| MangaSushi | Ordinary genre search proves native Action/Romance taxonomy and preserves exact continuation without added requests | ✅ Pass | 4.28s | — |
+| MangaSushi | Cooking ignored-filter response fails visibly after one request, never as unrelated or false empty results | ✅ Pass | 0.82s | — |
+| MangaSushi | Genre proof rejects ambiguous query syntax, missing/wrong taxonomy, unknown terms and unrelated raw metadata | ✅ Pass | 1.84s | — |
+| MangaSushi | OR/AND genre proof uses real raw memberships and accepts recognized genuine empty searches | ✅ Pass | 0.46s | — |
+| MangaSushi | Continuation retains initial native genre scope and rejects ignored or altered taxonomy without scans | ✅ Pass | 0.19s | — |
+| MangaSushi | Explicitly saved NSFW exclusion uses native adult=0 | ✅ Pass | 1.03s | — |
+| MangaSushi | Native catalog pagination advances without using filtered counts | ✅ Pass | 1.01s | — |
+| MangaSushi | Full title search and safe details retain the canonical identity | ✅ Pass | 0.98s | — |
+| MangaSushi | English aliases retain canonical IDs, original titles and complete comma-containing alternatives | ✅ Pass | 6.21s | — |
+| MangaSushi | Japanese-only alternatives retain the original title in search and details | ✅ Pass | 1.78s | — |
+| MangaSushi | Cold metadata classification still queries the source original, not its English display alias | ✅ Pass | 1.27s | — |
+| MangaSushi | Removing an English alias from live metadata restores the original search and detail display | ✅ Pass | 1.03s | — |
+| MangaSushi | Search exposes live genres, all statuses, site fields and seven orders | ✅ Pass | 1.97s | — |
+| MangaSushi | Every native search order returns live results | ✅ Pass | 6.70s | — |
+| MangaSushi | Native OR and AND genre conditions and author/artist/year/status filters | ✅ Pass | 11.29s | — |
+| MangaSushi | Negative search returns a genuinely empty terminal page | ✅ Pass | 0.52s | — |
+| MangaSushi | Preference callback persists across instances and unfiltered catalog is usable | ✅ Pass | 3.46s | — |
+| MangaSushi | Discovery mirrors both site rows exactly with no invented popular continuation | ✅ Pass | 3.63s | — |
+| MangaSushi | Popular, latest, search and detail covers use the largest advertised same-asset images | ✅ Pass | 2.19s | — |
+| MangaSushi | Cover fallbacks reject malformed or unrelated metadata and retain explicitly advertised originals | ✅ Pass | 1.76s | — |
+| MangaSushi | Unfiltered discovery keeps English titles with two cold requests and zero warm requests | ✅ Pass | 1.04s | — |
+| MangaSushi | Sample details, asynchronous chapters, decimals and original labels | ✅ Pass | 0.71s | — |
+| MangaSushi | Multiple readers preserve ordered lazy images and image bytes | ✅ Pass | 0.79s | — |
+| MangaSushi | Editorial notices never become reading content, even with exclusion off | ✅ Pass | 1.98s | — |
+| MangaSushi | Reader rejects mismatched identity, duplicate URLs and numbered page gaps | ✅ Pass | 0.22s | — |
+| MangaSushi | Changing the preference invalidates an in-flight unfiltered response | ✅ Pass | 1.13s | — |
+| MangaSushi | Unknown classification is blocked and malformed search is not an empty success | ✅ Pass | 2.88s | — |
+| MangaSushi | Re-enabling global exclusion blocks cached NSFW detail, chapters, reader and deep links | ✅ Pass | 1.85s | — |
+| MangaSushi | Filtered discovery preserves rows and only returns verifiably safe titles | ✅ Pass | 10.26s | — |
+| MangaSushi | Setting changes invalidate a pending discovery metadata batch | ✅ Pass | 0.94s | — |
+| MangaSushi | Malformed discovery metadata fails visibly instead of trusting home titles | ✅ Pass | 0.21s | — |
 | MangaSushi | Read-only host rejects duplicate AJAX actions before any request | ✅ Pass | 0.00s | — |
-| MangaSushi | Repeated provider pages stop within ten consecutive no-new-raw-ID reads | ✅ Pass | 1.26s | — |
+| MangaSushi | Repeated provider pages stop within ten consecutive no-new-raw-ID reads | ✅ Pass | 1.03s | — |
 | ManhwaNex | Built Mana bundle and source metadata | ✅ Pass | 0.02s | — |
-| ManhwaNex | Native rating authority defaults to no extra source cap and replays raw cached pages under changed contexts | ✅ Pass | 1.26s | — |
-| ManhwaNex | Native details use supported Mature fallback only for incomplete metadata and retain positive adult warnings | ✅ Pass | 1.47s | — |
-| ManhwaNex | Native singleton policy skips excluded-only physical pages and never caches a reader policy | ✅ Pass | 1.21s | — |
-| ManhwaNex | Explicitly saved source exclusion uses two cold requests and zero warm requests | ✅ Pass | 0.65s | — |
+| ManhwaNex | Native rating authority defaults to no extra source cap and replays raw cached pages under changed contexts | ✅ Pass | 1.23s | — |
+| ManhwaNex | Native details use supported Mature fallback only for incomplete metadata and retain positive adult warnings | ✅ Pass | 1.13s | — |
+| ManhwaNex | Native singleton policy skips excluded-only physical pages and never caches a reader policy | ✅ Pass | 1.20s | — |
+| ManhwaNex | Explicitly saved source exclusion uses two cold requests and zero warm requests | ✅ Pass | 0.59s | — |
 | ManhwaNex | Native home names, memberships, exact order and pagination are preserved | ✅ Pass | 0.70s | — |
-| ManhwaNex | Largest source-advertised covers have real intrinsic image dimensions | ✅ Pass | 0.21s | — |
-| ManhwaNex | Native safe search returns exact source page and next-page identities | ✅ Pass | 1.36s | — |
-| ManhwaNex | Search form exposes only verified native taxonomy and Relevance sort | ✅ Pass | 0.31s | — |
-| ManhwaNex | Native Action archive stays lazy, ordered and complete in both safety modes | ✅ Pass | 11.06s | — |
-| ManhwaNex | Native Romance archive stays lazy, ordered and complete in both safety modes | ✅ Pass | 1.82s | — |
-| ManhwaNex | Native Fantasy archive stays lazy, ordered and complete in both safety modes | ✅ Pass | 11.31s | — |
-| ManhwaNex | Native Martial Arts archive stays lazy, ordered and complete in both safety modes | ✅ Pass | 5.73s | — |
-| ManhwaNex | Native Adventure archive stays lazy, ordered and complete in both safety modes | ✅ Pass | 3.23s | — |
-| ManhwaNex | Native Ghost archive stays lazy, ordered and complete in both safety modes | ✅ Pass | 1.63s | — |
-| ManhwaNex | Native Cultivation archive stays lazy, ordered and complete in both safety modes | ✅ Pass | 1.73s | — |
-| ManhwaNex | Native System archive stays lazy, ordered and complete in both safety modes | ✅ Pass | 2.94s | — |
-| ManhwaNex | Concurrent lazy archive requests coalesce the native page and bounded metadata batch | ✅ Pass | 0.89s | — |
-| ManhwaNex | Distinct native canonical aliases retain both cards and their separate chapter inventories | ✅ Pass | 2.21s | — |
-| ManhwaNex | Sequential native pages deduplicate real canonical overlap without losing later titles or terminal state | ✅ Pass | 18.72s | — |
-| ManhwaNex | Pagination identity stays scoped to native query, category and current settings | ✅ Pass | 5.06s | — |
-| ManhwaNex | Category continuation rejects foreign, switched, nonadvancing and wrong-context archives before following them | ✅ Pass | 4.01s | — |
-| ManhwaNex | Raw archive adult evidence cannot be overwritten by complete safe batch metadata | ✅ Pass | 35.84s | — |
-| ManhwaNex | All eight native genre filters and OR/AND semantics are honored | ✅ Pass | 3.72s | — |
-| ManhwaNex | Native author and artist text filters work while source redirects fail visibly | ✅ Pass | 0.97s | — |
-| ManhwaNex | Every source status and release filter uses native parameters | ✅ Pass | 2.15s | — |
-| ManhwaNex | Source titles, punctuation, aliases, canonical metadata and deep links survive cold details | ✅ Pass | 1.74s | — |
-| ManhwaNex | Negative searches terminate honestly without repeating or inventing pages | ✅ Pass | 3.52s | — |
-| ManhwaNex | All currently available chapters match the complete native AJAX list, including decimal identity | ✅ Pass | 0.36s | — |
-| ManhwaNex | Native chapter pipeline preserves reported container and explicit-label volumes | ✅ Pass | 0.85s | — |
-| ManhwaNex | Native oldest reader preserves image order and actual first/last bytes | ✅ Pass | 1.20s | — |
-| ManhwaNex | Native newest reader preserves image order and actual first/last bytes | ✅ Pass | 0.89s | — |
-| ManhwaNex | Native decimal reader preserves image order and actual first/last bytes | ✅ Pass | 0.95s | — |
-| ManhwaNex | A second live title completes details, chapters, reader and both image endpoints | ✅ Pass | 1.12s | — |
-| ManhwaNex | Explicit opt-out persists and per-search adult filtering cannot widen global exclusion | ✅ Pass | 2.02s | — |
-| ManhwaNex | Unknown and explicit classifications fail closed without treating BL/demographics as adult labels | ✅ Pass | 12.41s | — |
+| ManhwaNex | Largest source-advertised covers have real intrinsic image dimensions | ✅ Pass | 0.12s | — |
+| ManhwaNex | Native safe search returns exact source page and next-page identities | ✅ Pass | 1.31s | — |
+| ManhwaNex | Search form exposes only verified native taxonomy and Relevance sort | ✅ Pass | 0.32s | — |
+| ManhwaNex | Native Action archive stays lazy, ordered and complete in both safety modes | ✅ Pass | 11.07s | — |
+| ManhwaNex | Native Romance archive stays lazy, ordered and complete in both safety modes | ✅ Pass | 1.77s | — |
+| ManhwaNex | Native Fantasy archive stays lazy, ordered and complete in both safety modes | ✅ Pass | 10.96s | — |
+| ManhwaNex | Native Martial Arts archive stays lazy, ordered and complete in both safety modes | ✅ Pass | 5.83s | — |
+| ManhwaNex | Native Adventure archive stays lazy, ordered and complete in both safety modes | ✅ Pass | 3.29s | — |
+| ManhwaNex | Native Ghost archive stays lazy, ordered and complete in both safety modes | ✅ Pass | 1.62s | — |
+| ManhwaNex | Native Cultivation archive stays lazy, ordered and complete in both safety modes | ✅ Pass | 1.78s | — |
+| ManhwaNex | Native System archive stays lazy, ordered and complete in both safety modes | ✅ Pass | 2.95s | — |
+| ManhwaNex | Concurrent lazy archive requests coalesce the native page and bounded metadata batch | ✅ Pass | 0.85s | — |
+| ManhwaNex | Distinct native canonical aliases retain both cards and their separate chapter inventories | ✅ Pass | 2.25s | — |
+| ManhwaNex | Sequential native pages deduplicate real canonical overlap without losing later titles or terminal state | ✅ Pass | 18.95s | — |
+| ManhwaNex | Pagination identity stays scoped to native query, category and current settings | ✅ Pass | 4.92s | — |
+| ManhwaNex | Category continuation rejects foreign, switched, nonadvancing and wrong-context archives before following them | ✅ Pass | 3.98s | — |
+| ManhwaNex | Raw archive adult evidence cannot be overwritten by complete safe batch metadata | ✅ Pass | 35.61s | — |
+| ManhwaNex | All eight native genre filters and OR/AND semantics are honored | ✅ Pass | 3.62s | — |
+| ManhwaNex | Native author and artist text filters work while source redirects fail visibly | ✅ Pass | 0.90s | — |
+| ManhwaNex | Every source status and release filter uses native parameters | ✅ Pass | 2.19s | — |
+| ManhwaNex | Source titles, punctuation, aliases, canonical metadata and deep links survive cold details | ✅ Pass | 1.57s | — |
+| ManhwaNex | Negative searches terminate honestly without repeating or inventing pages | ✅ Pass | 3.91s | — |
+| ManhwaNex | All currently available chapters match the complete native AJAX list, including decimal identity | ✅ Pass | 0.25s | — |
+| ManhwaNex | Native chapter pipeline preserves reported container and explicit-label volumes | ✅ Pass | 0.77s | — |
+| ManhwaNex | Native oldest reader preserves image order and actual first/last bytes | ✅ Pass | 1.16s | — |
+| ManhwaNex | Native newest reader preserves image order and actual first/last bytes | ✅ Pass | 0.84s | — |
+| ManhwaNex | Native decimal reader preserves image order and actual first/last bytes | ✅ Pass | 0.89s | — |
+| ManhwaNex | A second live title completes details, chapters, reader and both image endpoints | ✅ Pass | 1.10s | — |
+| ManhwaNex | Explicit opt-out persists and per-search adult filtering cannot widen global exclusion | ✅ Pass | 2.01s | — |
+| ManhwaNex | Unknown and explicit classifications fail closed without treating BL/demographics as adult labels | ✅ Pass | 12.08s | — |
 | ManhwaNex | IDs, image origins and exact read-only POST routes reject unsafe inputs | ✅ Pass | 0.00s | — |
-| ManhwaNex | Preference changes invalidate in-flight discovery and cannot repopulate stale caches | ✅ Pass | 0.39s | — |
+| ManhwaNex | Preference changes invalidate in-flight discovery and cannot repopulate stale caches | ✅ Pass | 0.32s | — |
 | VortexScans | Built Mana bundle and source metadata | ✅ Pass | 0.03s | — |
-| VortexScans | Catalog search returns usable highlights | ✅ Pass | 0.40s | — |
-| VortexScans | Catalog pagination advances or explicitly ends | ✅ Pass | 0.21s | — |
-| VortexScans | Title search finds a live catalog title | ✅ Pass | 0.19s | — |
-| VortexScans | Live content details and cover image | ✅ Pass | 0.54s | — |
-| VortexScans | Search form exposes live genres and sort options | ✅ Pass | 0.18s | — |
-| VortexScans | Genre inclusion and exclusion affect live results | ✅ Pass | 0.99s | — |
+| VortexScans | Catalog search returns usable highlights | ✅ Pass | 0.18s | — |
+| VortexScans | Catalog pagination advances or explicitly ends | ✅ Pass | 0.27s | — |
+| VortexScans | Title search finds a live catalog title | ✅ Pass | 0.29s | — |
+| VortexScans | Live content details and cover image | ✅ Pass | 0.35s | — |
+| VortexScans | Search form exposes live genres and sort options | ✅ Pass | 0.15s | — |
+| VortexScans | Genre inclusion and exclusion affect live results | ✅ Pass | 1.03s | — |
 | VortexScans | Home discovers all published sections | ✅ Pass | 0.25s | — |
-| VortexScans | Home section: Popular Today (popular-today) | ✅ Pass | 0.80s | — |
-| VortexScans | Home section: Latest (latest) | ✅ Pass | 0.30s | — |
-| VortexScans | Home section: New (new) | ✅ Pass | 0.20s | — |
-| VortexScans | Home section: For beginners (collection:for-beginners) | ✅ Pass | 0.19s | — |
-| VortexScans | Home section: Top Picks (collection:top-picks) | ✅ Pass | 0.27s | — |
-| VortexScans | Home section: Fantasy Worlds (collection:fantasy-worlds) | ✅ Pass | 0.23s | — |
-| VortexScans | Home section: Marathon Reads (collection:marathon-reads) | ✅ Pass | 0.26s | — |
-| VortexScans | Home section: Completed Series (collection:completed-series) | ✅ Pass | 0.24s | — |
-| VortexScans | Home section: Most Popular (most-popular) | ✅ Pass | 0.30s | — |
-| VortexScans | Popular Today uses source-published originals with one homepage request | ✅ Pass | 0.82s | — |
-| VortexScans | Popular Today metadata is source-bound and missing or invalid originals retain card images | ✅ Pass | 1.40s | — |
-| VortexScans | Search and detail retain source originals including octet-stream WebP bytes | ✅ Pass | 0.42s | — |
+| VortexScans | Home section: Popular Today (popular-today) | ✅ Pass | 0.64s | — |
+| VortexScans | Home section: Latest (latest) | ✅ Pass | 0.35s | — |
+| VortexScans | Home section: New (new) | ✅ Pass | 0.19s | — |
+| VortexScans | Home section: For beginners (collection:for-beginners) | ✅ Pass | 0.22s | — |
+| VortexScans | Home section: Top Picks (collection:top-picks) | ✅ Pass | 0.23s | — |
+| VortexScans | Home section: Fantasy Worlds (collection:fantasy-worlds) | ✅ Pass | 0.26s | — |
+| VortexScans | Home section: Marathon Reads (collection:marathon-reads) | ✅ Pass | 0.25s | — |
+| VortexScans | Home section: Completed Series (collection:completed-series) | ✅ Pass | 0.26s | — |
+| VortexScans | Home section: Most Popular (most-popular) | ✅ Pass | 0.29s | — |
+| VortexScans | Popular Today uses source-published originals with one homepage request | ✅ Pass | 0.63s | — |
+| VortexScans | Popular Today metadata is source-bound and missing or invalid originals retain card images | ✅ Pass | 1.81s | — |
+| VortexScans | Search and detail retain source originals including octet-stream WebP bytes | ✅ Pass | 0.43s | — |
 | VortexScans | Live chapter list has unique IDs and oldest-first order | ✅ Pass | 0.22s | — |
-| VortexScans | Chapter pages are nonempty unique URLs | ✅ Pass | 0.26s | — |
-| VortexScans | First and last chapter images load with source headers | ✅ Pass | 0.09s | — |
-| VortexScans | Series deep link resolves the same live content | ✅ Pass | 0.15s | — |
+| VortexScans | Chapter pages are nonempty unique URLs | ✅ Pass | 0.24s | — |
+| VortexScans | First and last chapter images load with source headers | ✅ Pass | 0.06s | — |
+| VortexScans | Series deep link resolves the same live content | ✅ Pass | 0.19s | — |
 | VortexScans | Native policy distinguishes no policy from empty and captures current public catalog once | ✅ Pass | 0.39s | — |
 | VortexScans | Known source genres retain native classes and incomplete metadata uses Mature details fallback | ✅ Pass | 0.00s | — |
-| VortexScans | Native concatenated pages survive partial overlap duplicate-only and rating-excluded physical pages | ✅ Pass | 0.00s | — |
+| VortexScans | Native concatenated pages survive partial overlap duplicate-only and rating-excluded physical pages | ✅ Pass | 0.01s | — |
 | VortexScans | Discover and view-more retain exact native policy while sparse cards use supported fallback | ✅ Pass | 0.00s | — |
 
 </details>
@@ -445,6 +450,7 @@ Tested commit: `95568ed`
 
 | Checked (UTC) | Hijala | Kagane | MangaSushi | ManhwaNex | VortexScans | Run |
 | --- | --- | --- | --- | --- | --- | --- |
+| 2026-10-15 08:04:00 UTC | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38702080694) |
 | 2026-10-15 07:57:10 UTC | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38701544623) |
 | 2026-10-15 07:44:21 UTC | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38700007680) |
 | 2026-10-15 07:22:33 UTC | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | ❌ Fail | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38697525684) |
