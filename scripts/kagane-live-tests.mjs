@@ -1,9 +1,105 @@
 import assert from 'node:assert/strict';
-import { assertReadOnlyKaganePost, createManaRuntime, redactURL, redactText } from './mana-runtime.mjs';
+import { assertPublicKaganeRequest, assertReadOnlyKaganePost, createManaRuntime, redactURL, redactText } from './mana-runtime.mjs';
+import { createManaTestTransport } from './mana-test-browser.mjs';
+
+// Host-transport regressions belong to the existing live-contract guard, not a
+// separate fixture/parser suite. This can also run without touching the network.
+export async function assertKaganeHostGuards({ freshSource } = {}) {
+  const domain = 'https://kagane.org', api = `${domain}/api/v2`;
+  assertReadOnlyKaganePost({ method: 'POST', url: `${api}/search/series?page=0&size=50`, body: { title: 'test' } });
+  for (const request of [
+    { method: 'POST', url: `${domain}/api/account`, body: {} },
+    { method: 'POST', url: `${api}/sources/list`, body: { source_types: null, delete: true } },
+    { method: 'POST', url: `${api}/search/series?page=0&page=1&size=50`, body: {} },
+    { method: 'POST', url: `${api}/books/id?is_datasaver=false&purchase=true`, body: {} },
+    { method: 'POST', url: `${api}/search/series?page=0&size=50`, body: { password: 'not-a-secret' } },
+    { method: 'POST', url: 'https://user:password@kagane.org/api/integrity', body: {} },
+    { method: 'GET', url: `${domain}/api/account` },
+    { method: 'GET', url: `${api}/image/id?token=not-a-live-token` },
+    { method: 'GET', url: `${api}/series/id/books?limit=200&before=one&before=two` },
+  ]) assert.throws(() => assertPublicKaganeRequest(request), /unsupported/i);
+  for (const path of ['/api/v2/genres/list', '/api/v2/tags/list', '/api/v2/image/cover-id', '/api/v2/series/id', '/api/v2/series/id/books/index', '/api/v2/series/id/books?limit=200&before=cursor']) {
+    assertPublicKaganeRequest({ method: 'GET', url: `${domain}${path}` });
+  }
+  const recorded = [];
+  const directFetch = async (url, init) => {
+    recorded.push({ url: String(url), ...init });
+    return new Response('{}', { headers: { 'content-type': 'application/json' } });
+  };
+  const guarded = new (createManaRuntime({ logger: () => {}, fetchImpl: directFetch }).NetworkClient)();
+  await assert.rejects(guarded.request({ method: 'POST', url: `${api}/books/id?is_datasaver=false`, params: { purchase: true }, body: {} }), /unsupported/i);
+  await assert.rejects(guarded.request({ method: 'POST', url: `${api}/books/id?is_datasaver=false`, params: { is_datasaver: true }, body: {} }), /unsupported/i);
+  assert.equal(recorded.length, 0, 'Rejected finalized URLs reached the network');
+  await guarded.request({ method: 'POST', url: `${api}/search/series`, params: { page: 0, size: 50 }, body: { title: 'JSON café' } });
+  assert.equal(recorded[0].body, JSON.stringify({ title: 'JSON café' }));
+  assert.equal(new URL(recorded[0].url).searchParams.get('size'), '50');
+  assert.equal(createManaTestTransport({ solverURL: '', fetchImpl: directFetch }).fetch, directFetch, 'Browser transport must be opt-in');
+  let active = 0, peak = 0, creates = 0, warms = 0, destroys = 0;
+  const browserPayloads = [], bytes = Buffer.from([0xff, 0xd8, 0xff, 0x00, 0x80, 0xfe, 0x00]);
+  const browser = createManaTestTransport({ solverURL: 'http://127.0.0.1:8191', fetchImpl: async (url, init) => {
+    active += 1; peak = Math.max(peak, active);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      const payload = JSON.parse(init.body);
+      if (String(url).endsWith('/v1')) {
+        if (payload.cmd === 'sessions.create') creates += 1;
+        else if (payload.cmd === 'sessions.destroy') destroys += 1;
+        else assert.fail('Automatic CAPTCHA solver must never be invoked');
+        return Response.json({ status: 'ok' });
+      }
+      if (String(url).endsWith('/browser/warm')) { warms += 1; return Response.json({ ready: true }); }
+      browserPayloads.push(payload);
+      if (/\/(?:genres\/list|host-cloudflare-probe)$/.test(payload.url)) {
+        return Response.json({ status: 403, url: payload.url, headers: { 'cf-mitigated': 'challenge', 'content-type': 'text/html' }, body: Buffer.from('Just a moment').toString('base64'), encoding: 'base64' });
+      }
+      return Response.json({ status: 200, url: payload.url, headers: { 'content-type': 'image/jpeg' }, body: bytes.toString('base64'), encoding: 'base64' });
+    } finally { active -= 1; }
+  } });
+  try {
+    const body = JSON.stringify({ title: 'JSON café' });
+    const responses = await Promise.all([
+      browser.fetch(`${api}/search/series?page=0&size=50`, { method: 'POST', body }),
+      browser.fetch(`${api}/image/cover-id`),
+    ]);
+    for (const response of responses) assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes, 'Chromium hop corrupted actual image bytes');
+    assert.equal(browserPayloads[0].body, body, 'JSON POST became a form request');
+    assert.equal(creates, 1); assert.equal(warms, 1); assert.equal(peak, 1, 'Concurrent WebDriver commands raced');
+    const remainingChallenge = await browser.fetch(`${api}/genres/list`);
+    assert.equal(remainingChallenge.status, 403);
+    assert.equal(remainingChallenge.headers.get('cf-mitigated'), 'challenge');
+    assert.equal(await remainingChallenge.text(), 'Just a moment');
+    if (freshSource) {
+      const challenged = freshSource();
+      const runtime = createManaRuntime({ logger: () => {}, fetchImpl: browser.fetch });
+      challenged.api.client = new runtime.NetworkClient({ statusValidator: () => true });
+      await assert.rejects(challenged.api.series('host-cloudflare-probe'), (error) => error.name === 'CloudflareError');
+    }
+    await assert.rejects(browser.fetch(`${domain}/api/account`), /unsupported/i);
+    await assert.rejects(browser.fetch(`${api}/genres/list`, { headers: { authorization: 'not-an-account-token' } }), /credentials/i);
+  } finally { await browser.close(); }
+  assert.equal(destroys, 1, 'Anonymous browser session was not destroyed');
+  for (const code of ['captcha', 'security', 'other']) {
+    const failing = createManaTestTransport({ solverURL: 'http://127.0.0.1:8191', fetchImpl: async () => Response.json({ error: 'secret-token-never-log', code }, { status: 409 }) });
+    await assert.rejects(failing.fetch(`${api}/genres/list`), (error) => {
+      assert(!error.message.includes('secret-token-never-log'));
+      assert.match(error.message, code === 'captcha' ? /CAPTCHA.*approval/ : code === 'security' ? /security warning/ : /failed/);
+      return true;
+    });
+    await failing.close();
+  }
+  if (freshSource) {
+    const challenged = freshSource();
+    const runtime = createManaRuntime({ logger: () => {}, fetchImpl: async () => new Response('Just a moment', { status: 403, headers: { 'cf-mitigated': 'challenge', 'content-type': 'text/html' } }) });
+    challenged.api.client = new runtime.NetworkClient({ statusValidator: () => true });
+    await assert.rejects(challenged.api.series('host-cloudflare-probe'), (error) => error.name === 'CloudflareError');
+  }
+  assert(!redactText(`NetworkError: ${api}/books/page/book/image.jxl?token=not-a-live-token`).includes('not-a-live-token'));
+  assert(!redactURL(`${api}/books/page/book/image.jxl?token=not-a-live-token&is_datasaver=false`).includes('not-a-live-token'));
+}
 
 // Execute the native bundle against fresh public responses. Observability wrappers
 // record the data it actually consumed, never replace it with a parallel source.
-export async function testKagane({ source, check, highlights, searchResult, image, requests, freshSource }) {
+export async function testKagane({ source, check, highlights, searchResult, image, requests, freshSource, referenceFetch = globalThis.fetch }) {
   const domain = 'https://kagane.org';
   const api = `${domain}/api/v2`;
   const sample = '019c2084-fa67-791d-8ba5-494744577445';
@@ -47,7 +143,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
     if (result.results.length) highlights(result.results);
   };
   const json = async (path) => {
-    const response = await fetch(`${api}${path}`, { headers: { origin: domain, referer: `${domain}/` }, signal: AbortSignal.timeout(30_000) });
+    const response = await referenceFetch(`${api}${path}`, { headers: { origin: domain, referer: `${domain}/` }, signal: AbortSignal.timeout(30_000) });
     assert(response.ok, `Kagane reference HTTP ${response.status}: ${path}`);
     return response.json();
   };
@@ -353,19 +449,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
     assert(readerData?.pages?.length, 'No successful live reader ran before the corruption check');
   });
   await check('Test host permits only exact public Kagane operations and redacts reader tokens', async () => {
-    assertReadOnlyKaganePost({ method: 'POST', url: `${api}/search/series?page=0&size=50`, body: { title: 'test' } });
-    for (const request of [
-      { method: 'POST', url: `${domain}/api/account`, body: {} },
-      { method: 'POST', url: `${api}/sources/list`, body: { source_types: null, delete: true } },
-      { method: 'POST', url: `${api}/search/series?page=0&page=1&size=50`, body: {} },
-      { method: 'POST', url: `${api}/books/id?is_datasaver=false&purchase=true`, body: {} },
-      { method: 'POST', url: `${api}/search/series?page=0&size=50`, body: { password: 'not-a-secret' } }
-    ]) assert.throws(() => assertReadOnlyKaganePost(request), /unsupported/i);
-    const guarded = new (createManaRuntime({ logger: () => {} }).NetworkClient)();
-    await assert.rejects(guarded.request({ method: 'POST', url: `${api}/books/id?is_datasaver=false`, params: { purchase: true }, body: {} }), /unsupported/i);
-    await assert.rejects(guarded.request({ method: 'POST', url: `${api}/books/id?is_datasaver=false`, params: { is_datasaver: true }, body: {} }), /unsupported/i);
-    assert(!redactText(`NetworkError: ${api}/books/page/book/image.jxl?token=not-a-live-token`).includes('not-a-live-token'));
-    assert(!redactURL(`${api}/books/page/book/image.jxl?token=not-a-live-token&is_datasaver=false`).includes('not-a-live-token'));
+    await assertKaganeHostGuards({ freshSource });
     for (const path of ['/genres/list', '/tags/list', '/sources/list']) assert.equal(requests.filter((request) => new URL(request.url).pathname === `/api/v2${path}`).length, 1, `Public taxonomy was redundantly fetched: ${path}`);
     assert(!requests.some((request) => request.url.includes('token=') && !request.url.includes('redacted')));
   });

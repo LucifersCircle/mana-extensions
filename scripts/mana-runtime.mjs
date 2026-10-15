@@ -4,7 +4,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 // bundle supplies the real @mana-app/types enums and NetworkClientBuilder.
 // ObjectStore is process-local for preference callbacks; iOS persistence, WebViews,
 // automatic retries and cookie persistence are not emulated.
-export function createManaRuntime({ logger = logRequest } = {}) {
+export function createManaRuntime({ logger = logRequest, fetchImpl = globalThis.fetch } = {}) {
     class NetworkError extends Error {
         constructor(name, message, req, res) {
             super(redactText(message))
@@ -95,7 +95,7 @@ export function createManaRuntime({ logger = logRequest } = {}) {
             const started = Date.now()
             let status
             try {
-                const raw = await fetch(url, {
+                const raw = await fetchImpl(url, {
                     method: request.method,
                     headers,
                     body: request.body != null && typeof request.body === 'object' ? JSON.stringify(request.body) : request.body,
@@ -180,6 +180,26 @@ export function redactText(value) {
     }).replace(/([?&](?:token|access_token)=)[^&\s"'<>)]*/g, '$1[redacted]')
 }
 
+// The optional CI browser transport is limited to these exact public read-only
+// routes. Reader image/token URLs intentionally stay on the ordinary transport.
+export function assertPublicKaganeRequest(request) {
+    const target = new URL(request.url)
+    const reject = () => { throw new Error('Live test browser rejects unsupported Kagane operation') }
+    if (target.origin !== 'https://kagane.org' || target.username || target.password || target.hash) return reject()
+    const params = [...target.searchParams.keys()]
+    if (new Set(params).size !== params.length) return reject()
+    if (request.method === 'POST') return assertReadOnlyKaganePost(request)
+    if (request.method !== 'GET' || request.body != null) return reject()
+    if (!target.search && ['/', '/api/v2/genres/list', '/api/v2/tags/list'].includes(target.pathname)) return
+    if (/^\/api\/v2\/image\/[A-Za-z0-9-]+$/.test(target.pathname) && !target.search) return
+    if (/^\/api\/v2\/series\/[A-Za-z0-9-]+(?:\/books\/index)?$/.test(target.pathname) && !target.search) return
+    if (/^\/api\/v2\/series\/[A-Za-z0-9-]+\/books$/.test(target.pathname)
+        && params.every((key) => ['limit', 'before'].includes(key))
+        && target.searchParams.get('limit') === '200'
+        && (!target.searchParams.has('before') || Boolean(target.searchParams.get('before')?.trim()))) return
+    return reject()
+}
+
 function assertReadOnlyPost(request) {
     const target = new URL(request.url)
     if (target.origin === 'https://kagane.org') return assertReadOnlyKaganePost(request)
@@ -192,7 +212,7 @@ function assertReadOnlyPost(request) {
 export function assertReadOnlyKaganePost(request) {
     const target = new URL(request.url)
     const reject = () => { throw new Error('Live test host rejects unsupported Kagane operation') }
-    if (request.method !== 'POST' || target.origin !== 'https://kagane.org' || target.hash) return reject()
+    if (request.method !== 'POST' || target.origin !== 'https://kagane.org' || target.username || target.password || target.hash) return reject()
     const params = [...target.searchParams.keys()]
     if (new Set(params).size !== params.length) return reject()
     let body = request.body
