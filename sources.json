@@ -32,7 +32,7 @@
       "path": "Kagane",
       "environment": "source",
       "intents": 6298637,
-      "hash": "4164eef24164eef24164eef24164eef24164eef24164eef24164eef24164eef2"
+      "hash": "4c141b5a4c141b5a4c141b5a4c141b5a4c141b5a4c141b5a4c141b5a4c141b5a"
     },
     {
       "id": "MangaSushi",
@@ -57,7 +57,34 @@
       "path": "MangaSushi",
       "environment": "source",
       "intents": 6298637,
-      "hash": "2f4646462f4646462f4646462f4646462f4646462f4646462f4646462f464646"
+      "hash": "39f572e839f572e839f572e839f572e839f572e839f572e839f572e839f572e8"
+    },
+    {
+      "id": "ManhwaNex",
+      "version": "0.0.1-alpha.1",
+      "name": "ManhwaNex",
+      "description": "ManhwaNex with native Popular Series, Latest Updates, search filters and persistent NSFW exclusion.",
+      "thumbnail": "ManhwaNex.png",
+      "rating": 1,
+      "website": "https://manhwanex.com",
+      "badges": [
+        "Manhwa",
+        "Manhua",
+        "Manga"
+      ],
+      "supportedLanguages": [
+        "en_US"
+      ],
+      "developers": [
+        {
+          "name": "LucifersCircle",
+          "github": "https://github.com/LucifersCircle"
+        }
+      ],
+      "path": "ManhwaNex",
+      "environment": "source",
+      "intents": 6298637,
+      "hash": "2aeac7332aeac7332aeac7332aeac7332aeac7332aeac7332aeac7332aeac733"
     },
     {
       "id": "VortexScans",
@@ -84,7 +111,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 6298636,
-      "hash": "6271758d6271758d6271758d6271758d6271758d6271758d6271758d6271758d"
+      "hash": "57c2492d57c2492d57c2492d57c2492d57c2492d57c2492d57c2492d57c2492d"
     }
   ]
 }
