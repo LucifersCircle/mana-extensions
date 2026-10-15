@@ -74,14 +74,14 @@ commits do not retrigger testing or publishing. Pull requests never publish sour
 
 <!-- LIVE_TEST_STATUS:START -->
 
-Last checked: **2026-10-15 01:42:35 UTC** · [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38666999157)
-Started: 2026-10-15 01:41:25 UTC
-Tested commit: `52527cf`
+Last checked: **2026-10-15 02:29:06 UTC** · [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38671116181)
+Started: 2026-10-15 02:27:56 UTC
+Tested commit: `cb72e2e`
 
 | Extension | Result | Passed | Failed | Duration |
 | --- | --- | ---: | ---: | ---: |
-| MangaSushi | ✅ Pass | 20/20 | 0 | 49.72s |
-| VortexScans | ✅ Pass | 21/21 | 0 | 7.24s |
+| MangaSushi | ✅ Pass | 22/22 | 0 | 46.65s |
+| VortexScans | ✅ Pass | 21/21 | 0 | 7.59s |
 
 <details>
 <summary>Test output</summary>
@@ -89,46 +89,48 @@ Tested commit: `52527cf`
 | Extension | Test | Result | Duration | Failure |
 | --- | --- | --- | ---: | --- |
 | MangaSushi | Built Mana bundle and source metadata | ✅ Pass | 0.04s | — |
-| MangaSushi | Global NSFW exclusion defaults on and uses native adult=0 | ✅ Pass | 1.53s | — |
-| MangaSushi | Native catalog pagination advances without using filtered counts | ✅ Pass | 0.68s | — |
-| MangaSushi | Full title search and safe details retain the canonical identity | ✅ Pass | 0.78s | — |
-| MangaSushi | Search exposes live genres, all statuses, site fields and seven orders | ✅ Pass | 0.69s | — |
-| MangaSushi | Every native search order returns live results | ✅ Pass | 3.78s | — |
-| MangaSushi | Native OR and AND genre conditions and author/artist/year/status filters | ✅ Pass | 6.19s | — |
-| MangaSushi | Negative search returns a genuinely empty terminal page | ✅ Pass | 0.98s | — |
-| MangaSushi | Preference callback persists across instances and unfiltered catalog is usable | ✅ Pass | 3.57s | — |
-| MangaSushi | Discovery mirrors both site rows exactly with no invented popular continuation | ✅ Pass | 1.14s | — |
-| MangaSushi | Sample details, asynchronous chapters, decimals and original labels | ✅ Pass | 1.82s | — |
-| MangaSushi | Multiple readers preserve ordered lazy images and image bytes | ✅ Pass | 2.69s | — |
-| MangaSushi | Editorial notices never become reading content, even with exclusion off | ✅ Pass | 1.66s | — |
-| MangaSushi | Reader rejects mismatched identity, duplicate URLs and numbered page gaps | ✅ Pass | 0.40s | — |
-| MangaSushi | Changing the preference invalidates an in-flight unfiltered response | ✅ Pass | 0.69s | — |
-| MangaSushi | Unknown classification is blocked and malformed search is not an empty success | ✅ Pass | 2.27s | — |
-| MangaSushi | Re-enabling global exclusion blocks cached NSFW detail, chapters, reader and deep links | ✅ Pass | 1.86s | — |
-| MangaSushi | Filtered discovery preserves rows and only returns verifiably safe titles | ✅ Pass | 17.46s | — |
+| MangaSushi | Global NSFW exclusion defaults on and uses native adult=0 | ✅ Pass | 1.70s | — |
+| MangaSushi | Native catalog pagination advances without using filtered counts | ✅ Pass | 0.83s | — |
+| MangaSushi | Full title search and safe details retain the canonical identity | ✅ Pass | 1.08s | — |
+| MangaSushi | Search exposes live genres, all statuses, site fields and seven orders | ✅ Pass | 0.67s | — |
+| MangaSushi | Every native search order returns live results | ✅ Pass | 4.34s | — |
+| MangaSushi | Native OR and AND genre conditions and author/artist/year/status filters | ✅ Pass | 6.10s | — |
+| MangaSushi | Negative search returns a genuinely empty terminal page | ✅ Pass | 1.04s | — |
+| MangaSushi | Preference callback persists across instances and unfiltered catalog is usable | ✅ Pass | 3.85s | — |
+| MangaSushi | Discovery mirrors both site rows exactly with no invented popular continuation | ✅ Pass | 1.17s | — |
+| MangaSushi | Sample details, asynchronous chapters, decimals and original labels | ✅ Pass | 1.24s | — |
+| MangaSushi | Multiple readers preserve ordered lazy images and image bytes | ✅ Pass | 3.34s | — |
+| MangaSushi | Editorial notices never become reading content, even with exclusion off | ✅ Pass | 2.39s | — |
+| MangaSushi | Reader rejects mismatched identity, duplicate URLs and numbered page gaps | ✅ Pass | 0.37s | — |
+| MangaSushi | Changing the preference invalidates an in-flight unfiltered response | ✅ Pass | 0.74s | — |
+| MangaSushi | Unknown classification is blocked and malformed search is not an empty success | ✅ Pass | 2.97s | — |
+| MangaSushi | Re-enabling global exclusion blocks cached NSFW detail, chapters, reader and deep links | ✅ Pass | 1.88s | — |
+| MangaSushi | Filtered discovery preserves rows and only returns verifiably safe titles | ✅ Pass | 10.02s | — |
+| MangaSushi | Setting changes invalidate a pending discovery metadata batch | ✅ Pass | 0.96s | — |
+| MangaSushi | Malformed discovery metadata fails visibly instead of trusting home titles | ✅ Pass | 0.36s | — |
 | MangaSushi | Read-only host rejects duplicate AJAX actions before any request | ✅ Pass | 0.00s | — |
-| MangaSushi | Repeated nonempty AJAX pages fail visibly instead of looping | ✅ Pass | 1.47s | — |
-| VortexScans | Built Mana bundle and source metadata | ✅ Pass | 0.03s | — |
-| VortexScans | Catalog search returns usable highlights | ✅ Pass | 0.30s | — |
-| VortexScans | Catalog pagination advances or explicitly ends | ✅ Pass | 0.24s | — |
-| VortexScans | Title search finds a live catalog title | ✅ Pass | 0.18s | — |
-| VortexScans | Live content details and cover image | ✅ Pass | 0.45s | — |
-| VortexScans | Search form exposes live genres and sort options | ✅ Pass | 0.17s | — |
-| VortexScans | Genre inclusion and exclusion affect live results | ✅ Pass | 1.01s | — |
-| VortexScans | Home discovers all published sections | ✅ Pass | 0.24s | — |
-| VortexScans | Home section: Popular Today (popular-today) | ✅ Pass | 0.78s | — |
-| VortexScans | Home section: Latest (latest) | ✅ Pass | 0.64s | — |
-| VortexScans | Home section: New (new) | ✅ Pass | 0.61s | — |
-| VortexScans | Home section: For beginners (collection:for-beginners) | ✅ Pass | 0.17s | — |
-| VortexScans | Home section: Top Picks (collection:top-picks) | ✅ Pass | 0.25s | — |
-| VortexScans | Home section: Fantasy Worlds (collection:fantasy-worlds) | ✅ Pass | 0.27s | — |
-| VortexScans | Home section: Marathon Reads (collection:marathon-reads) | ✅ Pass | 0.24s | — |
-| VortexScans | Home section: Completed Series (collection:completed-series) | ✅ Pass | 0.23s | — |
-| VortexScans | Home section: Most Popular (most-popular) | ✅ Pass | 0.50s | — |
+| MangaSushi | Repeated nonempty AJAX pages fail visibly instead of looping | ✅ Pass | 1.56s | — |
+| VortexScans | Built Mana bundle and source metadata | ✅ Pass | 0.04s | — |
+| VortexScans | Catalog search returns usable highlights | ✅ Pass | 0.52s | — |
+| VortexScans | Catalog pagination advances or explicitly ends | ✅ Pass | 0.27s | — |
+| VortexScans | Title search finds a live catalog title | ✅ Pass | 0.20s | — |
+| VortexScans | Live content details and cover image | ✅ Pass | 0.31s | — |
+| VortexScans | Search form exposes live genres and sort options | ✅ Pass | 0.20s | — |
+| VortexScans | Genre inclusion and exclusion affect live results | ✅ Pass | 1.00s | — |
+| VortexScans | Home discovers all published sections | ✅ Pass | 0.25s | — |
+| VortexScans | Home section: Popular Today (popular-today) | ✅ Pass | 1.05s | — |
+| VortexScans | Home section: Latest (latest) | ✅ Pass | 0.80s | — |
+| VortexScans | Home section: New (new) | ✅ Pass | 0.46s | — |
+| VortexScans | Home section: For beginners (collection:for-beginners) | ✅ Pass | 0.27s | — |
+| VortexScans | Home section: Top Picks (collection:top-picks) | ✅ Pass | 0.22s | — |
+| VortexScans | Home section: Fantasy Worlds (collection:fantasy-worlds) | ✅ Pass | 0.28s | — |
+| VortexScans | Home section: Marathon Reads (collection:marathon-reads) | ✅ Pass | 0.22s | — |
+| VortexScans | Home section: Completed Series (collection:completed-series) | ✅ Pass | 0.26s | — |
+| VortexScans | Home section: Most Popular (most-popular) | ✅ Pass | 0.49s | — |
 | VortexScans | Live chapter list has unique IDs and oldest-first order | ✅ Pass | 0.26s | — |
-| VortexScans | Chapter pages are nonempty unique URLs | ✅ Pass | 0.25s | — |
-| VortexScans | First and last chapter images load with source headers | ✅ Pass | 0.26s | — |
-| VortexScans | Series deep link resolves the same live content | ✅ Pass | 0.17s | — |
+| VortexScans | Chapter pages are nonempty unique URLs | ✅ Pass | 0.24s | — |
+| VortexScans | First and last chapter images load with source headers | ✅ Pass | 0.06s | — |
+| VortexScans | Series deep link resolves the same live content | ✅ Pass | 0.20s | — |
 
 </details>
 
@@ -137,6 +139,7 @@ Tested commit: `52527cf`
 
 | Checked (UTC) | MangaSushi | VortexScans | Run |
 | --- | --- | --- | --- |
+| 2026-10-15 02:29:06 UTC | ✅ Pass | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38671116181) |
 | 2026-10-15 01:42:35 UTC | ✅ Pass | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38666999157) |
 | 2026-10-15 00:40:42 UTC | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38661349571) |
 
