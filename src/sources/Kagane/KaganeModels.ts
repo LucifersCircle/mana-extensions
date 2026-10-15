@@ -20,9 +20,9 @@ export const SORTS: SortOption[] = [
 ]
 export const SECTIONS = [
     { id: 'popular', title: 'Popular', sort: 'total_views', style: SectionStyle.SimpleHeroPaged },
-    { id: 'trending_month', title: 'Trending This Month', sort: 'avg_views_month', style: SectionStyle.DetailedDoubleRowPaged },
-    { id: 'trending_week', title: 'Trending This Week', sort: 'avg_views_week', style: SectionStyle.SimpleSingleRow },
-    { id: 'trending_today', title: 'Trending Today', sort: 'avg_views_today', style: SectionStyle.SimpleSingleRow },
+    { id: 'trending_month', title: 'Popular This Month', sort: 'avg_views_month', style: SectionStyle.DetailedDoubleRowPaged },
+    { id: 'trending_week', title: 'Popular This Week', sort: 'avg_views_week', style: SectionStyle.SimpleSingleRow },
+    { id: 'trending_today', title: 'Popular Today', sort: 'avg_views_today', style: SectionStyle.SimpleSingleRow },
     { id: 'latest_updates', title: 'Latest Updates', sort: 'updated_at', style: SectionStyle.DetailedVerticalListGrouped },
     { id: 'recently_added', title: 'Recently Added', sort: 'created_at', style: SectionStyle.SimpleSingleRow }
 ]

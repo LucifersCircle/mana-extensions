@@ -306,7 +306,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   }
   let catalog, form, chapterList, index, content, blocked, readerData, safeBody;
   await check('Never-saved source categories follow native policy and explicit source selection persists', async () => {
-    assert.equal(source.info.version, '0.0.1-alpha.5');
+    assert.equal(source.info.version, '0.0.1-alpha.6');
     assert.deepEqual(Array.from((await preference('contentRatings')).value), allRatings);
     const start = requests.length, empty = await source.search({ page: 1, context: { allowedContentRatings: [] } });
     assert.equal(empty.results.length, 0); assert.equal(empty.isLastPage, true); assert.equal(requests.length, start);
@@ -443,7 +443,10 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   });
   await check('All six native discovery sorts preserve live API order and continuation', async () => {
     const sections = await source.getSectionsForPage({ id: 'home' });
-    assert.deepEqual(Array.from(sections, (section) => section.id), ['popular', 'trending_month', 'trending_week', 'trending_today', 'latest_updates', 'recently_added']);
+    assert.deepEqual(Array.from(sections, ({ id, title }) => [id, title]), [
+      ['popular', 'Popular'], ['trending_month', 'Popular This Month'], ['trending_week', 'Popular This Week'],
+      ['trending_today', 'Popular Today'], ['latest_updates', 'Latest Updates'], ['recently_added', 'Recently Added'],
+    ]);
     for (const section of sections) {
       const result = await source.resolvePageSection({ id: 'home' }, section.id); assert(Array.isArray(result.items));
       const sorts = { popular: 'total_views', trending_month: 'avg_views_month', trending_week: 'avg_views_week', trending_today: 'avg_views_today', latest_updates: 'updated_at', recently_added: 'created_at' };
