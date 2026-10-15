@@ -3,6 +3,36 @@
   "thumbnail": "https://avatars.githubusercontent.com/LucifersCircle",
   "sources": [
     {
+      "id": "Hijala",
+      "version": "0.0.1-alpha.1",
+      "name": "Hijala",
+      "thumbnail": "Hijala.png",
+      "website": "https://en-hijala.com",
+      "description": "Hijala public manga catalog, site filters, complete chapters and public reader. Default-on NSFW genre exclusion.",
+      "rating": 1,
+      "supportedLanguages": [
+        "en_US",
+        "es_ES",
+        "ru_RU"
+      ],
+      "badges": [
+        "Manga",
+        "Manhwa",
+        "Manhua"
+      ],
+      "developers": [
+        {
+          "name": "Lucifers Circle",
+          "website": "https://pirate.vodka",
+          "github": "https://github.com/LucifersCircle"
+        }
+      ],
+      "path": "Hijala",
+      "environment": "source",
+      "intents": 6298637,
+      "hash": "0454e9910454e9910454e9910454e9910454e9910454e9910454e9910454e991"
+    },
+    {
       "id": "Kagane",
       "version": "0.0.1-alpha.1",
       "name": "Kagane",
@@ -32,7 +62,7 @@
       "path": "Kagane",
       "environment": "source",
       "intents": 6298637,
-      "hash": "0e6943490e6943490e6943490e6943490e6943490e6943490e6943490e694349"
+      "hash": "3c523a0c3c523a0c3c523a0c3c523a0c3c523a0c3c523a0c3c523a0c3c523a0c"
     },
     {
       "id": "MangaSushi",
@@ -57,7 +87,7 @@
       "path": "MangaSushi",
       "environment": "source",
       "intents": 6298637,
-      "hash": "27b31c7f27b31c7f27b31c7f27b31c7f27b31c7f27b31c7f27b31c7f27b31c7f"
+      "hash": "559c1418559c1418559c1418559c1418559c1418559c1418559c1418559c1418"
     },
     {
       "id": "ManhwaNex",
@@ -84,7 +114,7 @@
       "path": "ManhwaNex",
       "environment": "source",
       "intents": 6298637,
-      "hash": "14bd665014bd665014bd665014bd665014bd665014bd665014bd665014bd6650"
+      "hash": "42a65db442a65db442a65db442a65db442a65db442a65db442a65db442a65db4"
     },
     {
       "id": "VortexScans",
@@ -111,7 +141,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 6298636,
-      "hash": "6a92dee26a92dee26a92dee26a92dee26a92dee26a92dee26a92dee26a92dee2"
+      "hash": "67842a5367842a5367842a5367842a5367842a5367842a5367842a5367842a53"
     }
   ]
 }
