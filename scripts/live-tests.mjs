@@ -6,7 +6,8 @@ import { createManaRuntime, redactURL, redactText } from './mana-runtime.mjs';
 import { testKagane } from './kagane-live-tests.mjs';
 import { createManaTestTransport } from './mana-test-browser.mjs';
 import { discoverSources } from './test-sources.mjs';
-import { testMangaSushi } from './mangasushi-live-tests.mjs';
+import { testMangaSushi, coverDimensions } from './mangasushi-live-tests.mjs';
+import { load } from 'cheerio';
 
 const report = {};
 const testTransport = createManaTestTransport();
@@ -34,11 +35,19 @@ async function image(source, imageUrl) {
   });
   console.log(`IMAGE ${response.status} ${redactURL(request.url)}`);
   assert(response.ok, `Image HTTP ${response.status}: ${redactURL(request.url)}`);
-  assert(response.headers.get('content-type')?.startsWith('image/'), 'Response is not an image');
+  const octetCover = source.info.id === 'VortexScans' && new URL(request.url).hostname === 'storage.vortexscans.org'
+    && response.headers.get('content-type')?.split(';')[0] === 'application/octet-stream';
+  assert(response.headers.get('content-type')?.startsWith('image/') || octetCover, 'Response is not an image');
   const reader = response.body.getReader();
   try {
     const { value } = await reader.read();
     assert(value?.length > 0, 'Image has no bytes');
+    if (octetCover) {
+      const bytes = Buffer.from(value);
+      assert(bytes.subarray(0, 12).toString('hex').startsWith('89504e470d0a1a0a')
+        || bytes.subarray(0, 3).toString('hex') === 'ffd8ff'
+        || (bytes.subarray(0, 4).toString() === 'RIFF' && bytes.subarray(8, 12).toString() === 'WEBP'), 'Octet-stream cover lacks a valid image signature');
+    }
     if (new URL(request.url).hostname === 'kagane.org') {
       const bytes = Buffer.from(value), signature = bytes.subarray(0, 12).toString('hex');
       assert(signature.startsWith('ffd8ff') || signature.startsWith('89504e470d0a1a0a')
@@ -156,6 +165,86 @@ for (const name of names) {
   } else {
     await check('Home section resolution', () => assert.fail('No discovered home sections to resolve'));
   }
+  let popularEvidence;
+  await check('Popular Today uses source-published originals with one homepage request', async () => {
+    const cold = new context.Target(), original = cold.api.getText.bind(cold.api);
+    cold.api.getText = async (...args) => { const html = await original(...args); popularEvidence = html; return html; };
+    const before = requests.length;
+    const result = await cold.resolvePageSection({ id: 'home' }, 'popular-today');
+    assert.equal(requests.length - before, 1, 'Original cover selection must not add per-title requests');
+    highlights(result.items);
+    const $ = load(popularEvidence), section = $('h1,h2,h3,h4,p').filter((_, node) => $(node).text().trim() === 'Popular Today').first().closest('section');
+    const pairs = [];
+    for (const item of result.items) {
+      const slug = decodeURIComponent(item.id.slice(item.id.indexOf(':') + 1));
+      const anchor = section.find('a[href^="/series/"]').filter((_, node) => decodeURIComponent(($(node).attr('href') ?? '').slice('/series/'.length)) === slug).first();
+      assert(anchor.length, 'Original cover must retain its canonical homepage series');
+      const img = anchor.find('img[src]').first(), proxy = new URL(img.attr('src')), originalURL = new URL(item.cover);
+      assert.equal(originalURL.origin, 'https://storage.vortexscans.org');
+      assert.equal(proxy.pathname, `/${originalURL.hostname}${originalURL.pathname}`, 'Selected original must be the same asset as this card proxy');
+      assert(img.attr('data-fallback-src') === item.cover || popularEvidence.includes(`featuredImage:${JSON.stringify(item.cover)}`), 'Original URL must be supplied verbatim by the actual homepage');
+      pairs.push({ original: item.cover, proxy: img.attr('src') });
+    }
+    const samples = [pairs.find((pair) => pair.original.endsWith('.png')), pairs.find((pair) => pair.original.endsWith('.webp'))].filter(Boolean);
+    assert.equal(samples.length, 2, 'Live originals should exercise both PNG and WebP bytes');
+    for (const pair of samples) {
+      const full = await coverDimensions(source, pair.original), card = await coverDimensions(source, pair.proxy);
+      assert(full.width > card.width && full.height > card.height, 'Published original must have genuinely larger decoded pixels than its 400px card');
+      assert(full.bytes > 0 && card.bytes > 0);
+    }
+  });
+  await check('Popular Today metadata is source-bound and missing or invalid originals retain card images', async () => {
+    assert(popularEvidence, 'Missing live homepage provenance');
+    const $ = load(popularEvidence), section = $('h1,h2,h3,h4,p').filter((_, node) => $(node).text().trim() === 'Popular Today').first().closest('section');
+    const anchor = section.find('a[href^="/series/"]').first(), href = anchor.attr('href'), current = anchor.find('img[src]').first().attr('src');
+    const baseline = new context.Target(); baseline.api.getText = async () => popularEvidence;
+    const first = (await baseline.resolvePageSection({ id: 'home' }, 'popular-today')).items[0];
+    assert(first && first.cover !== current);
+    const noOriginals = popularEvidence.replace(/featuredImage:"(?:\\.|[^"\\])*"/g, 'featuredImage:null');
+    for (const [label, value, expected] of [
+      ['missing metadata', undefined, current],
+      ['malformed URL', 'not-a-url', current],
+      ['unrelated asset', first.cover.replace(/[^/]+$/, 'unrelated.png'), current],
+      ['different origin', first.cover.replace('storage.vortexscans.org', 'example.com'), current],
+      ['credentials', first.cover.replace('https://', 'https://user:pass@'), current],
+      ['fragment', `${first.cover}#different`, current],
+      ['query', `${first.cover}?different=1`, current],
+      ['exact source fallback attribute', first.cover, first.cover]
+    ]) {
+      const page = load(noOriginals), img = page(`a[href="${href}"]`).first().find('img[src]').first();
+      img.removeAttr('data-fallback-src'); if (value !== undefined) img.attr('data-fallback-src', value);
+      const cold = new context.Target(); cold.api.getText = async () => page.html();
+      const before = requests.length;
+      const result = await cold.resolvePageSection({ id: 'home' }, 'popular-today');
+      assert.equal(result.items.find((item) => item.id === first.id)?.cover, expected, label);
+      assert.equal(requests.length, before, 'Fallback selection must not trigger a title or image lookup');
+    }
+    for (const [label, replacement, expected] of [
+      ['escaped serialized URL', JSON.stringify(first.cover).replaceAll('/', '\\/'), first.cover],
+      ['malformed quoted image metadata retains identity', '"\\q"', current],
+      ['invalid serialized URL', JSON.stringify('javascript:alert(1)'), current],
+      ['unrelated serialized asset', JSON.stringify(first.cover.replace(/[^/]+$/, 'unrelated.png')), current]
+    ]) {
+      const mutated = popularEvidence.replaceAll(`featuredImage:${JSON.stringify(first.cover)}`, `featuredImage:${replacement}`);
+      const cold = new context.Target(); cold.api.getText = async () => mutated;
+      assert.equal((await cold.resolvePageSection({ id: 'home' }, 'popular-today')).items.find((item) => item.id === first.id)?.cover, expected, label);
+    }
+  });
+  await check('Search and detail retain source originals including octet-stream WebP bytes', async () => {
+    const before = requests.length;
+    const result = await source.search({ page: 1, query: 'Dao of the Bizarre Immortal' });
+    const item = result.results.find((entry) => entry.id.endsWith(':dao-of-the-bizarre-immortal'));
+    assert(item, 'Published Dao sample disappeared');
+    const detail = await source.getContent(item.id);
+    assert.equal(requests.length - before, 2, 'Search and detail must not add image metadata calls');
+    assert.equal(detail.cover, item.cover, 'Both API-backed surfaces retain the exact featuredImage URL');
+    assert(popularEvidence.includes(`featuredImage:${JSON.stringify(item.cover)}`), 'Original URL also appears verbatim in live homepage source metadata');
+    const measured = await coverDimensions(source, item.cover);
+    assert.equal(measured.format, 'WEBP', 'Verify the real WebP signature, not its MIME label');
+    assert(measured.width > 400 && measured.height > 400);
+    assert(measured.bytes > 0);
+    console.log(`VORTEX ORIGINAL MIME ${measured.mime}: valid ${measured.format}`);
+  });
   await check('Live chapter list has unique IDs and oldest-first order', async () => {
     chapters = await source.getChapters(catalog.results[0].id);
     assert(chapters.length, 'No available chapters');

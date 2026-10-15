@@ -95,7 +95,7 @@ export class Target implements
     ImageRequestHandler {
     readonly info: SourceInfo = {
         id: 'VortexScans',
-        version: '1.0.5',
+        version: '0.0.1-alpha.6',
         name: 'VortexScans',
         description: 'Read manga, manhwa, and manhua from VortexScans.',
         thumbnail: 'VortexScans.png',

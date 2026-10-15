@@ -64,7 +64,7 @@ class ExcludedContentError extends Error {}
 export class Target implements ContentSource, PageLinkResolver, ImageRequestHandler, SourcePreferenceProvider {
     readonly info: SourceInfo = {
         id: 'MangaSushi',
-        version: '0.0.1-alpha.4',
+        version: '0.0.1-alpha.5',
         name: 'MangaSushi',
         description: 'MangaSushi with the site’s discovery, search filters, and a global NSFW exclusion setting.',
         thumbnail: 'MangaSushi.png',

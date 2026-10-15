@@ -3,11 +3,10 @@ import { performance } from 'node:perf_hooks';
 import { load } from 'cheerio';
 import { assertReadOnlyMangaSushiPost } from './mana-runtime.mjs';
 
-async function jpegDimensions(source, url) {
+export async function coverDimensions(source, url) {
   const request = await source.willRequestImage(url);
   const response = await fetch(request.url, { headers: request.headers, signal: AbortSignal.timeout(30_000) });
   assert(response.ok, `Cover HTTP ${response.status}: ${url}`);
-  assert.equal(response.headers.get('content-type')?.split(';')[0], 'image/jpeg', 'Native cover format changed; inspect its real dimensions');
   const chunks = [], reader = response.body.getReader();
   let length = 0;
   try {
@@ -15,11 +14,40 @@ async function jpegDimensions(source, url) {
       const { done, value } = await reader.read();
       if (done) break;
       length += value.length;
-      assert(length <= 1024 * 1024, 'Native medium cover exceeds the one-MiB live probe bound');
+      assert(length <= 16 * 1024 * 1024, 'Cover exceeds the 16-MiB live probe bound');
       chunks.push(Buffer.from(value));
     }
   } finally { await reader.cancel(); }
   const bytes = Buffer.concat(chunks);
+  const result = (width, height, format) => {
+    assert(width > 0 && height > 0, 'Invalid cover dimensions');
+    const measured = { width, height, bytes: bytes.length, format, mime: response.headers.get('content-type')?.split(';')[0] };
+    console.log(`COVER ${format} ${width}x${height} ${measured.bytes}B ${measured.mime} ${url}`);
+    return measured;
+  };
+  // Inspect complete response bytes, not MIME, filename or HTML display sizes.
+  if (bytes.length >= 45 && bytes.subarray(0, 8).toString('hex') === '89504e470d0a1a0a') {
+    assert.equal(bytes.subarray(12, 16).toString(), 'IHDR', 'PNG has no IHDR');
+    assert.equal(bytes.subarray(-8, -4).toString(), 'IEND', 'PNG is incomplete');
+    return result(bytes.readUInt32BE(16), bytes.readUInt32BE(20), 'PNG');
+  }
+  if (bytes.length >= 30 && bytes.subarray(0, 4).toString() === 'RIFF' && bytes.subarray(8, 12).toString() === 'WEBP') {
+    assert.equal(bytes.readUInt32LE(4) + 8, bytes.length, 'WebP is incomplete');
+    for (let offset = 12; offset + 8 <= bytes.length;) {
+      const kind = bytes.subarray(offset, offset + 4).toString(), size = bytes.readUInt32LE(offset + 4), start = offset + 8;
+      assert(start + size <= bytes.length, 'Malformed WebP chunk length');
+      if (kind === 'VP8X' && size >= 10) return result(bytes.readUIntLE(start + 4, 3) + 1, bytes.readUIntLE(start + 7, 3) + 1, 'WEBP');
+      if (kind === 'VP8 ' && size >= 10 && bytes.subarray(start + 3, start + 6).toString('hex') === '9d012a') {
+        return result(bytes.readUInt16LE(start + 6) & 0x3fff, bytes.readUInt16LE(start + 8) & 0x3fff, 'WEBP');
+      }
+      if (kind === 'VP8L' && size >= 5 && bytes[start] === 0x2f) {
+        const packed = bytes.readUInt32LE(start + 1);
+        return result((packed & 0x3fff) + 1, ((packed >>> 14) & 0x3fff) + 1, 'WEBP');
+      }
+      offset = start + size + (size % 2);
+    }
+    assert.fail('WebP has no supported dimension chunk');
+  }
   assert(bytes.length >= 4 && bytes.readUInt16BE(0) === 0xffd8 && bytes.readUInt16BE(bytes.length - 2) === 0xffd9, 'Cover is not complete JPEG bytes');
   // Bound the SOF scan and validate segment lengths, not filename/HTML dimensions.
   let offset = 2;
@@ -33,10 +61,7 @@ async function jpegDimensions(source, url) {
     assert(size >= 2 && offset + size <= bytes.length, 'Malformed JPEG segment length');
     if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
       assert(size >= 8, 'Truncated JPEG SOF');
-      const result = { width: bytes.readUInt16BE(offset + 5), height: bytes.readUInt16BE(offset + 3), bytes: bytes.length };
-      assert(result.width > 0 && result.height > 0, 'Invalid JPEG dimensions');
-      console.log(`COVER ${result.width}x${result.height} ${result.bytes}B ${url}`);
-      return result;
+      return result(bytes.readUInt16BE(offset + 5), bytes.readUInt16BE(offset + 3), 'JPEG');
     }
     offset += size;
   }
@@ -205,7 +230,7 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
       }
     }
   });
-  await check('Popular, latest, search and detail covers use advertised native medium JPEGs', async () => {
+  await check('Popular, latest, search and detail covers use the largest advertised same-asset images', async () => {
     const cold = freshSource(), bodies = new Map(), original = cold.api.text.bind(cold.api);
     cold.api.text = async (url, ...args) => { const html = await original(url, ...args); bodies.set(url, html); return html; };
     const before = requests.length;
@@ -222,32 +247,50 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
     assert(coverEvidence.home && coverEvidence.search && coverEvidence.detail, 'Missing actual live cover provenance');
     const hp = load(coverEvidence.home), sp = load(coverEvidence.search), dp = load(coverEvidence.detail);
     const findImage = ($, selector, series) => $(selector).toArray().map((node) => $(node)).find((row) => row.find('.post-title a').attr('href') === `${domain}/manga/${series}/`)?.find('img').first();
-    const homeSample = (selector, width, items) => {
-      const row = hp(selector).toArray().map((node) => hp(node)).find((row) => new RegExp(` ${width}w(?:,|$)`).test(row.find('img').first().attr('data-srcset') ?? ''));
-      assert(row, `No live homepage sample advertises a ${width}w derivative`);
+    const homeSample = (selector, items) => {
+      const row = hp(selector).toArray().map((node) => hp(node)).find((row) => row.find('img').first().attr('data-srcset'));
+      assert(row, 'No live homepage sample advertises responsive covers');
       const series = row.find('.post-title a').attr('href').match(/\/manga\/([^/]+)/)[1];
-      return [row.find('img').first(), items.find((item) => item.id === series)?.cover, width];
+      return [row.find('img').first(), items.find((item) => item.id === series)?.cover];
     };
     const samples = [
-      homeSample('.popular-slider .slider__item', 193, nativeHome.popular.items),
-      homeSample('#loop-content .page-item-detail', 350, nativeHome.latest.items),
-      [findImage(sp, '.c-tabs-item__content', id), search.results.find((item) => item.id === id)?.cover, 209],
-      [dp('.summary_image img').first(), detail.cover, 209]
+      homeSample('.popular-slider .slider__item', nativeHome.popular.items),
+      homeSample('#loop-content .page-item-detail', nativeHome.latest.items),
+      [findImage(sp, '.c-tabs-item__content', id), search.results.find((item) => item.id === id)?.cover],
+      [dp('.summary_image img').first(), detail.cover]
     ];
     const decoded = new Map();
-    const dimensions = (url) => { if (!decoded.has(url)) decoded.set(url, jpegDimensions(source, url)); return decoded.get(url); };
-    for (const [image, cover, width] of samples) {
-      assert(image?.length && cover, 'Live medium-cover sample disappeared');
-      const advertised = [image.attr('data-srcset'), image.attr('srcset')].filter(Boolean).join(',').split(',').map((entry) => entry.trim().split(/\s+/));
-      assert(advertised.some(([url, descriptor]) => url === cover && descriptor === `${width}w`), 'Selected medium cover must come verbatim from this image’s live srcset');
-      assert(new URL(cover).pathname.match(new RegExp(`-${width}x\\d+\\.jpg$`)), 'Selected cover must be a native derivative, not the heavy original');
-      const current = await dimensions(image.attr('data-src') || image.attr('data-lazy-src') || image.attr('src'));
-      const medium = await dimensions(cover);
-      assert.equal(medium.width, width);
-      assert(medium.width > current.width && medium.height > current.height, 'Advertised variant must have genuinely larger image dimensions');
+    const dimensions = (url) => { if (!decoded.has(url)) decoded.set(url, coverDimensions(source, url)); return decoded.get(url); };
+    for (const [image, cover] of samples) {
+      assert(image?.length && cover, 'Live largest-cover sample disappeared');
+      const currentURL = image.attr('data-src') || image.attr('data-lazy-src') || image.attr('src');
+      const asset = (url) => new URL(url).pathname.replace(/-\d+x\d+(\.[a-z0-9]+)$/i, '$1');
+      const advertised = [image.attr('data-srcset'), image.attr('srcset')].filter(Boolean).join(',').split(',')
+        .map((entry) => entry.trim().split(/\s+/)).filter(([url, descriptor]) => /^\d+w$/.test(descriptor ?? '') && asset(url) === asset(currentURL));
+      assert(advertised.length, 'Live source stopped advertising same-asset cover widths');
+      const [expected, descriptor] = advertised.sort((left, right) => parseInt(right[1]) - parseInt(left[1]))[0];
+      assert.equal(cover, expected, 'Cover must be the largest URL actually advertised by this image');
+      const current = await dimensions(currentURL), largest = await dimensions(cover);
+      assert.equal(largest.width, parseInt(descriptor), 'Advertised largest width must match actual decoded pixels');
+      assert(largest.width >= current.width && largest.height >= current.height, 'Selection must not downgrade real dimensions');
+      assert(largest.bytes > 0);
     }
+    assert(!/-\d+x\d+\.jpg$/.test(new URL(detail.cover).pathname), 'Hisabisa details must use its explicitly advertised original');
+    assert.equal(detail.cover, search.results.find((item) => item.id === id)?.cover, 'Search and detail both retain the advertised full original');
+    const largeRequest = { page: 1, query: 'Ochikobore Eji Minarai', filters: { adult: { id: '0' } } };
+    const largeBefore = requests.length, largeSearch = await cold.search(largeRequest);
+    const largeId = 'ochikobore-eji-minarai-no-shounen-jitsu-wa-saikyou-saiaku-no-asashin';
+    const largeItem = largeSearch.results.find((item) => item.id === largeId);
+    assert(largeItem, 'Published 640px original sample disappeared');
+    const largeDetail = await cold.getContent(largeId);
+    assert.equal(requests.length - largeBefore, 2, 'Large originals must not add metadata calls to search and detail');
+    const largePage = load(bodies.get(cold.searchURL(largeRequest, false)));
+    const largeImage = findImage(largePage, '.c-tabs-item__content', largeId);
+    assert(largeImage.attr('data-srcset').split(',').some((entry) => entry.trim() === `${largeItem.cover} 640w`), '640px original must be explicitly advertised, not manufactured');
+    assert.equal(largeDetail.cover, largeItem.cover);
+    assert.equal((await dimensions(largeItem.cover)).width, 640, 'The former medium cap must not limit a real 640px PNG original');
   });
-  await check('Cover candidates reject missing, malformed, unrelated and original-image metadata', async () => {
+  await check('Cover fallbacks reject malformed or unrelated metadata and retain explicitly advertised originals', async () => {
     assert(coverEvidence, 'Live cover evidence was not captured');
     const originalHome = load(coverEvidence.home), first = originalHome('.popular-slider .slider__item').first();
     const id = first.find('.post-title a').attr('href').match(/\/manga\/([^/]+)/)[1];
@@ -255,33 +298,44 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
     const unrelated = originalHome('.popular-slider .slider__item').eq(1).find('img').first().attr('data-srcset');
     const derivative = valid.split(',').map((entry) => entry.trim()).find((entry) => / 193w$/.test(entry));
     const sp = load(coverEvidence.search), searchRow = sp('.c-tabs-item__content').filter((_, node) => sp(node).find('.post-title a').attr('href') === `${domain}/manga/${coverEvidence.id}/`).first();
-    const originalEntry = searchRow.find('img').attr('data-srcset').split(',').map((entry) => entry.trim()).find((entry) => /\/hisabisa\.jpg 320w$/.test(entry));
+    const searchSet = searchRow.find('img').attr('data-srcset');
+    const originalEntry = searchSet.split(',').map((entry) => entry.trim()).find((entry) => /\/hisabisa\.jpg 320w$/.test(entry));
+    const originalURL = originalEntry?.split(/\s+/)[0];
     assert(valid && unrelated && derivative && originalEntry, 'Live mutation inputs changed');
     for (const [label, mutate, expected] of [
       ['absent', (img) => img.removeAttr('data-srcset').removeAttr('srcset'), current],
       ['malformed', (img) => img.attr('data-srcset', 'not-a-srcset, javascript:alert(1) 250w'), current],
       ['unrelated asset', (img) => img.attr('data-srcset', unrelated), current],
       ['descriptor mismatch', (img) => img.attr('data-srcset', derivative.replace(/193w$/, '250w')), current],
-      ['oversized derivative', (img) => img.attr('data-srcset', derivative.replace(/193x278/g, '386x556').replace(/193w$/, '386w')), current],
       ['different origin', (img) => img.attr('data-srcset', derivative.replace('mangasushi.org', 'example.com')), current],
       ['different query', (img) => img.attr('data-srcset', derivative.replace(/ 193w$/, '?unrelated=1 193w')), current],
+      ['credentials', (img) => img.attr('data-srcset', derivative.replace('https://', 'https://user:pass@')), current],
+      ['fragment', (img) => img.attr('data-srcset', derivative.replace(/ 193w$/, '#unrelated 193w')), current],
+      ['unsafe width', (img) => img.attr('data-srcset', derivative.replace(/193w$/, '99999999999999999w')), current],
       ['different aspect ratio', (img) => img.attr('data-srcset', derivative.replace('193x278', '193x500')), current],
       ['slightly wider but shorter', (img) => img.attr('data-srcset', derivative.replace('193x278', '126x179').replace(/193w$/, '126w')), current],
       ['non-portrait image', (img) => img.attr('data-srcset', derivative.replace('193x278', '193x193')), current],
       ['different extension', (img) => img.attr('data-srcset', derivative.replace('.jpg', '.png')), current],
       ['srcset fallback', (img) => img.removeAttr('data-srcset').attr('srcset', valid), derivative.split(/\s+/)[0]],
-      ['unsuffixed original without matching descriptor', (img) => img.attr('data-src', originalEntry.split(/\s+/)[0]).attr('data-srcset', searchRow.find('img').attr('data-srcset').split(',').filter((entry) => entry.trim() !== originalEntry).join(',')), originalEntry.split(/\s+/)[0]],
-      ['unsuffixed original', (img) => img.attr('data-src', originalEntry.split(/\s+/)[0]).attr('data-srcset', `${originalEntry}, ${searchRow.find('img').attr('data-srcset')}`), originalEntry.split(/\s+/)[0]]
+      ['current original with no descriptor', (img) => img.attr('data-src', originalURL).attr('width', '1').attr('height', '1').attr('data-srcset', searchSet.split(',').filter((entry) => entry.trim() !== originalEntry).join(',')), originalURL],
+      ['current original never downgraded', (img) => img.attr('data-src', originalURL).attr('data-srcset', searchSet), originalURL]
     ]) {
       const $ = load(coverEvidence.home), img = $('.popular-slider .slider__item').first().find('img').first();
       img.removeAttr('srcset'); mutate(img);
       const cold = freshSource(); cold.api.text = async () => $.html();
       assert.equal((await cold.home(false)).popular.items.find((item) => item.id === id)?.cover, expected, label);
     }
-    const $ = load(coverEvidence.search), row = $('.c-tabs-item__content').filter((_, node) => $(node).find('.post-title a').attr('href') === `${domain}/manga/${coverEvidence.id}/`).first();
-    const originalCover = row.find('img').attr('data-src'); row.find('img').attr('data-srcset', originalEntry);
-    const cold = freshSource(); cold.api.text = async () => $.html();
-    assert.equal((await cold.search({ page: 1 })).results.find((item) => item.id === coverEvidence.id)?.cover, originalCover, 'An advertised heavy unsuffixed original must not become the medium cover');
+    for (const [label, srcset, expected] of [
+      ['explicitly advertised original', originalEntry, originalURL],
+      ['largest independent of srcset order', searchSet.split(',').reverse().join(','), originalURL],
+      ['original wins equal-largest-width tie', `${searchSet.replace(/209x300/g, '320x459').replace(/209w/g, '320w')}`, originalURL],
+      ['original absent is not manufactured', searchSet.split(',').filter((entry) => entry.trim() !== originalEntry).join(','), searchSet.split(',').map((entry) => entry.trim().split(/\s+/)).filter((entry) => entry[0] !== originalURL).sort((left, right) => parseInt(right[1]) - parseInt(left[1]))[0][0]]
+    ]) {
+      const $ = load(coverEvidence.search), row = $('.c-tabs-item__content').filter((_, node) => $(node).find('.post-title a').attr('href') === `${domain}/manga/${coverEvidence.id}/`).first();
+      row.find('img').removeAttr('srcset').attr('data-srcset', srcset);
+      const cold = freshSource(); cold.api.text = async () => $.html();
+      assert.equal((await cold.search({ page: 1 })).results.find((item) => item.id === coverEvidence.id)?.cover, expected, label);
+    }
   });
   await check('Unfiltered discovery keeps English titles with two cold requests and zero warm requests', async () => {
     const cold = freshSource(), before = requests.length, started = performance.now();
