@@ -4,20 +4,6 @@ on:
   schedule:
     - cron: "17,47 * * * *"
   workflow_dispatch:
-  push:
-    branches:
-      - "generic"
-    paths:
-      - "src/**"
-      - "assets/**"
-      - "scripts/**"
-      - "compose*.yaml"
-      - "tsconfig.json"
-      - "jest.config.cjs"
-      - ".eslintrc.js"
-      - "package*.json"
-      - ".github/workflows/live-tests.yaml"
-      - ".github/workflows/main.yml"
   pull_request:
 
 permissions:

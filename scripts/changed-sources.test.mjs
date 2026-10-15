@@ -381,6 +381,27 @@ void test("workflow preserves full static gates, non-PR publication and credenti
   assert.ok(!workflow.includes("pull_request_target"));
 });
 
+void test("live sweeps use schedule/manual and PR events while pushes retain static checks", () => {
+  const readWorkflow = (name) =>
+    readFileSync(new URL(`../.github/workflows/${name}`, import.meta.url), "utf8");
+  const events = (workflow) =>
+    [...workflow.match(/^on:\s*\n([\s\S]*?)(?=^\S)/m)[1].matchAll(/^ {2}([a-z_]+):/gm)]
+      .map((match) => match[1])
+      .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const live = readWorkflow("live-tests.yaml");
+  assert.deepEqual(events(live), ["pull_request", "schedule", "workflow_dispatch"]);
+  assert.match(live, /cron: "17,47 \* \* \* \*"/);
+  const publish = readWorkflow("main.yml");
+  assert.deepEqual(events(publish), ["push", "workflow_dispatch"]);
+  assert.match(publish, /  push:\n    branches:\n      - generic/);
+  assert.match(publish, /    paths-ignore:\n      - README\.md\n      - 'reports\/\*\*'/);
+  assert.match(publish, /if: github\.ref == 'refs\/heads\/generic'/);
+  assert.match(publish, /run: npm run test:report\n      - run: npm test/);
+  assert.match(publish, /run: npm run typecheck\n      - run: npm run lint/);
+  assert.match(publish, /run: npm run build -- --output dist/);
+  assert.doesNotMatch(publish, /test:extensions/);
+});
+
 void test("cross-source, path-alias and dynamic dependencies invalidate source-only selection", () => {
   const dir = mkdtempSync(join(tmpdir(), "source-dependencies-"));
   const put = (path, content) => {

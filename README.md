@@ -230,12 +230,18 @@ GPL-3.0-or-later attribution and pinned upstream references are in
 [![Live Extension Tests](https://github.com/LucifersCircle/mana-extensions/actions/workflows/live-tests.yaml/badge.svg?branch=generic)](https://github.com/LucifersCircle/mana-extensions/actions/workflows/live-tests.yaml)
 
 Every source entry point in `src/sources/*/index.ts` is discovered automatically.
-The scheduled workflow runs twice an hour (at minutes 17 and 47), on relevant
-`generic` pushes, pull requests, and manual dispatch. GitHub may delay schedules.
-It runs the existing tests, typecheck, lint and native build before the live checks.
-Only default-branch runs update this status and the last 24 runs in
-[`reports/live-tests-history.json`](reports/live-tests-history.json). README/history
-commits do not retrigger testing or publishing. Pull requests never publish sources.
+Full live sweeps run twice an hour (at minutes 17 and 47 UTC), and on manual
+dispatch. GitHub may delay schedules. Pull requests run live checks for affected
+sources; shared or uncertain changes require the full live suite. Merges do not
+start another live run. Full offline tests, typecheck, lint and native builds
+still run on pull requests and relevant `generic` pushes; publication remains
+independent of live sweeps.
+Only scheduled and manual full runs on the default branch update this status and
+the last 24 runs in [`reports/live-tests-history.json`](reports/live-tests-history.json).
+This is the last full sweep at its recorded tested commit, not a pass for newer
+commits. PR results remain in job summaries and artifacts, with unselected sources
+explicitly identified. README/history commits do not retrigger testing or
+publishing. Pull requests never publish sources.
 
 <!-- LIVE_TEST_STATUS:START -->
 
