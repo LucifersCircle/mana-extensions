@@ -10,6 +10,7 @@ import { Chapter,
     ReadingMode,
     staff } from '@mana-app/types'
 import { decode } from 'html-entities'
+import { chapterLanguage } from './KaganeLanguage'
 import { incompleteRatingInfo } from '../../ContentRatingPolicy'
 import { AlternateTitle,
     Book,
@@ -145,7 +146,7 @@ export function chapters(id: string, books: Book[], details: Detail, settings: S
         return {
             chapterId: book.book_id, number, index, title, date: date(book.released_at ?? book.created_at),
             volume: Number.isFinite(volume) ? volume : undefined,
-            language: details.translated_language ?? settings.languages[0] ?? 'en', webUrl: chapterURL(id, book.book_id),
+            language: chapterLanguage(details.translated_language), webUrl: chapterURL(id, book.book_id),
             provider: provider ? { id: source?.source_id ?? provider, name: provider + (source?.source_type === 'Official' ? ' ✓' : '') } : undefined
         }
     }).map((chapter, index) => ({ ...chapter, index })).reverse()
