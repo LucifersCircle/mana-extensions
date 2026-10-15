@@ -4,11 +4,11 @@
   "sources": [
     {
       "id": "Hijala",
-      "version": "0.0.1-alpha.2",
+      "version": "0.0.1-alpha.3",
       "name": "Hijala",
       "thumbnail": "Hijala.png",
       "website": "https://en-hijala.com",
-      "description": "Hijala public manga catalog, site filters, complete chapters and public reader. Default-on NSFW genre exclusion.",
+      "description": "Hijala public manga catalog, site filters, complete chapters and public reader. Optional NSFW genre exclusion.",
       "rating": 1,
       "supportedLanguages": [
         "en_US",
@@ -30,11 +30,11 @@
       "path": "Hijala",
       "environment": "source",
       "intents": 6298637,
-      "hash": "23cf9b1523cf9b1523cf9b1523cf9b1523cf9b1523cf9b1523cf9b1523cf9b15"
+      "hash": "626ac388626ac388626ac388626ac388626ac388626ac388626ac388626ac388"
     },
     {
       "id": "Kagane",
-      "version": "0.0.1-alpha.1",
+      "version": "0.0.1-alpha.2",
       "name": "Kagane",
       "description": "Kagane with current API support, grouped tags and global four-category content settings.",
       "thumbnail": "Kagane.png",
@@ -62,13 +62,13 @@
       "path": "Kagane",
       "environment": "source",
       "intents": 6298637,
-      "hash": "49e39b0a49e39b0a49e39b0a49e39b0a49e39b0a49e39b0a49e39b0a49e39b0a"
+      "hash": "7719800a7719800a7719800a7719800a7719800a7719800a7719800a7719800a"
     },
     {
       "id": "MangaSushi",
-      "version": "0.0.1-alpha.6",
+      "version": "0.0.1-alpha.7",
       "name": "MangaSushi",
-      "description": "MangaSushi with the site’s discovery, search filters, and a global NSFW exclusion setting.",
+      "description": "MangaSushi with native discovery, search filters and Mana content-rating policy.",
       "thumbnail": "MangaSushi.png",
       "rating": 1,
       "website": "https://mangasushi.org",
@@ -87,13 +87,13 @@
       "path": "MangaSushi",
       "environment": "source",
       "intents": 6298637,
-      "hash": "632d7495632d7495632d7495632d7495632d7495632d7495632d7495632d7495"
+      "hash": "3cc3bbe03cc3bbe03cc3bbe03cc3bbe03cc3bbe03cc3bbe03cc3bbe03cc3bbe0"
     },
     {
       "id": "ManhwaNex",
-      "version": "0.0.1-alpha.3",
+      "version": "0.0.1-alpha.4",
       "name": "ManhwaNex",
-      "description": "ManhwaNex with native Popular Series, Latest Updates, home categories, search filters and persistent NSFW exclusion.",
+      "description": "ManhwaNex with native discovery, search filters and Mana content-rating policy.",
       "thumbnail": "ManhwaNex.png",
       "rating": 1,
       "website": "https://manhwanex.com",
@@ -114,11 +114,11 @@
       "path": "ManhwaNex",
       "environment": "source",
       "intents": 6298637,
-      "hash": "235d7956235d7956235d7956235d7956235d7956235d7956235d7956235d7956"
+      "hash": "5f5bed8c5f5bed8c5f5bed8c5f5bed8c5f5bed8c5f5bed8c5f5bed8c5f5bed8c"
     },
     {
       "id": "VortexScans",
-      "version": "0.0.1-alpha.6",
+      "version": "0.0.1-alpha.7",
       "name": "VortexScans",
       "description": "Read manga, manhwa, and manhua from VortexScans.",
       "thumbnail": "VortexScans.png",
@@ -141,7 +141,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 6298636,
-      "hash": "59f2c91d59f2c91d59f2c91d59f2c91d59f2c91d59f2c91d59f2c91d59f2c91d"
+      "hash": "0aa3458f0aa3458f0aa3458f0aa3458f0aa3458f0aa3458f0aa3458f0aa3458f"
     }
   ]
 }
