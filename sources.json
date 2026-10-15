@@ -3,6 +3,31 @@
   "thumbnail": "https://avatars.githubusercontent.com/LucifersCircle",
   "sources": [
     {
+      "id": "MangaSushi",
+      "version": "0.0.1-alpha.1",
+      "name": "MangaSushi",
+      "description": "MangaSushi with the site’s discovery, search filters, and a global NSFW exclusion setting.",
+      "thumbnail": "MangaSushi.png",
+      "rating": 1,
+      "website": "https://mangasushi.org",
+      "badges": [
+        "Manga"
+      ],
+      "supportedLanguages": [
+        "en_US"
+      ],
+      "developers": [
+        {
+          "name": "LucifersCircle",
+          "github": "https://github.com/LucifersCircle"
+        }
+      ],
+      "path": "MangaSushi",
+      "environment": "source",
+      "intents": 6298637,
+      "hash": "1a645c031a645c031a645c031a645c031a645c031a645c031a645c031a645c03"
+    },
+    {
       "id": "VortexScans",
       "version": "1.0.5",
       "name": "VortexScans",
@@ -27,7 +52,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 6298636,
-      "hash": "0dcab5f50dcab5f50dcab5f50dcab5f50dcab5f50dcab5f50dcab5f50dcab5f5"
+      "hash": "23e6e79e23e6e79e23e6e79e23e6e79e23e6e79e23e6e79e23e6e79e23e6e79e"
     }
   ]
 }
