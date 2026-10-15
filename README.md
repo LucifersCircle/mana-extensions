@@ -9,6 +9,8 @@ from [pirate.vodka extensions](https://github.com/LucifersCircle/pirate.vodka-ex
 
 ## VortexScans features
 
+Version `0.0.1-alpha.6` follows the repository's shared alpha-version format.
+
 - Dynamic discovery rows for Popular Today, Latest, New, every published
   collection, and Most Popular
 - Search with the live VortexScans genre list, include/exclude genre selection,
@@ -18,11 +20,13 @@ from [pirate.vodka extensions](https://github.com/LucifersCircle/pirate.vodka-ex
 - Ordered webtoon pages from the VortexScans API, with an HTML fallback
 - Cloudflare and vShield challenge detection through Mana's built-in resolution flow
 - VortexScans deep-link handling and image request headers
+- Popular Today uses source-published original covers from the same homepage,
+  with the existing card image as fallback and no extra title requests.
 
 ## MangaSushi
 
 [MangaSushi](https://mangasushi.org/) is a fresh native implementation, not a
-Paperback converter. Version `0.0.1-alpha.4` includes:
+Paperback converter. Version `0.0.1-alpha.5` includes:
 
 - The site's finite **Popular Series** carousel and **What's New** feed, in source
   order. What's New uses the site's actual AJAX Load More query and continuation.
@@ -34,9 +38,11 @@ Paperback converter. Version `0.0.1-alpha.4` includes:
   and numbered-page-gap detection, source referer headers and series deep links.
 - The site's square 192-pixel icon, and a fixed three-requests-per-second limit.
 
-Covers prefer advertised native medium derivatives up to 350 pixels wide when
-available, without extra metadata requests or guessed URLs. This does not promote
-heavy full originals or change reader images; existing covers remain the fallback.
+Covers use the largest valid same-asset image advertised by each source image,
+including an explicitly listed full original, without extra metadata requests or
+guessed URLs. An existing original is never downgraded. Discovery, search and
+details deliberately share this largest-image policy, including large discovery
+title displays; reader images and existing-cover fallbacks are unchanged.
 
 Discovery shares its homepage response and page-sized native AJAX metadata batch
 between concurrent sections rather than fetching classification one title at a time.
