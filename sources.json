@@ -3,6 +3,38 @@
   "thumbnail": "https://avatars.githubusercontent.com/LucifersCircle",
   "sources": [
     {
+      "id": "Kagane",
+      "version": "0.0.1-alpha.1",
+      "name": "Kagane",
+      "description": "Kagane with current API support, grouped tags and global four-category content settings.",
+      "thumbnail": "Kagane.png",
+      "rating": 1,
+      "website": "https://kagane.org",
+      "badges": [
+        "Manga",
+        "Manhwa",
+        "Manhua",
+        "Comic"
+      ],
+      "supportedLanguages": [
+        "en_US"
+      ],
+      "developers": [
+        {
+          "name": "Lucifers Circle",
+          "github": "https://github.com/LucifersCircle"
+        },
+        {
+          "name": "PoppingMango Sources",
+          "github": "https://github.com/PoppingMangoSources"
+        }
+      ],
+      "path": "Kagane",
+      "environment": "source",
+      "intents": 6298637,
+      "hash": "22e98c5e22e98c5e22e98c5e22e98c5e22e98c5e22e98c5e22e98c5e22e98c5e"
+    },
+    {
       "id": "MangaSushi",
       "version": "0.0.1-alpha.3",
       "name": "MangaSushi",
@@ -25,7 +57,7 @@
       "path": "MangaSushi",
       "environment": "source",
       "intents": 6298637,
-      "hash": "15e2a9b015e2a9b015e2a9b015e2a9b015e2a9b015e2a9b015e2a9b015e2a9b0"
+      "hash": "0ee30d2a0ee30d2a0ee30d2a0ee30d2a0ee30d2a0ee30d2a0ee30d2a0ee30d2a"
     },
     {
       "id": "VortexScans",
@@ -52,7 +84,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 6298636,
-      "hash": "06bff29106bff29106bff29106bff29106bff29106bff29106bff29106bff291"
+      "hash": "0dbf8f160dbf8f160dbf8f160dbf8f160dbf8f160dbf8f160dbf8f160dbf8f16"
     }
   ]
 }
