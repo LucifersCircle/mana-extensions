@@ -28,6 +28,21 @@ function searchResult(result) {
   highlights(result.results);
   assert.equal(typeof result.isLastPage, 'boolean', 'Missing pagination state');
 }
+async function assertVortexGenres(contentId, content) {
+  const postId = contentId.match(/^(\d+):/)?.[1];
+  assert(postId, 'Missing canonical numeric post ID');
+  const reference = await testTransport.fetch(`https://api.vortexscans.org/api/post?postId=${postId}`, { signal: AbortSignal.timeout(30_000) });
+  assert.equal(reference.status, 200, 'Live genre reference failed');
+  const { post } = await reference.json();
+  assert.equal(String(post.id), postId, 'Live genre reference identity changed');
+  assert(Array.isArray(post.genres), 'Live genre field is malformed');
+  assert(Array.isArray(content.tags), 'Native genre field is malformed');
+  const expected = post.genres.filter((genre) => genre.name.toLowerCase() !== 'hidden')
+    .map((genre) => ({ id: String(genre.id), title: genre.name }));
+  assert.deepEqual(Array.from(content.tags, (genre) => ({ id: genre.id, title: genre.title })), expected,
+    'Detail genres differ from the live source, including legitimately untagged titles');
+}
+
 async function image(source, imageUrl) {
   const request = await source.willRequestImage(imageUrl);
   url(request.url);
@@ -123,7 +138,7 @@ for (const name of names) {
     nonempty(content.title, 'Detail title'); nonempty(content.summary, 'Summary');
     assert.equal(content.title, catalog.results[0].title);
     url(content.webUrl); url(content.cover);
-    assert(Array.isArray(content.tags) && content.tags.length, 'Missing live genres');
+    await assertVortexGenres(catalog.results[0].id, content);
     await image(source, content.cover);
   });
   await check('Search form exposes live genres and sort options', async () => {
@@ -139,10 +154,13 @@ for (const name of names) {
     assert((await source.getSortOptions()).length, 'No sort options');
   });
   await check('Genre inclusion and exclusion affect live results', async () => {
-    const genre = content.tags[0];
+    const genre = form.sections.flatMap((section) => section.children ?? [])
+      .find((field) => field.id === 'genres')?.options?.[0];
+    assert(genre, 'No verified native genre is available for filter checks');
     const included = await source.search({ page: 1, filters: { genres: { included: [genre] } } });
     searchResult(included);
     const includedDetails = await source.getContent(included.results[0].id);
+    await assertVortexGenres(included.results[0].id, includedDetails);
     assert(includedDetails.tags.some((tag) => tag.id === genre.id), 'Included genre not respected');
     const excluded = await source.search({ page: 1, filters: { genres: { excluded: [genre] } } });
     searchResult(excluded);

@@ -40,13 +40,23 @@ export async function testHijala({ source, check, highlights, searchResult, imag
     assert(!requests.slice(start).some((item) => new URL(item.url).pathname.startsWith('/series/')));
     assert(requests.some((item) => new URL(item.url).searchParams.get('excludedGenreIds')?.split(',').includes('27')));
   });
-  await check('Native page2 advances, last page ends, and repeated requests are stable', async () => {
-    const next = await source.search({ page: 2 }); searchResult(next);
-    assert(next.results.some((item) => !ids(catalog.results).includes(item.id)));
-    assert.deepEqual(ids((await source.search({ page: 2 })).results), ids(next.results));
-    let terminal = false;
-    for (let page = 3; page <= 10; page++) { const result = await source.search({ page }); if (result.isLastPage) { terminal = true; break; } }
-    assert(terminal, 'Live catalog never terminated');
+  await check('Entire live native catalog has unique accumulated IDs, no lost returned titles and stable reset/repeats', async () => {
+    const accumulated = [], seen = new Set(); let terminalPage;
+    for (let page = 1; page <= 100; page++) {
+      const result = page === 1 ? catalog : await source.search({ page });
+      assert.equal(typeof result.isLastPage, 'boolean');
+      for (const item of result.results) { assert(!seen.has(item.id), `Cross-page duplicate ${item.id} at native page${page}`); seen.add(item.id); accumulated.push(item.id); }
+      assert.deepEqual(ids((await source.search({ page })).results), ids(result.results), 'Repeated native page changed');
+      if (result.isLastPage) { terminalPage = page; break; }
+    }
+    assert(terminalPage, 'Live catalog did not reach a terminal page within100 native pages');
+    assert.equal(new Set(accumulated).size, accumulated.length, 'Concatenated native catalog contains duplicates');
+    const livePosts = [...source.cache].filter(([url]) => new URL(url).origin === api && new URL(url).pathname === '/api/query').flatMap(([, entry]) => JSON.parse(entry.value).posts);
+    const expected = new Set(livePosts.filter(hijalaSafePost).map((post) => hijalaID(post.slug)));
+    assert.equal(seen.size, expected.size); for (const id of expected) assert(seen.has(id), `Lost returned live title ${id}`);
+    assert.deepEqual(ids((await source.search({ page: 1 })).results), ids(catalog.results), 'Returning to page1 carried a stale seen-ID exclusion');
+    const after = await source.search({ page: terminalPage + 1 }); assert.equal(after.results.length, 0); assert.equal(after.isLastPage, true);
+    console.log(`LIVE COMPLETE native catalog ${seen.size} unique IDs across${terminalPage} pages`);
   });
   await check('Title search and true empty search use source-published titles', async () => {
     const found = await source.search({ page: 1, query: catalog.results[0].title }); searchResult(found);
@@ -255,7 +265,11 @@ export async function testHijala({ source, check, highlights, searchResult, imag
   });
   await check('Repeated API pages fail explicitly instead of looping or duplicating native pages', async () => {
     let first;
-    const target = transformed((text, url) => { if (!url.includes('/api/query?')) return text; if (Number(new URL(url).searchParams.get('page')) === 1) first = text; return first ?? text; });
+    const target = freshSource(), original = target.api.text.bind(target.api);
+    target.api.text = async (url) => {
+      if (!url.includes('/api/query?')) return original(url);
+      first ??= await original(url); return first;
+    };
     await target.search({ page: 1 }); await assert.rejects(target.search({ page: 2 }), /repeated/);
   });
   await check('Settings changed during a live page2 request reject its stale result', async () => {
@@ -314,5 +328,163 @@ export async function testHijala({ source, check, highlights, searchResult, imag
     assert.equal(requests.length, start, 'Malformed chapter ID performed a network request');
     await assert.rejects(source.getChapterData('mimosa', 'not-a-real-chapter'), /does not belong/);
     assert.deepEqual(Array.from((await source.getContent('mimosa')).additionalTitles), originalTitles);
+  });
+  await testHijalaPagination({ source, check, freshSource });
+}
+
+function hijalaID(slug) { return encodeURIComponent(slug).replace(/[!'*~]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`); }
+function hijalaSafePost(post) {
+  return !post.isNovel && ['MANHWA', 'MANHUA', 'MANGA', 'SPANISH', 'RUSSIAN'].includes(post.seriesType)
+    && Array.isArray(post.genres) && post.genres.length > 0
+    && post.genres.every((genre) => Number.isSafeInteger(genre.id) && genre.id > 0 && typeof genre.name === 'string' && genre.name.trim())
+    && !post.genres.some((genre) => /^(mature|adult|smut|hentai|erotica|pornographic|pornography|ecchi|suggestive)$/i.test(genre.name.trim()));
+}
+
+// Pagination-only entry point for short focused replays. Mutation inputs are
+// captured from current public metadata once in memory, never committed fixtures.
+export async function testHijalaPagination({ source, check, freshSource, publicData }) {
+  const domain = 'https://en-hijala.com', api = 'https://api.en-hijala.com';
+  let archive, livePosts, pool;
+  const ids = (items) => Array.from(items, (item) => item.id);
+  const collect = async (target, request = {}, expected) => {
+    const all = [], seen = new Set(); let last;
+    for (let page = 1; page <= 20; page++) {
+      const result = await target.search({ ...request, page });
+      assert.equal(typeof result.isLastPage, 'boolean');
+      for (const item of result.results) { assert(!seen.has(item.id), `Native cross-page duplicate ${item.id} at page${page}`); seen.add(item.id); all.push(item.id); }
+      if (result.isLastPage) { last = page; break; }
+      assert(result.results.length, 'A duplicate-only physical page escaped as empty nonterminal native page');
+    }
+    assert(last, 'Native pagination never completed within its focused bound');
+    assert.equal(new Set(all).size, all.length, 'Concatenated native IDs are not unique');
+    if (expected) assert.deepEqual(all, expected.map((post) => hijalaID(post.slug)), 'Lost or reordered source-published IDs');
+    const after = await target.search({ ...request, page: last + 1 }); assert.equal(after.results.length, 0); assert.equal(after.isLastPage, true);
+    return all;
+  };
+  const scenario = (pageData) => {
+    const target = freshSource(), calls = [], original = target.api.text.bind(target.api);
+    target.api.text = async (url) => {
+      if (url === `${domain}/series`) return archive;
+      const parsed = new URL(url);
+      if (parsed.origin !== api || parsed.pathname !== '/api/query') return original(url);
+      const page = Number(parsed.searchParams.get('page')); calls.push({ page, query: parsed.searchParams.get('searchTerm'), order: parsed.searchParams.get('orderBy') });
+      const value = pageData(page, parsed); return JSON.stringify(value);
+    };
+    return { target, calls };
+  };
+  const normal = (posts, page) => ({ posts: posts.slice((page - 1) * 20, page * 20), totalCount: posts.length });
+  const overlap = (page) => ({ posts: page === 1 ? pool.slice(0, 20) : page === 2 ? pool.slice(15, 35) : pool.slice(35 + (page - 3) * 20, 55 + (page - 3) * 20), totalCount: pool.length });
+  const duplicate = (page) => ({ posts: page === 2 ? pool.slice(0, 20) : page === 1 ? pool.slice(0, 20) : pool.slice((page - 2) * 20, (page - 1) * 20), totalCount: pool.length });
+  const preference = async (target, id, value) => { const field = (await target.getPreferenceMenu()).sections.flatMap((section) => section.children ?? []).find((item) => item.id === id); assert(field?.didChange); await field.didChange(value); };
+
+  await check('Pagination mutation seed is captured once from current public metadata', async () => {
+    archive = publicData?.archive ?? await source.api.text(`${domain}/series`);
+    livePosts = publicData?.posts ?? JSON.parse(await source.api.text(`${api}/api/query?page=1&perPage=100&orderBy=lastChapterAddedAt&orderDirection=desc`)).posts;
+    const safe = livePosts.filter(hijalaSafePost), count = Math.floor(Math.min(60, safe.length) / 20) * 20;
+    assert(count >= 40, 'Need at least forty current safe source records for two real-size pages');
+    pool = safe.slice(0, count); assert.equal(new Set(pool.map((post) => post.slug)).size, pool.length);
+    console.log(`PAGINATION LIVE SEED ${livePosts.length} records, ${pool.length} safe records in transient mutation pool`);
+  });
+  await check('Native Most Chapters accepts the current source response and complete terminal catalog shape', async () => {
+    const target = freshSource(), original = target.api.text.bind(target.api); let published;
+    target.api.text = async (url) => {
+      if (url === `${domain}/series`) return archive;
+      const text = await original(url);
+      if (url.includes('/api/query?') && new URL(url).searchParams.get('orderBy') === 'chaptersCount') published = JSON.parse(text);
+      return text;
+    };
+    const result = await target.search({ page: 1, sort: { id: 'chapters' } }); assert(published?.posts.length);
+    assert.equal(new Set(published.posts.map((post) => post.slug)).size, published.posts.length);
+    if (published.posts.length > 20) {
+      assert.equal(published.posts.length, published.totalCount); assert.equal(result.isLastPage, true);
+      assert.deepEqual(ids(result.results), published.posts.filter(hijalaSafePost).map((post) => hijalaID(post.slug)));
+      const after = await target.search({ page: 2, sort: { id: 'chapters' } }); assert.equal(after.results.length, 0); assert.equal(after.isLastPage, true);
+    } else assert(result.results.length || result.isLastPage);
+    console.log(`LIVE chaptersCount ${published.posts.length}/${published.totalCount} records, native terminal${result.isLastPage}`);
+  });
+  await check('Only a complete unique first-page catalog may exceed the requested page size', async () => {
+    const complete = scenario(() => ({ posts: pool, totalCount: pool.length })); await collect(complete.target, {}, pool); assert.equal(complete.calls.length, 1);
+    const partial = scenario(() => ({ posts: pool.slice(0, -1), totalCount: pool.length })); await assert.rejects(partial.target.search({ page: 1 }), /bounded title/);
+    const later = scenario((page) => ({ posts: page === 1 ? pool.slice(0, 20) : pool, totalCount: pool.length })); await later.target.search({ page: 1 }); await assert.rejects(later.target.search({ page: 2 }), /bounded title/);
+    const duplicate = scenario(() => ({ posts: [...pool, pool[0]], totalCount: pool.length + 1 })); await assert.rejects(duplicate.target.search({ page: 1 }), /invalid catalog/);
+  });
+  await check('Partial physical-page overlap emits every ID once beyond the nominal last offset', async () => {
+    const { target, calls } = scenario(overlap); const all = await collect(target, {}, pool);
+    assert.equal(all.length, pool.length); assert(calls.at(-1).page > Math.ceil(pool.length / 20), 'Did not continue past the old premature-stop boundary');
+  });
+  await check('Duplicate-only nonterminal physical page is skipped and later fresh rows are never lost', async () => {
+    const { target, calls } = scenario(duplicate); const all = await collect(target, {}, pool);
+    assert.equal(all.length, pool.length); assert.deepEqual(calls.slice(0, 3).map((call) => call.page), [1, 2, 3]);
+  });
+  await check('Repeated pages, page1 reset and TTL refresh do not carry emitted-ID exclusions', async () => {
+    const { target } = scenario(overlap); const first = await target.search({ page: 1 }); const second = await target.search({ page: 2 });
+    assert.deepEqual(ids((await target.search({ page: 2 })).results), ids(second.results));
+    await collect(target, {}, pool); assert.deepEqual(ids((await target.search({ page: 1 })).results), ids(first.results)); await collect(target, {}, pool);
+    for (const state of target.pages.values()) state.at -= 180_001;
+    for (const cached of target.cache.values()) cached.at -= 180_001;
+    for (let retry = 0; retry < 2; retry++) await assert.rejects(target.search({ page: 2 }), /pagination expired.*page 1/);
+    assert.deepEqual(ids((await target.search({ page: 1 })).results), ids(first.results)); await collect(target, {}, pool);
+  });
+  await check('Changed query and sort keep independent native continuation and emitted-ID state', async () => {
+    const a = pool.slice(0, 40), b = [...a.slice(20), ...a.slice(0, 20)];
+    const { target } = scenario((page, url) => normal(url.searchParams.get('orderBy') === 'postTitle' ? [...a].reverse() : url.searchParams.get('searchTerm') === 'query-b' ? b : a, page));
+    const a1 = await target.search({ page: 1, query: 'query-a' }), b1 = await target.search({ page: 1, query: 'query-b' });
+    assert.deepEqual(ids(a1.results), a.slice(0, 20).map((post) => hijalaID(post.slug))); assert.deepEqual(ids(b1.results), b.slice(0, 20).map((post) => hijalaID(post.slug)));
+    await collect(target, { query: 'query-a' }, a); await collect(target, { query: 'query-b' }, b);
+    await collect(target, { query: 'query-a', sort: { id: 'title' } }, [...a].reverse()); await collect(target, { query: 'query-a' }, a);
+  });
+  await check('Changed persistent settings reset continuation without hiding prior IDs', async () => {
+    const { target } = scenario(duplicate); await collect(target, {}, pool);
+    await preference(target, 'hidePaid', false);
+    try { await collect(target, {}, pool); assert.equal((await target.getPreferenceMenu()).sections[0].children.find((item) => item.id === 'hidePaid').value, false); }
+    finally { await preference(target, 'hidePaid', true); }
+    await collect(target, {}, pool);
+  });
+  await check('Another Target toggling off/on cannot revive an old same-value cursor or raw snapshot', async () => {
+    let reverse = false; const a = scenario((page) => normal(pool, page));
+    const b = scenario((page) => normal(reverse ? [...pool].reverse() : pool, page)); await collect(b.target, {}, pool);
+    await preference(a.target, 'hidePaid', false);
+    try { reverse = true; } finally { await preference(a.target, 'hidePaid', true); }
+    const before = b.calls.length; await collect(b.target, {}, [...pool].reverse()); assert(b.calls.length > before, 'Cross-Target restoration reused its stale raw snapshot');
+  });
+  await check('Allowed-rating contexts isolate cumulative IDs even across locally filtered pages', async () => {
+    const mature = livePosts.filter((post) => post.genres?.some((genre) => /^mature$/i.test(genre.name.trim())) && post.genres.every((genre) => genre.id > 0 && genre.name?.trim()) && !post.genres.some((genre) => /^(adult|smut|hentai|erotica|pornographic|pornography)$/i.test(genre.name.trim()))).slice(0, 2);
+    assert(mature.length, 'Need actual source-labeled mature data for rating isolation');
+    const safe = pool.slice(0, 40), mixed = [...safe, ...mature]; const { target } = scenario((page) => normal(mixed, page));
+    await preference(target, 'excludeNSFW', false);
+    try { await collect(target, { context: { allowedContentRatings: [0] } }, safe); await collect(target, { context: { allowedContentRatings: [2] } }, mature); await collect(target, { context: { allowedContentRatings: [0] } }, safe); }
+    finally { await preference(target, 'excludeNSFW', true); }
+  });
+  await check('Changed total fails explicitly and page1 can reset the failed snapshot', async () => {
+    let changed = true; const { target } = scenario((page) => ({ ...normal(pool, page), totalCount: changed && page > 1 ? pool.length + 1 : pool.length }));
+    await target.search({ page: 1 }); await assert.rejects(target.search({ page: 2 }), /total changed.*restart/);
+    await assert.rejects(target.search({ page: 2 }), /restart from page 1/); changed = false; await collect(target, {}, pool);
+  });
+  await check('Missing titles after duplicates and endless repeated pages fail instead of claiming terminal completion', async () => {
+    const missing = scenario((page) => ({ posts: page <= 2 ? pool.slice(0, 20) : [], totalCount: pool.length }));
+    await missing.target.search({ page: 1 }); await assert.rejects(missing.target.search({ page: 2 }), /incomplete catalog/);
+    const repeated = scenario(() => ({ posts: pool.slice(0, 20), totalCount: pool.length }));
+    await repeated.target.search({ page: 1 }); await assert.rejects(repeated.target.search({ page: 2 }), /repeated.*ten/); assert.equal(repeated.calls.length, 11, 'No-progress traversal exceeded its ten-page bound');
+  });
+  await check('Untrusted totals, page counts and cumulative-ID state fail before unbounded traversal or allocation', async () => {
+    for (const totalCount of [10_001, Number.MAX_SAFE_INTEGER]) {
+      const { target, calls } = scenario(() => ({ posts: pool.slice(0, 20), totalCount })); await assert.rejects(target.search({ page: 1 }), /bounded title/); assert.equal(calls.length, 1);
+      const state = [...target.pages.values()][0]; assert.equal(state.ids.size, 0); assert.equal(state.references, 0);
+    }
+    for (const slug of ['x'.repeat(2_049), '한'.repeat(228)]) {
+      const longID = scenario(() => ({ posts: [{ ...pool[0], slug }], totalCount: 1 }));
+      await assert.rejects(longID.target.search({ page: 1 }), /bounded title/); assert.equal([...longID.target.pages.values()][0].ids.size, 0);
+    }
+    const hugePage = scenario((page) => normal(pool, page)); await assert.rejects(hugePage.target.search({ page: Number.MAX_SAFE_INTEGER }), /Invalid Hijala page/); assert.equal(hugePage.calls.length, 0);
+    const hugeBatch = scenario(() => ({ posts: pool.slice(0, -1), totalCount: pool.length })); await assert.rejects(hugeBatch.target.search({ page: 1 }), /bounded title/); assert.equal([...hugeBatch.target.pages.values()][0].ids.size, 0);
+    const references = scenario((page) => normal(pool, page)); await references.target.search({ page: 1 }); [...references.target.pages.values()][0].references = 20_001; const before = references.calls.length;
+    await assert.rejects(references.target.search({ page: 2 }), /bounded catalog/); assert.equal(references.calls.length, before);
+  });
+  await check('Malformed internal continuation fails before reading an unconsumed provider offset', async () => {
+    for (const next of [0, -1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER]) {
+      const { target, calls } = scenario((page) => normal(pool, page)); await target.search({ page: 1 });
+      const state = [...target.pages.values()][0]; state.values.get(1).next = next; const before = calls.length;
+      await assert.rejects(target.search({ page: 2 }), /invalid or expired/); assert.equal(calls.length, before);
+    }
   });
 }

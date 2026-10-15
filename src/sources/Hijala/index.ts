@@ -72,6 +72,11 @@ export type Filters = {
     direction?: Option, minChapters?: string, maxChapters?: string, createdAfter?: string, createdBefore?: string
 }
 type Cached<T> = { at: number, value: T }
+type CatalogState = { at: number, invalid?: boolean, total?: number, values: Map<number, { next: number, result: PagedSearchResult }>, ids: Map<number, string[]>, references: number }
+const MAX_CATALOG_TITLES = 10_000
+const MAX_CATALOG_PAGES = 1_000
+const MAX_CATALOG_ID_REFERENCES = 20_000
+const MAX_CATALOG_ID_LENGTH = 2_048
 const SETTING = 'Hijala.preferences'
 // All Target objects in this source share the same persisted preference key.
 let preferenceRevision = 0
@@ -87,9 +92,10 @@ export class Target implements ChapterSource, PageLinkResolver, SourcePreference
     }
     readonly config = { cloudflareResolutionURL: DOMAIN, owningLinks: ['en-hijala.com'] }
     private readonly api = new HijalaApi()
+    private cacheRevision = preferenceRevision
     private readonly cache = new Map<string, Cached<string>>()
     private readonly pending = new Map<string, Promise<string>>()
-    private readonly pages = new Map<string, { at: number, values: Map<number, { next: number, result: PagedSearchResult }>, ids: Map<number, string> }>()
+    private readonly pages = new Map<string, CatalogState>()
 
     private async preferences(): Promise<Preferences> {
         const saved = await ObjectStore.get(SETTING) as Partial<Preferences> | null
@@ -117,6 +123,10 @@ export class Target implements ChapterSource, PageLinkResolver, SourcePreference
             revision = preferenceRevision
             saved = await this.preferences()
         } while (barrier !== preferenceWrite || revision !== preferenceRevision)
+        if (this.cacheRevision !== revision) {
+            this.cache.clear(); this.pending.clear(); this.pages.clear()
+            this.cacheRevision = revision
+        }
         const result = await operation(saved)
         const current = await this.preferences()
         if (barrier !== preferenceWrite || revision !== preferenceRevision || JSON.stringify(saved) !== JSON.stringify(current)) throw new Error('Hijala settings changed during this request; refresh to continue')
@@ -209,7 +219,7 @@ export class Target implements ChapterSource, PageLinkResolver, SourcePreference
         return this.withPreferences((saved) => this.searchPage(request, saved))
     }
     private async searchPage(request: SearchRequest<Filters>, saved: Preferences): Promise<PagedSearchResult> {
-        if (!Number.isSafeInteger(request.page) || request.page < 1) throw new Error('Invalid Hijala page')
+        if (!Number.isSafeInteger(request.page) || request.page < 1 || request.page > MAX_CATALOG_PAGES) throw new Error('Invalid Hijala page')
         if (request.context?.allowedContentRatings?.length === 0) return { results: [], isLastPage: true }
         if (request.listId && !SECTIONS.some((item) => item.id === request.listId && item.id !== 'genres')) throw new Error('Unknown Hijala list')
         if (!saved.types.length) return { results: [], isLastPage: true }
@@ -225,13 +235,24 @@ export class Target implements ChapterSource, PageLinkResolver, SourcePreference
             if (request.listId === 'latest') latestTag = this.latestTag(html)
         }
         const excluded = saved.excludeNSFW ? genreOptions(await this.text(`${DOMAIN}/series`)).filter((genre) => blockedGenre(genre.title)).map((genre) => genre.id) : []
-        const stateKey = JSON.stringify([{ ...request, page: undefined }, saved])
-        for (const [key, entry] of this.pages) if (Date.now() - entry.at >= 180_000) this.pages.delete(key)
+        const stateKey = JSON.stringify([{ ...request, page: undefined }, saved, preferenceRevision])
+        const expired = this.pages.get(stateKey)
+        for (const [key, entry] of this.pages) if (Date.now() - entry.at >= 180_000 && !(key === stateKey && request.page > 1)) this.pages.delete(key)
+        if (request.page > 1 && expired && Date.now() - expired.at >= 180_000) throw new Error('Hijala catalog pagination expired; refresh from page 1')
         let stateEntry = this.pages.get(stateKey)
+        if (stateEntry?.invalid) {
+            if (request.page !== 1) throw new Error('Hijala catalog pagination is incomplete; restart from page 1')
+            this.pages.delete(stateKey)
+            stateEntry = undefined
+        }
         if (!stateEntry) {
             if (this.pages.size >= 32) this.pages.delete(this.pages.keys().next().value as string)
-            stateEntry = { at: Date.now(), values: new Map(), ids: new Map() }
+            stateEntry = { at: Date.now(), values: new Map(), ids: new Map(), references: 0 }
             this.pages.set(stateKey, stateEntry)
+        }
+        if (stateEntry.ids.size > MAX_CATALOG_PAGES || stateEntry.values.size > MAX_CATALOG_PAGES || !Number.isSafeInteger(stateEntry.references) || stateEntry.references < 0 || stateEntry.references > MAX_CATALOG_ID_REFERENCES) {
+            this.invalidateCatalog(stateEntry)
+            throw new Error('Hijala continuation state exceeded its bounded catalog limits; restart from page 1')
         }
         const state = stateEntry.values
         const previous = state.get(request.page)
@@ -241,19 +262,44 @@ export class Target implements ChapterSource, PageLinkResolver, SourcePreference
             if (earlier.isLastPage) return { results: [], isLastPage: true }
         }
         const cursor = state.get(request.page - 1)
-        if (request.page > 1 && !cursor) throw new Error('Hijala continuation state expired; refresh the catalog')
+        if (request.page > 1 && (!cursor || !Number.isSafeInteger(cursor.next) || cursor.next < 2 || cursor.next > MAX_CATALOG_PAGES + 1 || !stateEntry.ids.has(cursor.next - 1))) {
+            this.invalidateCatalog(stateEntry)
+            throw new Error('Hijala continuation state is invalid or expired; restart from page 1')
+        }
         let apiPage = request.page === 1 ? 1 : cursor?.next ?? 1
+        const emitted = new Set([...state].filter(([page]) => page < request.page).flatMap(([, entry]) => entry.result.results.map((item) => item.id)))
+        let lastURL: string | undefined
         for (let skipped = 0; skipped < 10; skipped++, apiPage++) {
+            if (apiPage > MAX_CATALOG_PAGES || (stateEntry.ids.size >= MAX_CATALOG_PAGES && !stateEntry.ids.has(apiPage))) {
+                this.invalidateCatalog(stateEntry, lastURL)
+                throw new Error('Hijala continuation exceeded its bounded physical-page limit; restart from page 1')
+            }
             const physical = { ...request, page: apiPage }
             const url = !request.listId || request.listId === 'popular'
                 ? this.queryURL(physical, saved, excluded)
                 : `${API}/api/posts?page=${apiPage}&perPage=${PAGE_SIZE}&searchTerm=&isNovel=false&tag=${request.listId === 'latest' || request.listId === 'updates' ? latestTag : request.listId}`
             if (!url) return { results: [], isLastPage: true }
+            lastURL = url
             const data: Catalog = catalog(await this.text(url))
-            if (!data.posts.length && (apiPage - 1) * PAGE_SIZE < data.totalCount) throw new Error('Hijala returned an empty page before the end of its catalog')
-            const ids = data.posts.map((post) => post.slug).join('|')
-            if (ids && [...stateEntry.ids].some(([previous, value]) => previous !== apiPage && value === ids)) throw new Error('Hijala repeated a catalog page')
-            stateEntry.ids.set(apiPage, ids)
+            const references = stateEntry.references + data.posts.length - (stateEntry.ids.get(apiPage)?.length ?? 0)
+            // Most Chapters can publish the complete unique catalog instead of the requested page size.
+            const completeFirstPage = apiPage === 1 && data.posts.length === data.totalCount
+            if (data.totalCount > MAX_CATALOG_TITLES || (data.posts.length > PAGE_SIZE && !completeFirstPage) || references > MAX_CATALOG_ID_REFERENCES || data.posts.some((post) => post.slug.length > MAX_CATALOG_ID_LENGTH || slugToId(post.slug).length > MAX_CATALOG_ID_LENGTH)) {
+                this.invalidateCatalog(stateEntry, url)
+                throw new Error('Hijala catalog exceeded its bounded title or cumulative-ID limits; restart from page 1')
+            }
+            if ((stateEntry.total !== undefined && stateEntry.total !== data.totalCount) || data.posts.length > data.totalCount) {
+                this.invalidateCatalog(stateEntry, url)
+                throw new Error('Hijala catalog total changed during pagination; restart from page 1')
+            }
+            stateEntry.total = data.totalCount
+            stateEntry.references = references
+            stateEntry.ids.set(apiPage, data.posts.map((post) => post.slug))
+            const rawIDs = new Set([...stateEntry.ids].filter(([page]) => page <= apiPage).flatMap(([, ids]) => ids))
+            if ((!data.posts.length && rawIDs.size < data.totalCount) || rawIDs.size > data.totalCount) {
+                this.invalidateCatalog(stateEntry, url)
+                throw new Error('Hijala returned an incomplete catalog before accounting for its advertised titles; restart from page 1')
+            }
             const results: Highlight[] = data.posts.filter((post) => this.allowed(post, saved, request.context)).flatMap((post) => {
                 const item = highlight(post)
                 if (request.listId !== 'updates') return [item]
@@ -264,14 +310,32 @@ export class Target implements ChapterSource, PageLinkResolver, SourcePreference
                     // A Mana highlight must keep the series ID. Put all visible updates in one native tile rather than duplicate IDs.
                     return { ...item, subtitle: `${isLocked(chapter) ? '[Paid] ' : ''}Chapter ${chapter.number}${title ? `: ${title}` : ''}` }
                 }).slice(0, 1)
+            }).filter((item) => {
+                if (emitted.has(item.id)) return false
+                emitted.add(item.id)
+                return true
             })
-            const result = { results, isLastPage: apiPage * PAGE_SIZE >= data.totalCount }
+            // Offset pages may overlap. Only the stable advertised unique total,
+            // not physical page * page size, establishes complete traversal.
+            const result = { results, isLastPage: rawIDs.size === data.totalCount }
             if (results.length || result.isLastPage) {
                 state.set(request.page, { next: apiPage + 1, result })
                 return result
             }
         }
-        throw new Error('No visible Hijala titles in ten catalog pages; adjust source filters')
+        this.invalidateCatalog(stateEntry, lastURL)
+        throw new Error('Hijala repeated or filtered ten catalog pages without new visible titles; restart from page 1')
+    }
+    private invalidateCatalog(state: CatalogState, url?: string): void {
+        state.invalid = true
+        if (!url) return
+        const scope = new URL(url)
+        scope.searchParams.delete('page')
+        for (const key of this.cache.keys()) {
+            const cachedURL = new URL(key)
+            cachedURL.searchParams.delete('page')
+            if (cachedURL.href === scope.href) this.cache.delete(key)
+        }
     }
     private latestTag(html: string): string {
         const separatePinned = pageProperty<boolean>(html, 'hasPinnedSeriesSection')

@@ -64,7 +64,7 @@ class ExcludedContentError extends Error {}
 export class Target implements ContentSource, PageLinkResolver, ImageRequestHandler, SourcePreferenceProvider {
     readonly info: SourceInfo = {
         id: 'MangaSushi',
-        version: '0.0.1-alpha.5',
+        version: '0.0.1-alpha.6',
         name: 'MangaSushi',
         description: 'MangaSushi with the site’s discovery, search filters, and a global NSFW exclusion setting.',
         thumbnail: 'MangaSushi.png',
@@ -72,7 +72,7 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
         website: DOMAIN,
         badges: ['Manga'],
         supportedLanguages: ['en_US'],
-        developers: [{ name: 'LucifersCircle', github: 'https://github.com/LucifersCircle' }]
+        developers: [{ name: 'Lucifers Circle', github: 'https://github.com/LucifersCircle' }]
     }
     readonly config = { cloudflareResolutionURL: DOMAIN, owningLinks: ['mangasushi.org'] }
     private readonly api = new MangaSushiApi()
