@@ -1,5 +1,18 @@
 [
   {
+    "checkedAt": "2026-10-15T02:50:05.626Z",
+    "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/38672948665",
+    "sha": "a83e87562ea1319dacff45b00a8de461f7f8f358",
+    "sources": {
+      "MangaSushi": {
+        "status": "pass"
+      },
+      "VortexScans": {
+        "status": "pass"
+      }
+    }
+  },
+  {
     "checkedAt": "2026-10-15T02:29:06.487Z",
     "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/38671116181",
     "sha": "cb72e2eecba212cf2116b1e86bb775a63b898f3a",
