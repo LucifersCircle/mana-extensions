@@ -214,7 +214,13 @@ for (const name of names) {
       ['query', `${first.cover}?different=1`, current],
       ['exact source fallback attribute', first.cover, first.cover]
     ]) {
-      const page = load(noOriginals), img = page(`a[href="${href}"]`).first().find('img[src]').first();
+      const page = load(noOriginals);
+      // A series can also appear above Popular Today; that duplicate must not receive this mutation.
+      page('body').prepend(anchor.clone());
+      // Target this exact Popular Today card, not an earlier duplicate series link elsewhere on the home page.
+      const popular = page('h1,h2,h3,h4,p').filter((_, node) => page(node).text().trim() === 'Popular Today').first().closest('section');
+      const img = popular.find(`a[href="${href}"]`).first().find('img[src]').first();
+      assert.equal(img.attr('src'), current, 'Fallback mutation must target the original Popular Today image');
       img.removeAttr('data-fallback-src'); if (value !== undefined) img.attr('data-fallback-src', value);
       const cold = new context.Target(); cold.api.getText = async () => page.html();
       const before = requests.length;
