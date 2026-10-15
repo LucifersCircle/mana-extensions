@@ -10,7 +10,7 @@ import { failedSources } from './test-sources.mjs';
 import { readSelection } from './changed-sources.mjs';
 import { testMangaSushi, coverDimensions } from './mangasushi-live-tests.mjs';
 import { testManhwaNex } from './manhwanex-live-tests.mjs';
-import { testVortexRatings } from './vortexscans-live-tests.mjs';
+import { getVortexContentWithSynopsis, testVortexRatings, testVortexSynopsis } from './vortexscans-live-tests.mjs';
 import { load } from 'cheerio';
 
 rmSync('bundles/live-test-results.json', { force: true });
@@ -95,7 +95,7 @@ for (const name of names) {
       console.error(`FAIL ${name}: ${label}\n${redactText(error.stack ?? error)}`);
     }
   }
-  let source, catalog, content, chapters, pages, sections, form, context;
+  let source, catalog, content, detailPost, chapters, pages, sections, form, context;
   const requests = [];
   await check('Built Mana bundle and source metadata', () => {
     assert(manifest.sources.some((entry) => entry.id === name), 'Source missing from built manifest');
@@ -138,8 +138,8 @@ for (const name of names) {
     assert(result.results.some((match) => match.id === item.id), `Title search lost ${item.title}`);
   });
   await check('Live content details and cover image', async () => {
-    content = await source.getContent(catalog.results[0].id);
-    nonempty(content.title, 'Detail title'); nonempty(content.summary, 'Summary');
+    ({ content, post: detailPost } = await getVortexContentWithSynopsis(source, catalog.results[0].id));
+    nonempty(content.title, 'Detail title');
     assert.equal(content.title, catalog.results[0].title);
     url(content.webUrl); url(content.cover);
     await assertVortexGenres(catalog.results[0].id, content);
@@ -340,6 +340,7 @@ for (const name of names) {
     const result = await source.handleURL(content.webUrl);
     assert.equal(result?.content?.id, catalog.results[0].id);
   });
+  await testVortexSynopsis({ check, requests, post: detailPost, freshSource: () => new context.Target() });
   await testVortexRatings({ source, check, requests, freshSource: () => new context.Target() });
   report[name] = {
     tests,

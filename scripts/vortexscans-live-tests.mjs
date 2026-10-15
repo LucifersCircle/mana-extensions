@@ -1,6 +1,77 @@
 import assert from 'node:assert/strict';
 import { load } from 'cheerio';
 
+// Observe the parsed public detail response already consumed by the native call.
+// Do not make a second provider request or require a provider-authored synopsis.
+export async function getVortexContentWithSynopsis(source, contentID) {
+  const identity = /^(\d+):(.+)$/.exec(contentID);
+  assert(identity, 'Missing canonical VortexScans detail ID');
+  const original = source.api.getPost;
+  let post, calls = 0;
+  source.api.getPost = async (...args) => {
+    assert.equal(++calls, 1, 'Synopsis oracle expects one native detail response');
+    assert.equal(args[0], identity[1], 'Native detail request changed identity');
+    const response = await original.apply(source.api, args);
+    post = structuredClone(response.post);
+    return response;
+  };
+  try {
+    const content = await source.getContent(contentID);
+    assert.equal(calls, 1, 'Synopsis oracle did not observe the native detail response');
+    assert.equal(String(post?.id), identity[1], 'Synopsis response numeric identity changed');
+    assert.equal(post.slug, decodeURIComponent(identity[2]), 'Synopsis response slug changed');
+    assert.equal(content.summary, renderedVortexSynopsis(post.postContent),
+      'Native synopsis differs from the same detail response');
+    return { content, post };
+  } finally {
+    source.api.getPost = original;
+  }
+}
+
+// Independent DOM rendering, not the production parser's tag-stripping routine.
+function renderedVortexSynopsis(value) {
+  assert(value == null || typeof value === 'string', 'Source synopsis field is malformed');
+  const $ = load(value ?? '', {}, false);
+  const render = (node) => {
+    if (node.type === 'text') return node.data;
+    const text = (node.children ?? []).map(render).join('');
+    return `${node.name === 'li' ? '- ' : ''}${node.name === 'br' ? '\n' : text}${['p', 'pre', 'div', 'li'].includes(node.name) ? '\n' : ''}`;
+  };
+  return render($.root()[0]).replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+// Bounded, response-seeded native replays stay in memory and never call a provider.
+export async function testVortexSynopsis({ check, requests, post, freshSource }) {
+  await check('Same-response synopsis maps nonempty text and permits genuine empty text without provider requests', async () => {
+    assert(post, 'Native detail response was not captured');
+    const before = requests.length;
+    const contentID = `${post.id}:${encodeURIComponent(post.slug)}`;
+    const replay = (postContent, mutate) => {
+      const target = freshSource();
+      target.api.getPost = async () => ({ post: { ...structuredClone(post), postContent } });
+      if (mutate) {
+        const original = target.parser.parseContent.bind(target.parser);
+        target.parser.parseContent = (value) => mutate(original(value));
+      }
+      return getVortexContentWithSynopsis(target, contentID);
+    };
+    for (const [html, expected] of [
+      ['A hero &amp; a demon.', 'A hero & a demon.'],
+      ['<p>First &lt;spell&gt;.</p><div>Second<br>line.</div><ul><li>One</li><li>Two &#39;allies&#39;.</li></ul>',
+        "First <spell>.\nSecond\nline.\n- One\n- Two 'allies'."],
+      ['<p> \tA&nbsp;&amp; B. \t</p>\n\n\n<pre>Second\tline.</pre>', 'A\u00a0& B.\n\nSecond\tline.'],
+      ['', ''], ['<p> \t</p>\n<br>', ''], [null, ''], [undefined, ''],
+    ]) assert.equal((await replay(html)).content.summary, expected);
+    for (const mutate of [
+      (content) => ({ ...content, summary: '' }),
+      (content) => ({ ...content, summary: 'Altered synopsis.' }),
+      ({ summary: _summary, ...content }) => content,
+    ]) await assert.rejects(replay('<p>Retain this &amp; that.</p>', mutate), /Native synopsis differs/);
+    await assert.rejects(replay('', (content) => ({ ...content, summary: 'Invented synopsis.' })), /Native synopsis differs/);
+    assert.equal(requests.length, before, 'Synopsis replay unexpectedly requested the provider');
+  });
+}
+
 // Rating-policy checks use the actual native bundle and mutate only captured
 // current public responses in memory. No permanent provider fixtures.
 export async function testVortexRatings({ source, check, freshSource, requests }) {
