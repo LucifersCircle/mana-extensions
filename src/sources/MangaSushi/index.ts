@@ -31,6 +31,8 @@ import {
 } from '@mana-app/types'
 import { load } from 'cheerio'
 import { MangaSushiApi } from './MangaSushiApi'
+import { englishTitle,
+    searchTitle } from './MangaSushiTitles'
 import {
     DOMAIN,
     Listing,
@@ -62,7 +64,7 @@ class ExcludedContentError extends Error {}
 export class Target implements ContentSource, PageLinkResolver, ImageRequestHandler, SourcePreferenceProvider {
     readonly info: SourceInfo = {
         id: 'MangaSushi',
-        version: '0.0.1-alpha.2',
+        version: '0.0.1-alpha.3',
         name: 'MangaSushi',
         description: 'MangaSushi with the site’s discovery, search filters, and a global NSFW exclusion setting.',
         thumbnail: 'MangaSushi.png',
@@ -147,7 +149,7 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
             return { results: await this.visible(result.items, exclude, home.latest, page, page === 1 ? home.latest.items.length + home.popular.items.length : undefined), isLastPage: result.ended || (page === 1 && !result.next) }
         }
         if (request.listId) throw new Error(`Unknown MangaSushi list: ${request.listId}`)
-        const url = this.searchURL(request, exclude)
+        const url = this.searchURL({ ...request, query: searchTitle(request.query ?? '') }, exclude)
         const first = await this.firstListing(url, exclude)
         const listing = page === 1 ? first : first.next
             ? await this.continuation(first, page, '.c-tabs-item__content', `${exclude}:${url}`)
@@ -187,7 +189,13 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
         const html = await this.api.text(seriesURL(contentId))
         const title = text(load(html)('.post-title h1').first().text())
         const meta = await this.resolveMetadata(contentId, title, exclude)
-        return parseContent(html, meta)
+        const content = parseContent(html, meta)
+        const display = englishTitle(contentId, title, meta.alternatives)
+        return {
+            ...content,
+            title: display,
+            additionalTitles: [...new Set([...(display !== title ? [title] : []), ...(content.additionalTitles ?? [])])]
+        }
     }
 
     async getChapters(contentId: string): Promise<Chapter[]> {
@@ -235,7 +243,7 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
     }
 
     private highlight(item: Series): Highlight {
-        return { id: item.id, title: item.title, cover: item.cover, webUrl: item.webUrl, subtitle: item.subtitle, contentRating: item.contentRating }
+        return { id: item.id, title: englishTitle(item.id, item.title, item.alternatives), cover: item.cover, webUrl: item.webUrl, subtitle: item.subtitle, contentRating: item.contentRating }
     }
 
     private fresh<T>(entry: CacheEntry<T> | undefined): T | undefined {
@@ -325,7 +333,7 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
     }
 
     private async discoveryMetadata(first: Listing, page: number, exclude: boolean, size?: number): Promise<void> {
-        if (!exclude || !first.next) return
+        if (!first.next) return
         const original = first.next.vars
         // Reuse the site's actual latest-update query and page boundaries. Its
         // native search template includes genres for every title in one response.
@@ -342,7 +350,7 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
             manga_archives_item_layout: 'default',
             // Native adult=0 is necessary, but insufficient: visible() still
             // requires real genres and rejects every explicit tag, including Ecchi.
-            meta_query: { relation: 'AND', 0: original.meta_query ?? { relation: 'AND' }, 1: { key: 'manga_adult_content', value: '' } }
+            meta_query: exclude ? { relation: 'AND', 0: original.meta_query ?? { relation: 'AND' }, 1: { key: 'manga_adult_content', value: '' } } : (original.meta_query ?? { relation: 'AND' })
         }
         const key = `${exclude}:discovery:${page}:${JSON.stringify(vars)}`
         const cached = this.fresh(this.listings.get(key))
@@ -368,14 +376,17 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
 
     private async visible(items: Series[], exclude: boolean, first?: Listing, page = 1, size?: number): Promise<Highlight[]> {
         const series = items.filter((item) => !EDITORIAL_IDS.has(item.id))
-        if (!exclude) return series.map(this.highlight)
         if (first && series.some((item) => !this.fresh(this.metadata.get(`${exclude}:${item.id}`)))) {
             await this.discoveryMetadata(first, page, exclude, size)
         }
+        if (!exclude) return series.map((item) => this.highlight({
+            ...item,
+            alternatives: this.fresh(this.metadata.get(`${exclude}:${item.id}`))?.alternatives ?? item.alternatives
+        }))
         const checked = await Promise.all(series.map(async (item) => {
             try {
                 const metadata = await this.resolveMetadata(item.id, item.title, exclude)
-                return this.highlight({ ...item, contentRating: metadata.contentRating })
+                return this.highlight({ ...item, alternatives: metadata.alternatives, contentRating: metadata.contentRating })
             } catch (error) {
                 // Explicit exclusion is not a source outage. Network, challenge and
                 // changed markup errors must remain visible instead of empty rows.

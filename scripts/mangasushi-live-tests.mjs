@@ -43,6 +43,53 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
     const link = await source.handleURL(safeContent.webUrl);
     assert.equal(link?.content?.id, item.id);
   });
+  await check('English aliases retain canonical IDs, original titles and complete comma-containing alternatives', async () => {
+    for (const [id, query, expected] of [
+      ['botsuraku-yotei-nanode-kajishokunin-wo-mezasu', 'Botsuraku Yotei Nanode', 'Expecting to Fall into Ruin, I Aim to Become a Blacksmith'],
+      ['tensei-akuma-no-saikyou-yuusha-ikusei-keikaku', 'Tensei Akuma', 'Reincarnated Devil’s Plan for Raising the Strongest Hero'],
+      ['academy-saikyou-no-mob-healer-shinigee-sekai-no-mob-ni-tensei-shita-ore-wa-hazure-job-healer-to-gensaku-chishiki-de-musou-suru', 'Academy Saikyou no Mob Healer', "The Academy's Strongest Mob Healer: Reincarnated as a Mob in a Deadly Game World, I Dominate with the Useless Job [Healer] and My Original Knowledge"]
+    ]) {
+      const raw = (await source.firstListing(source.searchURL({ page: 1, query }, true), true)).items.find((item) => item.id === id);
+      assert(raw); assert.notEqual(raw.title, expected);
+      for (const title of [raw.title, expected, expected.replace(/[‘’]/g, "'").replace(/'/g, '’').toUpperCase(), expected.replace(/[‘’]/g, "'")]) {
+        const results = await source.search({ page: 1, query: title });
+        assert.equal(results.results.find((item) => item.id === id)?.title, expected);
+      }
+      const details = await source.getContent(id);
+      assert.equal(details.title, expected);
+      assert(details.additionalTitles.includes(raw.title));
+      for (const alternative of raw.alternatives) assert(details.additionalTitles.includes(alternative));
+      // Exercise the native bundle's actual outbound adapter, using a live row.
+      assert.equal(source.highlight({ ...raw, alternatives: raw.alternatives.map((value) => value.replace(expected, '')) }).title, raw.title);
+      assert.equal(source.highlight({ ...raw, alternatives: [`Unrelated ${expected} sequel`] }).title, raw.title);
+      assert.equal(source.highlight({ ...raw, id: 'unregistered-id', alternatives: [expected] }).title, raw.title);
+      assert.equal(raw.title, (await source.resolveMetadata(id, raw.title, true)).title, 'Display must not replace cached source titles');
+    }
+  });
+  await check('Japanese-only alternatives retain the original title in search and details', async () => {
+    const raw = (await source.firstListing(source.searchURL({ page: 1, query: 'Ken yo' }, true), true)).items.find((item) => item.id === 'ken-yo-kaku-katariki');
+    assert(raw); assert(raw.alternatives.some((value) => /[\u3040-\u9fff]/.test(value)));
+    const result = await source.search({ page: 1, query: raw.title });
+    assert.equal(result.results.find((item) => item.id === raw.id)?.title, raw.title);
+    assert.equal((await source.getContent(raw.id)).title, raw.title);
+  });
+  await check('Cold metadata classification still queries the source original, not its English display alias', async () => {
+    const cold = freshSource(), before = requests.length;
+    const content = await cold.getContent('botsuraku-yotei-nanode-kajishokunin-wo-mezasu');
+    assert.equal(content.title, 'Expecting to Fall into Ruin, I Aim to Become a Blacksmith');
+    const queries = requests.slice(before).filter((request) => new URL(request.url).searchParams.has('s')).map((request) => new URL(request.url).searchParams.get('s'));
+    assert.equal(queries[0], 'Botsuraku Yotei Nanode, Kajishokunin wo Mezasu');
+  });
+  await check('Removing an English alias from live metadata restores the original search and detail display', async () => {
+    const cold = freshSource(), original = cold.api.text.bind(cold.api);
+    const id = 'botsuraku-yotei-nanode-kajishokunin-wo-mezasu';
+    const title = 'Botsuraku Yotei Nanode, Kajishokunin wo Mezasu';
+    const alias = 'Expecting to Fall into Ruin, I Aim to Become a Blacksmith';
+    cold.api.text = async (url, ...args) => (await original(url, ...args)).replaceAll(alias, '');
+    const result = await cold.search({ page: 1, query: title });
+    assert.equal(result.results.find((item) => item.id === id)?.title, title);
+    assert.equal((await cold.getContent(id)).title, title);
+  });
   await check('Search exposes live genres, all statuses, site fields and seven orders', async () => {
     form = await source.getSearchForm();
     const fields = form.sections.flatMap((section) => section.children ?? []);
@@ -115,6 +162,26 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
       else {
         assert(section.viewMoreLink); const next = await source.search({ page: 2, listId: id }); searchResult(next);
         assert(next.results.some((item) => !expected.includes(item.id)));
+      }
+    }
+  });
+  await check('Unfiltered discovery keeps English titles with two cold requests and zero warm requests', async () => {
+    const cold = freshSource(), before = requests.length, started = performance.now();
+    const rows = await Promise.all(['popular', 'latest'].map((id) => cold.resolvePageSection({ id: 'home' }, id)));
+    assert.equal(requests.length - before, 2, 'Unfiltered cold discovery needs one home and one metadata batch, never one request per title');
+    console.log(`UNFILTERED DISCOVERY COLD: ${requests.length - before} requests, ${Math.round(performance.now() - started)}ms`);
+    const warmBefore = requests.length, warmStarted = performance.now();
+    const warmRows = await Promise.all(['popular', 'latest'].map((id) => cold.resolvePageSection({ id: 'home' }, id)));
+    assert.equal(requests.length - warmBefore, 0);
+    console.log(`UNFILTERED DISCOVERY WARM: 0 requests, ${Math.round(performance.now() - warmStarted)}ms`);
+    for (const row of [rows[0], warmRows[0]]) assert.equal(row.items.find((item) => item.id === 'yondome-wa-iya-na-shizokusei-majutsushi')?.title, 'Death Attribute Magician');
+    const nativeHome = await cold.home(false);
+    for (const [index, id] of ['popular', 'latest'].entries()) {
+      assert.deepEqual(Array.from(rows[index].items, (item) => item.id), homeIDs[id]);
+      for (const item of rows[index].items) {
+        const raw = nativeHome[id].items.find((entry) => entry.id === item.id);
+        const metadata = cold.fresh(cold.metadata.get(`false:${item.id}`));
+        assert.equal(item.title, cold.highlight({ ...raw, alternatives: metadata?.alternatives ?? raw.alternatives }).title);
       }
     }
   });
@@ -236,6 +303,7 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
     const warmRows = await Promise.all(sections.map((section) => cold.resolvePageSection({ id: 'home' }, section.id)));
     assert.equal(requests.length - warmBefore, 0, 'Warm discovery should reuse cached native metadata');
     console.log(`DISCOVERY WARM: 0 requests, ${Math.round(performance.now() - warmStarted)}ms`);
+    for (const row of [rows[0], warmRows[0]]) assert.equal(row.items.find((item) => item.id === 'yondome-wa-iya-na-shizokusei-majutsushi')?.title, 'Death Attribute Magician');
     for (const [index, section] of sections.entries()) {
       const result = rows[index];
       const expected = homeIDs[section.id].filter((id) => safeIDs.has(id));
@@ -246,6 +314,7 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
       for (const item of result.items) {
         const details = await source.getContent(item.id);
         assert(details.tags?.length && !details.tags.some((tag) => blockedTags.has(tag.id)));
+        assert.equal(item.title, details.title, 'Discovery and detail titles must agree');
       }
       if (section.id === 'popular') assert.equal(result.viewMoreLink, undefined);
     }
