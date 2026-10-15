@@ -47,12 +47,13 @@ export async function testManhwaNex({ source, check, requests, freshSource }) {
     assert.equal((await preference()).value, true);
     const before = requests.length;
     sections = await source.getSectionsForPage({ id: 'home' });
-    assert.deepEqual(Array.from(sections, (section) => section.title), ['Popular Series', 'Latest Updates']);
+    assert.deepEqual(Array.from(sections, (section) => section.title), ['Popular Series', 'Latest Updates', 'Action', 'Romance', 'Fantasy', 'Martial Arts', 'Adventure', 'Ghost', 'Cultivation', 'System']);
+    assert.equal(requests.length - before, 1, 'Section descriptors eagerly fetched category cards or metadata');
     home = {};
-    for (const section of sections) home[section.id] = await source.resolvePageSection({ id: 'home' }, section.id);
+    for (const section of sections.slice(0, 2)) home[section.id] = await source.resolvePageSection({ id: 'home' }, section.id);
     assert.equal(requests.length - before, 2, 'Cold discovery reintroduced metadata N+1');
     assert(home.popular.items.length && home.latest.items.length);
-    for (const section of sections) await source.resolvePageSection({ id: 'home' }, section.id);
+    for (const section of sections.slice(0, 2)) await source.resolvePageSection({ id: 'home' }, section.id);
     assert.equal(requests.length - before, 2, 'Warm discovery made network requests');
   });
   await check('Native home names, memberships, exact order and pagination are preserved', async () => {
@@ -65,7 +66,7 @@ export async function testManhwaNex({ source, check, requests, freshSource }) {
     assert(home.latest.viewMoreLink);
     const next = await source.search({ page: 2, listId: 'latest' });
     const reference = await html($('.wp-pagenavi a.nextpostslink').attr('href'));
-    assert.deepEqual(ids(next.results), reference('.page-item-detail').toArray().map((node) => canonicalID(reference(node).find('.post-title a').attr('href'))));
+    assert.deepEqual(ids(next.results), reference('.page-item-detail').toArray().map((node) => canonicalID(reference(node).find('.post-title a').attr('href'))).filter((id) => !ids(home.latest.items).includes(id)));
     assert(!next.results.some((item) => home.latest.items.some((prior) => prior.id === item.id)));
   });
   await check('Largest source-advertised covers have real intrinsic image dimensions', async () => {
@@ -81,7 +82,7 @@ export async function testManhwaNex({ source, check, requests, freshSource }) {
     assert.deepEqual(ids(catalog.results), $('.c-tabs-item__content').toArray().map((node) => canonicalID($(node).find('.post-title a').attr('href'))));
     const next = await source.search({ page: 2 });
     const reference = await html($('.wp-pagenavi a.nextpostslink').attr('href'));
-    assert.deepEqual(ids(next.results), reference('.c-tabs-item__content').toArray().map((node) => canonicalID(reference(node).find('.post-title a').attr('href'))));
+    assert.deepEqual(ids(next.results), reference('.c-tabs-item__content').toArray().map((node) => canonicalID(reference(node).find('.post-title a').attr('href'))).filter((id) => !ids(catalog.results).includes(id)));
     assert(requests.some((request) => new URL(request.url).searchParams.get('adult') === '0'));
   });
   await check('Search form exposes only verified native taxonomy and Relevance sort', async () => {
@@ -91,6 +92,349 @@ export async function testManhwaNex({ source, check, requests, freshSource }) {
     assert.deepEqual(Array.from(await source.getSortOptions(), (sort) => sort.id), ['relevance']);
     for (const id of ['condition', 'author', 'artist', 'release', 'adult']) assert(form.some((field) => field.id === id));
     assert.equal(form.find((field) => field.id === 'adult').options.length, 1);
+  });
+  for (const section of sections.slice(2)) await check(`Native ${section.title} archive stays lazy, ordered and complete in both safety modes`, async () => {
+    try {
+      for (const exclude of [true, false]) {
+        const cold = freshSource(), original = cold.api.text.bind(cold.api), captured = new Map(), calls = [];
+        await (await cold.getPreferenceMenu()).sections[0].children[0].didChange(exclude);
+        cold.api.text = async (...args) => {
+          calls.push({ url: args[0], method: args[1] ?? 'GET', body: args[2] });
+          const value = await original(...args);
+          if (args[1] !== 'POST') captured.set(args[0], value);
+          return value;
+        };
+        const before = requests.length, descriptors = await cold.getSectionsForPage({ id: 'home' });
+        assert.equal(requests.length - before, 1, 'Descriptors fetched archive cards or safety metadata');
+        const nativeHome = load(captured.get(`${domain}/`)), menu = [];
+        nativeHome('li.menu-item-object-wp-manga-genre > a').each((_, node) => {
+          const href = nativeHome(node).attr('href');
+          if (!menu.some((item) => item.url === href)) menu.push({ id: `genre:${new URL(href).pathname.split('/')[2]}`, title: nativeHome(node).text().trim(), url: href });
+        });
+        assert.deepEqual(Array.from(descriptors.slice(2), ({ id, title }) => ({ id, title })), menu.map(({ id, title }) => ({ id, title })));
+        const native = menu.find((item) => item.id === section.id), combined = [], seen = new Set();
+        assert(native, 'A section was not backed by the native menu');
+        let nextURL = native.url, page = 1;
+        while (nextURL) {
+          assert(page <= 100, 'Archive did not finish within the verified page bound');
+          const start = calls.length;
+          const result = await cold.search({ page, listId: section.id });
+          const actualRequests = calls.slice(start);
+          assert.equal(actualRequests.filter((request) => request.method === 'GET').length, 1, 'A page fetched more than its advertised archive');
+          assert(actualRequests.every((request) => request.url === nextURL || request.url === `${domain}/wp-admin/admin-ajax.php`), 'Archive resolution fetched details or an unrelated route');
+          const batches = actualRequests.filter((request) => request.method === 'POST');
+          assert(batches.length <= 1, 'Archive safety classification reintroduced metadata N+1');
+          for (const batch of batches) {
+            const body = new URLSearchParams(batch.body);
+            assert(Number(body.get('vars[posts_per_page]')) <= 16);
+            assert.equal(body.has('vars[meta_query][0][key]'), exclude);
+          }
+          const $ = load(captured.get(nextURL)), rows = $('.page-item-detail.manga').toArray();
+          const raw = rows.map((node) => ({ id: canonicalID($(node).find('.post-title a').attr('href')), title: $(node).find('.post-title a').attr('title') || $(node).find('.post-title a').text().replace(/\s+/g, ' ').trim() }));
+          assert(raw.length && raw.length <= 16);
+          const expected = raw.filter((item) => !seen.has(item.id) && (!exclude || cold.allowed(cold.metadata.get(`true:${item.id}`)?.value)));
+          assert.deepEqual(ids(result.results), expected.map((item) => item.id));
+          assert.deepEqual(Array.from(result.results, (item) => item.title), expected.map((item) => item.title));
+          for (const item of result.results) assert(cold.metadata.get(`${exclude}:${item.id}`)?.value.genres.some((genre) => genre.id === section.id.slice('genre:'.length)), 'Archive metadata lost its native genre membership');
+          for (const item of raw) seen.add(item.id);
+          combined.push(...ids(result.results));
+          nextURL = $('.wp-pagenavi a.nextpostslink').attr('href');
+          assert.equal(result.isLastPage, !nextURL);
+          const warm = requests.length;
+          assert.deepEqual(ids((await cold.search({ page, listId: section.id })).results), ids(result.results));
+          assert.equal(requests.length, warm, 'Warm archive page made network requests');
+          if (page === 1) {
+            const resolved = await cold.resolvePageSection({ id: 'home' }, section.id);
+            assert.deepEqual(ids(resolved.items), ids(result.results));
+            assert.equal(Boolean(resolved.viewMoreLink), !result.isLastPage);
+            if (resolved.viewMoreLink) assert.equal(resolved.viewMoreLink.request.listId, section.id);
+          }
+          page += 1;
+        }
+        assert.equal(new Set(combined).size, combined.length, 'Combined native pages contain repeated canonical IDs');
+        const end = requests.length, beyond = await cold.search({ page, listId: section.id });
+        assert.equal(beyond.results.length, 0); assert.equal(beyond.isLastPage, true);
+        assert.equal(requests.length, end, 'Terminal archive tried an unadvertised continuation');
+      }
+    } finally { await preference(true); }
+  });
+  await check('Concurrent lazy archive requests coalesce the native page and bounded metadata batch', async () => {
+    const cold = freshSource();
+    await cold.getSectionsForPage({ id: 'home' });
+    const before = requests.length;
+    const result = await Promise.all([cold.resolvePageSection({ id: 'home' }, 'genre:romance'), cold.resolvePageSection({ id: 'home' }, 'genre:romance')]);
+    assert.deepEqual(ids(result[0].items), ids(result[1].items));
+    assert.equal(requests.length - before, 2, 'Concurrent archive requests duplicated native reads');
+  });
+  await check('Distinct native canonical aliases retain both cards and their separate chapter inventories', async () => {
+    const aliases = ['catastrophic-necromancer', 'disastrous-necromancer'];
+    const latest = await source.search({ page: 1, listId: 'latest' });
+    for (const id of aliases) assert(ids(latest.results).includes(id));
+    const inventories = [];
+    for (const id of aliases) {
+      const cold = freshSource(), detail = await cold.getContent(id), list = await cold.getChapters(id);
+      assert.equal(detail.webUrl, `${domain}/manga/${id}/`);
+      assert(detail.additionalTitles.some((title) => /Catastrophic Necromancer|Disastrous Necromancer/.test(title)));
+      inventories.push(Array.from(list, (chapter) => chapter.chapterId));
+    }
+    assert(inventories.every((list) => list.length));
+    assert.notDeepEqual(inventories[0], inventories[1], 'Distinct source records were collapsed into one chapter inventory');
+  });
+  await check('Sequential native pages deduplicate real canonical overlap without losing later titles or terminal state', async () => {
+    for (const route of [
+      { listId: 'latest', first: `${domain}/`, selector: '.page-item-detail' },
+      { listId: 'genre:action', first: `${domain}/manga-genre/action/`, selector: '.page-item-detail.manga' },
+      { first: `${domain}/?s=&post_type=wp-manga&adult=0`, selector: '.c-tabs-item__content' }
+    ]) for (const mode of ['partial', 'duplicate-only', 'excluded-only']) {
+      const cold = freshSource(), original = cold.api.text.bind(cold.api), captured = new Map();
+      let firstRows, reordered = false, secondURL, thirdURL;
+      cold.api.text = async (...args) => {
+        const value = await original(...args);
+        if (args[1] === 'POST') return value;
+        const $ = load(value), rows = $(route.selector);
+        if (args[0] === route.first) {
+          firstRows = rows.toArray().map((node) => $.html(node));
+          assert(firstRows.length >= 2);
+          if (reordered) rows.each((index, node) => $(node).replaceWith(firstRows[firstRows.length - 1 - index]));
+          firstRows = $(route.selector).toArray().map((node) => $.html(node));
+          secondURL = $('.wp-pagenavi a.nextpostslink').attr('href');
+          assert(secondURL, 'The live overlap probe needs a native second page');
+        } else if (args[0] === secondURL) {
+          assert(firstRows.length >= rows.length);
+          if (mode === 'excluded-only') rows.append('<span class="adult-warning"></span>');
+          else rows.each((index, node) => { if (mode === 'duplicate-only' || index === 0) $(node).replaceWith(firstRows[index]); });
+          thirdURL = $('.wp-pagenavi a.nextpostslink').attr('href');
+          assert(thirdURL, 'The live overlap probe needs a native third page');
+        } else if (args[0] === thirdURL) {
+          // Bound this live-derived controlled chain at a real later page.
+          // Only the continuation link is removed, never any later source card.
+          $('.wp-pagenavi a.nextpostslink').remove();
+        } else return value;
+        const result = $.html(); captured.set(args[0], result); return result;
+      };
+      const results = [];
+      for (let page = 1; page <= 3; page += 1) results.push(await cold.search({ page, ...(route.listId ? { listId: route.listId } : {}) }));
+      const visiblePages = [], combined = [], seen = new Set();
+      for (const url of [route.first, secondURL, thirdURL]) {
+        const $ = load(captured.get(url)), raw = $(route.selector).toArray().map((node) => canonicalID($(node).find('.post-title a').attr('href')));
+        const expected = raw.filter((id) => !seen.has(id) && cold.allowed(cold.metadata.get(`true:${id}`)?.value));
+        for (const id of raw) seen.add(id);
+        if (expected.length) visiblePages.push(expected);
+      }
+      assert.equal(visiblePages.length, mode === 'partial' ? 3 : 2, 'Controlled source chain did not contain the expected empty intermediate page');
+      for (const [index, result] of results.entries()) {
+        assert.deepEqual(ids(result.results), visiblePages[index] ?? [], `${route.listId ?? 'search'} ${mode} logical page ${index + 1} lost or repeated a canonical ID`);
+        assert.equal(result.isLastPage, index >= visiblePages.length - 1);
+        if (index < visiblePages.length) assert(result.results.length, 'An empty visible page would stop native Mana pagination prematurely');
+      }
+      // Model the pinned SDK: the app stops on isLastPage OR zero results.
+      for (const result of results) {
+        combined.push(...ids(result.results));
+        if (result.isLastPage || !result.results.length) break;
+      }
+      assert.deepEqual(combined, visiblePages.flat(), 'App-style sequential pagination lost later fresh entries');
+      assert.equal(new Set(combined).size, combined.length);
+      const terminal = requests.length;
+      const beyond = await cold.search({ page: 100, ...(route.listId ? { listId: route.listId } : {}) });
+      assert.equal(beyond.results.length, 0); assert.equal(beyond.isLastPage, true);
+      await assert.rejects(() => cold.search({ page: 101, ...(route.listId ? { listId: route.listId } : {}) }), /Invalid ManhwaNex page/);
+      assert.equal(requests.length, terminal, 'Completed or out-of-bounds traversal made an outgoing request');
+      reordered = true;
+      if (cold.homeCache) cold.homeCache.at = 0;
+      for (const entry of cold.listings.values()) entry.at = 0;
+      const refreshed = await cold.search({ page: 1, ...(route.listId ? { listId: route.listId } : {}) });
+      const $ = load(captured.get(route.first));
+      assert.deepEqual(ids(refreshed.results), $(route.selector).toArray().map((node) => canonicalID($(node).find('.post-title a').attr('href'))).filter((id) => cold.allowed(cold.metadata.get(`true:${id}`)?.value)), 'Refresh retained old seen IDs or source order');
+      assert(refreshed.results.length >= 2);
+    }
+  });
+  await check('Pagination identity stays scoped to native query, category and current settings', async () => {
+    const cold = freshSource(), original = cold.api.text.bind(cold.api), captured = new Map();
+    cold.api.text = async (...args) => { const value = await original(...args); if (args[1] !== 'POST') captured.set(args[0], value); return value; };
+    const first = await cold.search({ page: 1 }); await cold.search({ page: 2 });
+    const query = await cold.search({ page: 1, query: 'Logging' });
+    const reference = load(captured.get(`${domain}/?s=Logging&post_type=wp-manga&adult=0`));
+    assert(query.results.length);
+    assert.deepEqual(ids(query.results), reference('.c-tabs-item__content').toArray().map((node) => canonicalID(reference(node).find('.post-title a').attr('href'))));
+    assert.deepEqual(ids((await cold.search({ page: 1 })).results), ids(first.results), 'Another query changed the first page seen set');
+    await cold.search({ page: 2, listId: 'genre:action' });
+    const fantasy = await cold.search({ page: 1, listId: 'genre:fantasy' }), native = load(captured.get(`${domain}/manga-genre/fantasy/`));
+    assert.deepEqual(ids(fantasy.results), native('.page-item-detail.manga').toArray().map((node) => canonicalID(native(node).find('.post-title a').attr('href'))));
+    try {
+      await (await cold.getPreferenceMenu()).sections[0].children[0].didChange(false);
+      const unrestricted = await cold.search({ page: 1, listId: 'genre:action' });
+      assert(unrestricted.results.length);
+      await (await cold.getPreferenceMenu()).sections[0].children[0].didChange(true);
+      const reset = await cold.search({ page: 1, listId: 'genre:action' });
+      assert.deepEqual(ids(reset.results), ids(unrestricted.results).filter((id) => cold.allowed(cold.metadata.get(`true:${id}`)?.value)), 'Setting change retained a previous pagination seen set');
+    } finally { await preference(true); }
+  });
+  await check('Category continuation rejects foreign, switched, nonadvancing and wrong-context archives before following them', async () => {
+    const root = `${domain}/manga-genre/action/`;
+    for (const mutation of ['foreign', 'switch', 'repeat', 'skip', 'query', 'canonical', 'body', 'page-number']) {
+      const cold = freshSource(), original = cold.api.text.bind(cold.api), visited = [];
+      cold.api.text = async (...args) => {
+        visited.push(args[0]); const value = await original(...args);
+        if (args[0] !== root) return value;
+        const $ = load(value), next = $('.wp-pagenavi a.nextpostslink');
+        assert(next.length);
+        if (mutation === 'foreign') next.attr('href', 'https://example.com/manga-genre/action/page/2/');
+        if (mutation === 'switch') next.attr('href', `${domain}/manga-genre/fantasy/page/2/`);
+        if (mutation === 'repeat') next.attr('href', root);
+        if (mutation === 'skip') next.attr('href', `${root}page/3/`);
+        if (mutation === 'query') next.attr('href', `${root}page/2/?adult=1`);
+        if (mutation === 'canonical') $('link[rel="canonical"]').attr('href', `${domain}/manga-genre/fantasy/`);
+        if (mutation === 'body') $('body').attr('class', 'tax-wp-manga-genre term-fantasy');
+        if (mutation === 'page-number') $('.wp-pagenavi .current').text('2');
+        return $.html();
+      };
+      await assert.rejects(() => cold.search({ page: 2, listId: 'genre:action' }), /category archive|continuation|different catalog page/);
+      assert.deepEqual(visited, [`${domain}/`, root], 'An invalid continuation made an outgoing request');
+    }
+    for (const href of ['https://example.com/manga-genre/action/', `${domain}/manga-genre/action%2fadult/`, `${domain}/manga-genre/unknown/`]) {
+      const cold = freshSource(), original = cold.api.text.bind(cold.api);
+      cold.api.text = async (...args) => { const $ = load(await original(...args)); $('li.menu-item-object-wp-manga-genre > a').first().attr('href', href); return $.html(); };
+      await assert.rejects(() => cold.getSectionsForPage({ id: 'home' }), /taxonomy|home category/);
+    }
+  });
+  await check('Raw archive adult evidence cannot be overwritten by complete safe batch metadata', async () => {
+    for (const probe of [
+      { listId: 'genre:action', page: 1, marker: 'adult-marker' },
+      { listId: 'genre:action', page: 1, marker: 'blocked-genre' },
+      { listId: 'genre:action', page: 1, marker: 'adult-marker', cold: true },
+      { listId: 'popular', page: 1, marker: 'adult-marker' },
+      { listId: 'genre:action', page: 2, marker: 'adult-marker', overlap: true, failedBatch: true }
+    ]) {
+      const cold = freshSource(), original = cold.api.text.bind(cold.api), originalBatch = cold.api.metadata.bind(cold.api);
+      const baseline = await cold.search({ page: 1, listId: probe.listId === 'popular' ? 'popular' : 'latest' });
+      let baselineID = baseline.results[0].id, sourceTitle = baseline.results[0].title, overlapCard, firstArchiveIDs;
+      if (probe.listId === 'genre:action') {
+        const $ = load(await original(`${domain}/manga-genre/action/`)), homeIDs = new Set(ids(baseline.results)), laterIDs = new Set();
+        firstArchiveIDs = new Set($('.page-item-detail.manga').toArray().map((node) => canonicalID($(node).find('.post-title a').attr('href'))));
+        if (probe.overlap) {
+          const next = load(await original(`${domain}/manga-genre/action/page/2/`));
+          for (const node of next('.page-item-detail.manga').toArray()) laterIDs.add(canonicalID(next(node).find('.post-title a').attr('href')));
+        }
+        const node = $('.page-item-detail.manga').toArray().find((node) => {
+          const id = canonicalID($(node).find('.post-title a').attr('href'));
+          return homeIDs.has(id) && !laterIDs.has(id);
+        });
+        assert(node, 'Live Action/home rows do not supply a shared canonical probe absent from the overlap page');
+        const anchor = $(node).find('.post-title a');
+        baselineID = canonicalID(anchor.attr('href'));
+        sourceTitle = (anchor.attr('title') || anchor.text()).replace(/\s+/g, ' ').trim();
+        if (probe.overlap) { overlapCard = $.html(node); await cold.search({ page: 1, listId: 'genre:action' }); }
+      }
+      const words = [...new Set(sourceTitle.match(/[\p{L}\p{N}]+/gu) ?? [])].filter((word) => word.length >= 4).sort((a, b) => b.length - a.length);
+      const candidates = [...new Set([sourceTitle, ...words])].slice(0, 4);
+      let verifiedQuery, verifiedQueryURL, postWarningSearch;
+      for (const candidate of candidates) {
+        const url = `${domain}/?${new URLSearchParams({ s: candidate, post_type: 'wp-manga', adult: '0' })}`;
+        const $ = load(await original(url));
+        if ($('.c-tabs-item__content').toArray().some((node) => canonicalID($(node).find('.post-title a').attr('href')) === baselineID)) {
+          verifiedQuery = candidate; verifiedQueryURL = url; break;
+        }
+      }
+      assert(verifiedQuery, 'Bounded source-title queries did not yield the exact selected native canonical ID');
+      const cachedDetail = await cold.getContent(baselineID);
+      const cachedChapters = await cold.getChapters(baselineID);
+      const cachedReader = await cold.getChapterData(baselineID, cachedChapters.at(-1).chapterId);
+      const originalMetadata = JSON.parse(JSON.stringify(cold.metadata.get(`true:${baselineID}`).value));
+      assert.equal(originalMetadata.explicit, false, 'Conflict setup did not warm real nonadult metadata');
+      let target, missingID, targetBatchMetadata, releaseReader, readerReached, releaseBatch, batchReached, holdReader = true, holdBatch = true;
+      const readerGate = new Promise((resolve) => { releaseReader = resolve; });
+      const readerReady = new Promise((resolve) => { readerReached = resolve; });
+      const batchGate = new Promise((resolve) => { releaseBatch = resolve; });
+      const batchReady = new Promise((resolve) => { batchReached = resolve; });
+      const readerURL = `${domain}/manga/${baselineID}/${cachedChapters.at(-1).chapterId}/`;
+      const warningURL = probe.listId === 'popular' ? `${domain}/` : `${domain}/manga-genre/action/${probe.overlap ? 'page/2/' : ''}`;
+      cold.api.text = async (...args) => {
+        const value = await original(...args);
+        if (args[0] === verifiedQueryURL) postWarningSearch = value;
+        if (args[0] === readerURL && holdReader) { readerReached(); await readerGate; return value; }
+        if (args[0] !== warningURL) return value;
+        const $ = load(value), selector = probe.listId === 'popular' ? '.widget-manga-popular-slider .slider__item' : '.page-item-detail.manga';
+        if (probe.overlap) {
+          assert(!$(selector).toArray().some((node) => canonicalID($(node).find('.post-title a').attr('href')) === baselineID), 'Selected overlap probe is no longer absent from the actual native second page');
+          $(selector).first().replaceWith(overlapCard);
+        }
+        const cards = $(selector), card = cards.filter((_, node) => canonicalID($(node).find('.post-title a').attr('href')) === baselineID);
+        assert.equal(card.length, 1, 'Exact selected native card is not uniquely present in the requested section');
+        target = canonicalID(card.find('.post-title a').attr('href'));
+        const other = cards.toArray().find((node) => {
+          const id = canonicalID($(node).find('.post-title a').attr('href'));
+          return id !== target && (!probe.overlap || !firstArchiveIDs.has(id));
+        });
+        assert(other, 'Native page has no separate fresh metadata ID to hold');
+        missingID = canonicalID($(other).find('.post-title a').attr('href'));
+        assert.notEqual(missingID, target);
+        cold.metadata.delete(`true:${missingID}`);
+        if (probe.marker === 'adult-marker') card.attr('data-adult', '1');
+        else card.append(`<div class="mg_genres"><div class="summary-content"><a href="${domain}/manga-genre/mature/">Mature</a></div></div>`);
+        return $.html();
+      };
+      cold.api.metadata = async (...args) => {
+        const values = await originalBatch(...args);
+        if (holdBatch) {
+          assert(args[0].includes(missingID), 'Conflict setup did not request its genuinely missing native ID');
+          assert.equal(args[0].includes(baselineID), Boolean(probe.cold), 'Conflict target cache state did not match the held native batch');
+          if (probe.cold) {
+            targetBatchMetadata = JSON.parse(JSON.stringify(values.find((item) => item.id === baselineID)));
+            assert.equal(targetBatchMetadata.explicit, false);
+          }
+          batchReached(); await batchGate; holdBatch = false;
+          if (probe.failedBatch) throw new Error('Controlled native metadata batch failure');
+        }
+        return values;
+      };
+      const pendingReader = cold.getChapterData(baselineID, cachedChapters.at(-1).chapterId).then((result) => ({ result }), (error) => ({ error }));
+      await Promise.race([readerReady, pendingReader.then(() => { throw new Error('Reader did not reach the intended response gate'); })]);
+      if (probe.cold) cold.metadata.delete(`true:${baselineID}`);
+      if (probe.listId === 'popular') cold.homeCache = undefined;
+      const discovery = cold.search({ page: probe.page, listId: probe.listId }).then((result) => ({ result }), (error) => ({ error }));
+      try {
+        await Promise.race([batchReady, discovery.then((outcome) => { throw outcome.error ?? new Error('Discovery did not reach the intended native metadata gate'); })]);
+        assert.equal(cold.metadata.get(`true:${baselineID}`).value.explicit, true, 'Fetched raw warning was not recorded before an unrelated metadata await');
+        if (probe.cold) await assert.rejects(() => cold.getContent(baselineID), /excluded|classification/);
+        holdReader = false; releaseReader();
+        const outcome = await pendingReader;
+        assert(outcome.error, 'A reader completed while its observed warning was waiting on unrelated metadata');
+        assert.match(outcome.error.message, /excluded|classification/);
+      } finally { holdReader = false; releaseReader(); releaseBatch(); }
+      const outcome = await discovery;
+      if (probe.failedBatch) assert.match(outcome.error?.message ?? '', /Controlled native metadata batch failure/);
+      else {
+        if (outcome.error) throw outcome.error;
+        assert(!ids(outcome.result.results).includes(target), 'Raw contrary evidence was erased by nonadult bulk membership');
+      }
+      const retained = cold.metadata.get(`true:${target}`).value;
+      assert.equal(target, baselineID, 'Conflict mutation did not target the warmed native card');
+      assert.equal(retained.explicit, true, 'Observed adult evidence was not retained in the existing metadata cache');
+      if (probe.listId === 'genre:action') assert(retained.genres.some((genre) => genre.id === 'action'), 'Bulk native archive genre membership was lost');
+      assert.deepEqual(JSON.parse(JSON.stringify(retained)), { ...(probe.cold ? targetBatchMetadata : originalMetadata), explicit: true, contentRating: 3 }, 'Observed warning discarded complete cached or newly classified metadata');
+      const observed = cold.metadata.get(`true:${target}`); observed.at -= 1000;
+      const observedAt = observed.at;
+      await cold.search({ page: probe.page, listId: probe.listId });
+      assert.equal(cold.metadata.get(`true:${target}`).at, observedAt, 'A reused archive row extended the warning lifetime');
+      const safeSearch = await cold.search({ page: 1, query: verifiedQuery });
+      const nativeSearch = load(postWarningSearch);
+      assert(nativeSearch('.c-tabs-item__content').toArray().some((node) => canonicalID(nativeSearch(node).find('.post-title a').attr('href')) === target), 'Post-warning native search no longer contains the selected canonical probe');
+      assert(!ids(safeSearch.results).includes(target), 'A later safe search row erased the observed adult warning');
+      assert.equal(cold.metadata.get(`true:${target}`).at, observedAt, 'A contrary safe row extended the warning lifetime');
+      for (const operation of [() => cold.getContent(target), () => cold.getChapters(target), () => cold.getChapterData(target, cachedChapters.at(-1).chapterId), () => cold.willRequestImage(cachedDetail.cover), () => cold.willRequestImage(cachedReader.pages[0].url)]) {
+        await assert.rejects(operation, /excluded|classification/);
+      }
+      assert.equal(cold.metadata.get(`true:${target}`).at, observedAt, 'Reusing the warning extended its lifetime');
+      cold.metadata.get(`true:${target}`).at = 0;
+      assert(ids((await cold.search({ page: 1, query: verifiedQuery })).results).includes(target), 'Expired warning did not reset under current verified native metadata');
+      try {
+        await (await cold.getPreferenceMenu()).sections[0].children[0].didChange(false);
+        const unfiltered = await cold.search({ page: probe.page, listId: probe.listId });
+        if (probe.overlap) assert(!ids(unfiltered.results).includes(target), 'A repeated canonical alias reappeared under opt-out');
+        else assert.equal(unfiltered.results.find((item) => item.id === target)?.contentRating, 3, 'Opt-out lost the pinned SDK EXPLICIT raw-card badge');
+        assert.equal((await cold.getContent(target)).contentRating, 3, 'Opt-out details discarded the observed adult classification');
+      } finally { await preference(true); }
+    }
   });
   await check('All eight native genre filters and OR/AND semantics are honored', async () => {
     const genres = form.find((field) => field.id === 'genres').options;
