@@ -55,6 +55,7 @@ import {
 
 const SETTING = 'ManhwaNex.excludeNSFW'
 const IMAGE_STORE = 'ManhwaNex.issuedImages'
+let imageStoreQueue = Promise.resolve()
 const TTL = 300_000
 const GENRES = VERIFIED_GENRES
 const STATUSES = new Set(['on-going', 'end', 'canceled', 'on-hold', 'upcoming'])
@@ -66,7 +67,7 @@ class ExcludedContentError extends Error {}
 
 export class Target implements ContentSource, PageLinkResolver, ImageRequestHandler, SourcePreferenceProvider {
     readonly info: SourceInfo = {
-        id: 'ManhwaNex', version: '0.0.1-alpha.4', name: 'ManhwaNex',
+        id: 'ManhwaNex', version: '0.0.1-alpha.5', name: 'ManhwaNex',
         description: 'ManhwaNex with native discovery, search filters and Mana content-rating policy.',
         thumbnail: 'ManhwaNex.png', rating: CatalogRating.MIXED, website: DOMAIN,
         badges: ['Manhwa', 'Manhua', 'Manga'], supportedLanguages: ['en_US'],
@@ -85,9 +86,6 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
     private homePending?: Promise<Home>
     private homeExclude?: boolean
     private homePendingExclude?: boolean
-    private readonly issued = new Map<string, string>()
-    private issuedLoaded?: Promise<void>
-    private saveImages = Promise.resolve()
 
     async getPreferenceMenu(): Promise<Form> {
         return { sections: [UIListSection({ header: 'Content safety',
@@ -200,8 +198,7 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
         let contentId = ''
         return this.withSettings(async (exclude) => {
             this.checkImage(url)
-            await this.loadIssued()
-            const id = this.issued.get(url)
+            const id = await this.withIssued((issued) => issued.get(url))
             if (!id) throw new Error('ManhwaNex image was not issued by this source; refresh the title or reader')
             contentId = id
             await this.requireAllowed(id, exclude)
@@ -407,22 +404,28 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
             || !['manhwanex.com', 'cdn.manhwanex.com'].includes(url.hostname)
             || !(url.hostname === 'cdn.manhwanex.com' ? /^\/manga_[a-z0-9]+\//i.test(url.pathname) : url.pathname.startsWith('/wp-content/uploads/'))) throw new Error('Unsupported ManhwaNex image URL')
     }
-    private async loadIssued(): Promise<void> {
-        if (!this.issuedLoaded) this.issuedLoaded = (async () => {
+    private withIssued<T>(operation: (issued: Map<string, string>) => Promise<T> | T): Promise<T> {
+        // ObjectStore is shared by native Target instances. Reload inside one
+        // source-wide queue, never save a stale instance's whole-map snapshot.
+        // Serialization covers this bundle, not separate JavaScript contexts.
+        const request = imageStoreQueue.then(async () => {
+            const issued = new Map<string, string>()
             const stored = await ObjectStore.get(IMAGE_STORE)
-            if (!Array.isArray(stored)) return
-            for (const entry of stored.slice(-8192)) {
+            for (const entry of Array.isArray(stored) ? stored.slice(-8192) : []) {
                 if (!Array.isArray(entry) || entry.length !== 2 || typeof entry[0] !== 'string' || typeof entry[1] !== 'string') continue
-                try { this.checkImage(entry[0]); validId(entry[1]); this.issued.set(entry[0], entry[1]) } catch { /* Discard invalid persisted entries. */ }
+                try { this.checkImage(entry[0]); validId(entry[1]); issued.set(entry[0], entry[1]) } catch { /* Discard invalid persisted entries. */ }
             }
-        })()
-        return this.issuedLoaded
+            return operation(issued)
+        })
+        // Report this operation's failure, but let a later operation retry.
+        imageStoreQueue = request.then(() => undefined, () => undefined)
+        return request
     }
     private async recordImages(images: Array<{ url: string, id: string }>): Promise<void> {
-        await this.loadIssued()
-        for (const { url, id } of images) { this.checkImage(url); validId(id); this.issued.delete(url); this.issued.set(url, id) }
-        while (this.issued.size > 8192) this.issued.delete(this.issued.keys().next().value as string)
-        this.saveImages = this.saveImages.then(() => ObjectStore.set(IMAGE_STORE, [...this.issued]))
-        await this.saveImages
+        await this.withIssued(async (issued) => {
+            for (const { url, id } of images) { this.checkImage(url); validId(id); issued.delete(url); issued.set(url, id) }
+            while (issued.size > 8192) issued.delete(issued.keys().next().value as string)
+            await ObjectStore.set(IMAGE_STORE, [...issued])
+        })
     }
 }
