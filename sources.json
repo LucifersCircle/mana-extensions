@@ -4,7 +4,7 @@
   "sources": [
     {
       "id": "Hijala",
-      "version": "0.0.1-alpha.1",
+      "version": "0.0.1-alpha.2",
       "name": "Hijala",
       "thumbnail": "Hijala.png",
       "website": "https://en-hijala.com",
@@ -30,7 +30,7 @@
       "path": "Hijala",
       "environment": "source",
       "intents": 6298637,
-      "hash": "0454e9910454e9910454e9910454e9910454e9910454e9910454e9910454e991"
+      "hash": "387a6b98387a6b98387a6b98387a6b98387a6b98387a6b98387a6b98387a6b98"
     },
     {
       "id": "Kagane",
@@ -62,7 +62,7 @@
       "path": "Kagane",
       "environment": "source",
       "intents": 6298637,
-      "hash": "3c523a0c3c523a0c3c523a0c3c523a0c3c523a0c3c523a0c3c523a0c3c523a0c"
+      "hash": "59d25df459d25df459d25df459d25df459d25df459d25df459d25df459d25df4"
     },
     {
       "id": "MangaSushi",
@@ -87,7 +87,7 @@
       "path": "MangaSushi",
       "environment": "source",
       "intents": 6298637,
-      "hash": "559c1418559c1418559c1418559c1418559c1418559c1418559c1418559c1418"
+      "hash": "4088846740888467408884674088846740888467408884674088846740888467"
     },
     {
       "id": "ManhwaNex",
@@ -114,7 +114,7 @@
       "path": "ManhwaNex",
       "environment": "source",
       "intents": 6298637,
-      "hash": "42a65db442a65db442a65db442a65db442a65db442a65db442a65db442a65db4"
+      "hash": "537e3b11537e3b11537e3b11537e3b11537e3b11537e3b11537e3b11537e3b11"
     },
     {
       "id": "VortexScans",
@@ -141,7 +141,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 6298636,
-      "hash": "67842a5367842a5367842a5367842a5367842a5367842a5367842a5367842a53"
+      "hash": "02573de302573de302573de302573de302573de302573de302573de302573de3"
     }
   ]
 }
