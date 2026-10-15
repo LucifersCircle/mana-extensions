@@ -22,7 +22,7 @@ from [pirate.vodka extensions](https://github.com/LucifersCircle/pirate.vodka-ex
 ## MangaSushi
 
 [MangaSushi](https://mangasushi.org/) is a fresh native implementation, not a
-Paperback converter. Version `0.0.1-alpha.2` includes:
+Paperback converter. Version `0.0.1-alpha.3` includes:
 
 - The site's finite **Popular Series** carousel and **What's New** feed, in source
   order. What's New uses the site's actual AJAX Load More query and continuation.
@@ -56,6 +56,14 @@ preference to access such titles. Rows can be shorter or empty after exclusion;
 no unrelated titles replace them, and continuation follows upstream results rather
 than the filtered count. The two verified donation/recruitment notices are excluded
 regardless of this preference because they are not reading content.
+
+MangaSushi prefers audited English aliases only while the exact complete alias is
+still present in current source metadata. Original titles and full alternative text
+remain available, and canonical IDs do not change. Unverified or removed aliases
+fall back to the original title; no translations or language guesses are generated.
+Discovery reuses the native metadata batch for this in both content-setting modes,
+without one request per title. Exact punctuation-sensitive full-title searches use
+verified source-title fallbacks; ordinary partial searches are unchanged.
 
 Source: [`src/sources/MangaSushi`](src/sources/MangaSushi).
 Icon: [`assets/MangaSushi.png`](assets/MangaSushi.png), from the site's published icon.
