@@ -10,12 +10,16 @@ export async function testHijala({ source, check, highlights, searchResult, imag
   const field = async (id, target = source) => (await target.getPreferenceMenu()).sections.flatMap((section) => section.children ?? []).find((item) => item.id === id);
   const setting = async (id, value, target = source) => { const entry = await field(id, target); assert(entry?.didChange, `Missing preference ${id}`); await entry.didChange(value); };
   const ids = (items) => Array.from(items, (item) => item.id);
+  // The canonical taxonomy archive is not a per-title detail request.
+  const isSeriesDetailRequest = (request) => { const path = new URL(request.url).pathname; return path.startsWith('/series/') && path !== '/series/'; };
   const transformed = (change) => { const target = freshSource(), original = target.api.text.bind(target.api); target.api.text = async (url) => change(await original(url), url); return target; };
   const replaceRequired = (text, from, to) => { assert(text.includes(from), `Live evidence changed: ${from}`); return text.replace(from, to); };
   let form, catalog, content, full, chapters, reader, explicit, originalTitles, largeTitle;
 
   await check('Native metadata and persistent defaults are honest about genre-based safety', async () => {
     assert.equal(source.info.version, '0.0.1-alpha.2'); assert.equal(source.info.rating, 1);
+    for (const path of ['/series', '/series/', '/series/?page=1', '/series-other/title']) assert.equal(isSeriesDetailRequest({ url: `${domain}${path}` }), false);
+    for (const path of ['/series/mimosa', '/series/mimosa/chapter-56']) assert.equal(isSeriesDetailRequest({ url: `${domain}${path}` }), true);
     assert.equal((await field('excludeNSFW')).value, true); assert.equal((await field('hidePaid')).value, true);
     const footer = (await source.getPreferenceMenu()).sections[0].footer;
     assert.match(footer, /Missing or invalid genres are hidden/); assert.match(footer, /not a four-category/);
@@ -41,7 +45,7 @@ export async function testHijala({ source, check, highlights, searchResult, imag
   await check('Catalog is bulk-classified with no per-title detail requests', async () => {
     const start = requests.length; catalog = await source.search({ page: 1 }); searchResult(catalog);
     assert(catalog.results.every((item) => item.contentRating === 0));
-    assert(!requests.slice(start).some((item) => new URL(item.url).pathname.startsWith('/series/')));
+    assert(!requests.slice(start).some(isSeriesDetailRequest));
     assert(requests.some((item) => new URL(item.url).searchParams.get('excludedGenreIds')?.split(',').includes('27')));
   });
   await check('Entire live native catalog has unique accumulated IDs, no lost returned titles and stable reset/repeats', async () => {
