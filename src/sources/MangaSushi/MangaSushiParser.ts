@@ -58,6 +58,42 @@ export function imageURL($: ReturnType<typeof load>, element: cheerio.Element | 
     throw new Error('MangaSushi did not provide a usable image URL')
 }
 
+function coverURL($: ReturnType<typeof load>, element: cheerio.Element | undefined): string {
+    const current = imageURL($, element)
+    const image = $(element)
+    const base = new URL(current)
+    const derivative = /-(\d+)x(\d+)(\.[a-z0-9]+)$/i
+    const currentSize = base.pathname.match(derivative)
+    // An unsuffixed original may only be displayed at thumbnail size. Never
+    // mistake its HTML display dimensions for its intrinsic resolution.
+    if (!currentSize) return current
+    const width = Number(currentSize[1])
+    const height = Number(currentSize[2])
+    if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width <= 0 || height <= width) return current
+    const asset = base.pathname.replace(derivative, '$3')
+    const candidates: Array<{ url: string, width: number }> = []
+    for (const key of ['data-srcset', 'srcset']) {
+        for (const entry of (image.attr(key) ?? '').split(',')) {
+            const match = entry.trim().match(/^(\S+)\s+([1-9]\d*)w$/)
+            if (!match?.[1]) continue
+            try {
+                const url = new URL(match[1], DOMAIN)
+                const size = url.pathname.match(derivative)
+                const candidateWidth = Number(size?.[1])
+                const candidateHeight = Number(size?.[2])
+                if (!size || !['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.hash
+                    || url.origin !== base.origin || url.search !== base.search || url.pathname.replace(derivative, '$3') !== asset
+                    || candidateWidth !== Number(match[2]) || candidateWidth <= width || candidateWidth > 350
+                    || candidateHeight <= height || candidateHeight <= candidateWidth || Math.abs((candidateWidth / candidateHeight) / (width / height) - 1) > 0.05) continue
+                candidates.push({ url: url.href, width: candidateWidth })
+            } catch { /* Invalid advertised candidates do not invalidate the current cover. */ }
+        }
+    }
+    // Prefer a modest native derivative, never a generated URL or a heavy original.
+    const medium = candidates.filter((candidate) => candidate.width >= 200).sort((a, b) => a.width - b.width)[0]
+    return (medium ?? candidates.sort((a, b) => b.width - a.width)[0])?.url ?? current
+}
+
 function status(value: string): PublicationStatus | undefined {
     switch (text(value).toLowerCase()) {
         case 'ongoing': return PublicationStatus.ONGOING
@@ -93,7 +129,7 @@ export function parseListing(html: string, selector = '.c-tabs-item__content'): 
         items.push({
             id,
             title,
-            cover: imageURL($, item.find('img').first().get(0)),
+            cover: coverURL($, item.find('img').first().get(0)),
             webUrl: seriesURL(id),
             subtitle: text(item.find('.chapter a, .chapter-item a').first().text()) || undefined,
             genres,
@@ -138,7 +174,7 @@ export function parseContent(html: string, series: Series): Content {
     ]
     return {
         title,
-        cover: imageURL($, $('.summary_image img').first().get(0)),
+        cover: coverURL($, $('.summary_image img').first().get(0)),
         webUrl: series.webUrl,
         summary: summary.text().replace(/[ \t]+/g, ' ').replace(/\n\s*\n/g, '\n\n').trim(),
         additionalTitles: series.alternatives,
