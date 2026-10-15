@@ -1,5 +1,27 @@
 [
   {
+    "checkedAt": "2026-10-15T07:44:21.170Z",
+    "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/38700007680",
+    "sha": "f369154c527554729b825430538f7086f546463f",
+    "sources": {
+      "Hijala": {
+        "status": "pass"
+      },
+      "Kagane": {
+        "status": "pass"
+      },
+      "MangaSushi": {
+        "status": "pass"
+      },
+      "ManhwaNex": {
+        "status": "pass"
+      },
+      "VortexScans": {
+        "status": "pass"
+      }
+    }
+  },
+  {
     "checkedAt": "2026-10-15T07:22:33.472Z",
     "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/38697525684",
     "sha": "7f13ed748f790dab7ba2e57faf085006365ede9e",
