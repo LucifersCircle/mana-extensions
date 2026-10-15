@@ -102,21 +102,23 @@ export async function assertKaganeHostGuards({ freshSource } = {}) {
 export async function assertKaganeChapterLanguages({ freshSource, id, detail, books, sources }) {
   assert(detail && books?.length, 'No successful live Kagane sample for language boundaries');
   const target = freshSource();
-  let translated = 'es';
+  assert.equal(detail.translated_language, 'en', 'Need the actual live English sample before language mutation');
+  let translated = detail.translated_language;
   const calls = { series: 0, books: 0, sources: 0 };
   target.api.series = async () => { calls.series += 1; return { ...detail, translated_language: translated }; };
   target.api.books = async () => { calls.books += 1; return books; };
   target.api.sources = async () => { calls.sources += 1; return sources; };
   const savedLanguages = (await target.settings()).languages;
-  await target.save('languages', ['en', 'es']);
+  // The real English series must not become Spanish when preferences reorder.
+  await target.save('languages', ['es', 'en']);
   try {
     const baseline = await target.getChapters(id);
     assert(baseline.length);
-    assert(baseline.every((chapter) => chapter.language === 'es'));
+    assert(baseline.every((chapter) => chapter.language === 'en'));
     const cases = [
       [undefined, 'und'], [null, 'und'], ['', 'und'], ['  ', 'und'], ['unk', 'und'], ['und', 'und'], ['UNKNOWN', 'und'], [42, 'und'], [{}, 'und'], [[], 'und'],
       ['en--US', 'und'], ['English', 'und'], ['https://invalid', 'und'], ['en-US-US', 'und'],
-      [' es ', 'es'], ['pt-br', 'pt-BR'], ['pt-BR', 'pt-BR'], ['pt', 'pt'], ['es-la', 'es-419'], ['es-419', 'es-419'], ['zh-hk', 'zh-HK'], ['zh-Hans', 'zh-Hans'], ['zh-Hant', 'zh-Hant'], ['en_US', 'en-US'], ['iw', 'he'], ['in', 'id'], ['ji', 'yi'], ['ja-ro', 'ja-Latn'], ['fil', 'fil'], ['pt-la', 'pt-BR'], ['ko-ro', 'ko-Latn'], ['zh-ro', 'zh-Latn'],
+      ['es', 'es'], [' es ', 'es'], ['pt-br', 'pt-BR'], ['pt-BR', 'pt-BR'], ['pt', 'pt'], ['es-la', 'es-419'], ['es-419', 'es-419'], ['zh-hk', 'zh-HK'], ['zh-Hans', 'zh-Hans'], ['zh-Hant', 'zh-Hant'], ['en_US', 'en-US'], ['iw', 'he'], ['in', 'id'], ['ji', 'yi'], ['ja-ro', 'ja-Latn'], ['fil', 'fil'], ['pt-la', 'pt-BR'], ['ko-ro', 'ko-Latn'], ['zh-ro', 'zh-Latn'],
     ];
     for (const [value, expected] of cases) {
       translated = value;
