@@ -306,7 +306,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   }
   let catalog, form, chapterList, index, content, blocked, readerData, safeBody;
   await check('Never-saved source categories follow native policy and explicit source selection persists', async () => {
-    assert.equal(source.info.version, '0.0.1-alpha.6');
+    assert.equal(source.info.version, '0.0.1-alpha.7');
     assert.deepEqual(Array.from((await preference('contentRatings')).value), allRatings);
     const start = requests.length, empty = await source.search({ page: 1, context: { allowedContentRatings: [] } });
     assert.equal(empty.results.length, 0); assert.equal(empty.isLastPage, true); assert.equal(requests.length, start);
@@ -339,6 +339,11 @@ export async function testKagane({ source, check, highlights, searchResult, imag
     const english = (language) => typeof language === 'string' && /^(?:en(?:[-_][a-z0-9]{2,8})*|english)$/i.test(language.trim());
     const expectedTitle = english(metadata.title_language) ? metadata.title : metadata.series_alternate_titles?.find((alias) => english(alias.label) && alias.title.trim())?.title ?? metadata.title;
     assert.equal(content.title, expectedTitle.trim()); assert(content.summary?.trim());
+    const labels = [['ongoing', 'Ongoing', 1], ['completed', 'Completed', 2], ['abandoned', 'Cancelled', 3], ['hiatus', 'Hiatus', 4]];
+    const expected = (value) => typeof value === 'string' ? labels.find(([name]) => name === value.trim().toLowerCase()) : undefined;
+    assert.equal(content.status, expected(metadata.publication_status)?.[2], 'Native status must use publication metadata, never upload progress');
+    const upload = expected(metadata.upload_status)?.[1];
+    assert.deepEqual(content.summary.split('\n\n').filter((line) => line.startsWith('Upload status: ')), upload ? [`Upload status: ${upload}`] : [], 'Upload progress must remain explicitly labelled');
     assert.equal(new URL(content.webUrl).pathname, `/series/${item.id}`);
     assert(content.tags?.length); assert(content.webUrl.startsWith(`${domain}/series/`));
     await image(source, content.cover);
@@ -426,6 +431,9 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   });
   await check('Format, status and uploader filters round-trip through the native request', async () => {
     const raw = seen.get(catalog.results[0].id), all = fields(form);
+    const statusFilter = all.find((field) => field.id === 'upload_status');
+    assert.equal(statusFilter.title, 'Upload Status');
+    assert.deepEqual(Array.from(statusFilter.options, ({ id, title }) => [id, title]), [['Ongoing', 'Ongoing'], ['Completed', 'Completed'], ['Hiatus', 'Hiatus'], ['Abandoned', 'Cancelled']]);
     const selection = {};
     for (const [id, value] of [['format', raw.format], ['upload_status', raw.upload_status], ['source_id', raw.source_id]]) {
       const option = all.find((field) => field.id === id).options.find((option) => option.id === value); assert(option, `No live ${id}`);
@@ -434,6 +442,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
     const result = await source.search({ page: 1, filters: selection }); searchResult(result);
     assert(result.results.some((item) => item.id === raw.series_id));
     for (const id of Object.keys(selection)) assert(searches.at(-1).args[0][id].includes(selection[id][0].id));
+    assert.equal(searches.at(-1).args[0].publication_status, undefined, 'Do not substitute a publication filter for saved upload semantics');
   });
   await check('Negative search is an empty terminal page and invalid pages are rejected', async () => {
     const result = await source.search({ page: 1, query: 'zzzxqv-kagane-no-such-title-843021' });

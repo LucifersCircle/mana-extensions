@@ -37,7 +37,7 @@ export type Series = Classification & {
 }
 export type Detail = Classification & {
     series_id?: string, title: string, title_language?: string | null, description?: string | null, source_id?: string | null, edition_info?: string | null,
-    format?: string | null, upload_status?: string | null, translated_language?: string | null,
+    format?: string | null, publication_status?: string | null, upload_status?: string | null, translated_language?: string | null,
     series_covers?: { image_id: string, is_main?: boolean }[],
     series_staff?: { name: string, role: string }[],
     genres?: { genre_id?: string, genre_name: string, is_spoiler?: boolean }[],
