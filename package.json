@@ -11,7 +11,9 @@
     "dev": "nodemon",
     "build": "mana-dev build",
     "serve": "mana-dev serve",
-    "lint": "eslint 'src/**/*.ts'"
+    "lint": "eslint 'src/**/*.ts'",
+    "test:extensions": "node scripts/live-tests.mjs",
+    "update:test-status": "node scripts/test-status.mjs publish"
   },
   "author": {
     "name": "Lucifers Circle",
