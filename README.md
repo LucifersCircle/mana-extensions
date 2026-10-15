@@ -1,6 +1,6 @@
 # Pirate Vodka Extensions for Mana
 
-This repository contains native Mana extensions for **VortexScans**, **MangaSushi**, **Kagane** and **ManhwaNex**.
+This repository contains native Mana extensions for **VortexScans**, **MangaSushi**, **Kagane**, **ManhwaNex** and **Hijala**.
 
 Mana repository URL: `https://mana.pirate.vodka/sources.json`
 
@@ -26,7 +26,7 @@ Version `0.0.1-alpha.6` follows the repository's shared alpha-version format.
 ## MangaSushi
 
 [MangaSushi](https://mangasushi.org/) is a fresh native implementation, not a
-Paperback converter. Version `0.0.1-alpha.5` includes:
+Paperback converter. Version `0.0.1-alpha.6` includes:
 
 - The site's finite **Popular Series** carousel and **What's New** feed, in source
   order. What's New uses the site's actual AJAX Load More query and continuation.
@@ -80,7 +80,7 @@ Icon: [`assets/MangaSushi.png`](assets/MangaSushi.png), from the site's publishe
 
 ## ManhwaNex
 
-[ManhwaNex](https://manhwanex.com/) is a native Mana source, version `0.0.1-alpha.1`.
+[ManhwaNex](https://manhwanex.com/) is a native Mana source, version `0.0.1-alpha.2`.
 It preserves the site's **Popular Series** carousel and **Latest Updates** feed,
 source order, real next-page links, English source titles and complete alternative
 fields, staff, publication metadata and separately grouped source SEO tags (ten
@@ -112,6 +112,43 @@ chapter subset; missing older chapters are not invented or bypassed.
 
 Source: [`src/sources/ManhwaNex`](src/sources/ManhwaNex).
 Icon: [`assets/ManhwaNex.png`](assets/ManhwaNex.png), the site's published 192-pixel icon.
+
+## Hijala
+
+[Hijala](https://en-hijala.com/) is a native source, version `0.0.1-alpha.1`:
+
+- Current Featured, Latest Releases, New, Most Popular and Latest Updates, in the
+  site's published order. Latest/New use the verified current API continuation;
+  Popular is the site's first nine ranked titles, not a substituted lifetime sort.
+- All live genres in native search, six sorts, include/exclude genres, statuses,
+  types, direction, chapter-count bounds and creation-date filters.
+- Persistent default-on genre-based NSFW exclusion and paid-chapter hiding,
+  content types, excluded genres and discovery rows. Unknown genre metadata is
+  hidden by default; explicit exclusions still fail closed after NSFW opt-out.
+  The site does not supply a reliable four-category rating, and BL/GL/demographics
+  are not treated as adult labels.
+- Source-provided full covers everywhere, original titles/aliases, complete
+  source-count-validated chapter lists, native decimal numbers and public readers.
+  Paid/login/protected content remains on the website.
+- Bounded three-minute metadata caches reused across callbacks, and shared
+  preference-write barriers.
+  Current cold discovery uses five requests, including two complete catalog
+  batches because the public API caps each at 100; warm discovery adds none.
+
+Latest and New are separate native rows for the site's tabs.
+Mana has series-only Highlights, so Latest Updates shows the latest visible
+chapter per series. Genre browsing uses native search rather than fabricated
+covered cards. Chapter links resolve to the series under the pinned native API.
+The built-bundle checks exercise real 410-chapter/159-decimal data, a chapter 112.5
+reader, image bytes, safe defaults, settings races and exact site continuation.
+
+Source: [`src/sources/Hijala`](src/sources/Hijala). The bounded non-evaluating
+TanStack/Seroval decoder and GPL attribution are recorded in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md); no converter or toolchain upgrade.
+
+
+
+
 
 ## Kagane
 
