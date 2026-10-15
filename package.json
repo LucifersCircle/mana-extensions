@@ -12,6 +12,7 @@
     "build": "mana-dev build",
     "serve": "mana-dev serve",
     "lint": "eslint 'src/**/*.ts'",
+    "test:report": "node --test scripts/*.test.mjs",
     "test:extensions": "node scripts/live-tests.mjs",
     "update:test-status": "node scripts/test-status.mjs publish"
   },

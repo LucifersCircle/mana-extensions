@@ -1,19 +1,22 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { performance } from 'node:perf_hooks';
 import { createManaRuntime, redactURL, redactText } from './mana-runtime.mjs';
 import { testKagane } from './kagane-live-tests.mjs';
 import { testHijala } from './hijala-live-tests.mjs';
 import { createManaTestTransport } from './mana-test-browser.mjs';
-import { discoverSources } from './test-sources.mjs';
+import { failedSources } from './test-sources.mjs';
+import { readSelection } from './changed-sources.mjs';
 import { testMangaSushi, coverDimensions } from './mangasushi-live-tests.mjs';
 import { testManhwaNex } from './manhwanex-live-tests.mjs';
 import { load } from 'cheerio';
 
+rmSync('bundles/live-test-results.json', { force: true });
+if (process.argv.length > 2) throw new Error('Use LIVE_TEST_SELECTION, not unvalidated CLI source arguments');
+const names = readSelection().selectedSources;
 const report = {};
 const testTransport = createManaTestTransport();
-const names = discoverSources();
 const manifest = JSON.parse(readFileSync('dist/sources.json', 'utf8'));
 const nonempty = (value, label) => assert(typeof value === 'string' && value.trim(), `${label} is empty`);
 const url = (value) => assert(['http:', 'https:'].includes(new URL(value).protocol), `Invalid URL: ${value}`);
@@ -315,4 +318,4 @@ for (const name of names) {
 }
 mkdirSync('bundles', { recursive: true });
 writeFileSync('bundles/live-test-results.json', `${JSON.stringify(report, null, 2)}\n`);
-if (names.some((name) => !report[name]?.tests.length || report[name].summary.failed)) process.exitCode = 1;
+if (failedSources(report, names).length) process.exitCode = 1;
