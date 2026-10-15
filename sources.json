@@ -30,7 +30,7 @@
       "path": "Hijala",
       "environment": "source",
       "intents": 6298637,
-      "hash": "387a6b98387a6b98387a6b98387a6b98387a6b98387a6b98387a6b98387a6b98"
+      "hash": "3bd6f1723bd6f1723bd6f1723bd6f1723bd6f1723bd6f1723bd6f1723bd6f172"
     },
     {
       "id": "Kagane",
@@ -62,7 +62,7 @@
       "path": "Kagane",
       "environment": "source",
       "intents": 6298637,
-      "hash": "59d25df459d25df459d25df459d25df459d25df459d25df459d25df459d25df4"
+      "hash": "5675d7fd5675d7fd5675d7fd5675d7fd5675d7fd5675d7fd5675d7fd5675d7fd"
     },
     {
       "id": "MangaSushi",
@@ -87,13 +87,13 @@
       "path": "MangaSushi",
       "environment": "source",
       "intents": 6298637,
-      "hash": "4088846740888467408884674088846740888467408884674088846740888467"
+      "hash": "3d2c01893d2c01893d2c01893d2c01893d2c01893d2c01893d2c01893d2c0189"
     },
     {
       "id": "ManhwaNex",
-      "version": "0.0.1-alpha.2",
+      "version": "0.0.1-alpha.3",
       "name": "ManhwaNex",
-      "description": "ManhwaNex with native Popular Series, Latest Updates, search filters and persistent NSFW exclusion.",
+      "description": "ManhwaNex with native Popular Series, Latest Updates, home categories, search filters and persistent NSFW exclusion.",
       "thumbnail": "ManhwaNex.png",
       "rating": 1,
       "website": "https://manhwanex.com",
@@ -114,7 +114,7 @@
       "path": "ManhwaNex",
       "environment": "source",
       "intents": 6298637,
-      "hash": "537e3b11537e3b11537e3b11537e3b11537e3b11537e3b11537e3b11537e3b11"
+      "hash": "7cfbfcab7cfbfcab7cfbfcab7cfbfcab7cfbfcab7cfbfcab7cfbfcab7cfbfcab"
     },
     {
       "id": "VortexScans",
@@ -141,7 +141,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 6298636,
-      "hash": "02573de302573de302573de302573de302573de302573de302573de302573de3"
+      "hash": "05b3c0b805b3c0b805b3c0b805b3c0b805b3c0b805b3c0b805b3c0b805b3c0b8"
     }
   ]
 }
