@@ -7,7 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 export function createManaRuntime({ logger = logRequest } = {}) {
     class NetworkError extends Error {
         constructor(name, message, req, res) {
-            super(message)
+            super(redactText(message))
             this.name = name
             this.req = req
             this.res = res
@@ -52,9 +52,6 @@ export function createManaRuntime({ logger = logRequest } = {}) {
             for (const transform of request.transformRequest) {
                 request = await transform(request)
             }
-            if (!['GET', 'HEAD'].includes(request.method) || request.body != null) {
-                assertReadOnlyMangaSushiPost(request)
-            }
             if (request.maxRetries !== 0) {
                 throw new Error('Automatic retries are unsupported by the live test host')
             }
@@ -74,6 +71,11 @@ export function createManaRuntime({ logger = logRequest } = {}) {
                     throw new Error(`Unsupported non-scalar query parameter: ${key}`)
                 }
                 url.searchParams.append(key, String(value))
+            }
+            // Validate the actual outgoing URL after params are merged, not a pre-merge
+            // version which could hide unsupported or duplicate operation parameters.
+            if (!['GET', 'HEAD'].includes(request.method) || request.body != null) {
+                assertReadOnlyPost({ ...request, url: url.href })
             }
             const headers = new Headers()
             for (const [key, value] of Object.entries(request.headers ?? {})) {
@@ -96,7 +98,7 @@ export function createManaRuntime({ logger = logRequest } = {}) {
                 const raw = await fetch(url, {
                     method: request.method,
                     headers,
-                    body: request.body,
+                    body: request.body != null && typeof request.body === 'object' ? JSON.stringify(request.body) : request.body,
                     signal: AbortSignal.timeout(request.timeout)
                 })
                 status = raw.status
@@ -115,10 +117,10 @@ export function createManaRuntime({ logger = logRequest } = {}) {
                 if (!validate(response.status)) {
                     throw new NetworkError('NetworkError', `HTTP ${response.status}: ${url.href}`, response.request, response)
                 }
-                logger({ url: url.href, status, durationMs: Date.now() - started })
+                logger({ url: redactURL(url.href), status, durationMs: Date.now() - started })
                 return response
             } catch (error) {
-                logger({ url: url.href, status, durationMs: Date.now() - started, error: error.message })
+                logger({ url: redactURL(url.href), status, durationMs: Date.now() - started, error: redactText(error.message) })
                 throw error
             }
         }
@@ -160,6 +162,62 @@ function unsupported(name) {
 
 function logRequest({ url, status, durationMs, error }) {
     console.log(`[http] ${status ?? 'ERROR'} ${url} (${durationMs}ms)${error ? `: ${error}` : ''}`)
+}
+
+// Reader page URLs carry ephemeral public-reader tokens. Retain useful route logs,
+// but never write those bearer values into workflow artifacts.
+export function redactURL(value) {
+    const url = new URL(value)
+    for (const key of ['token', 'access_token']) {
+        if (url.searchParams.has(key)) url.searchParams.set(key, '[redacted]')
+    }
+    return url.href
+}
+
+export function redactText(value) {
+    return String(value).replace(/(https?:\/\/[^\s"'<>]+)/g, (url) => {
+        try { return redactURL(url) } catch { return url }
+    }).replace(/([?&](?:token|access_token)=)[^&\s"'<>)]*/g, '$1[redacted]')
+}
+
+function assertReadOnlyPost(request) {
+    const target = new URL(request.url)
+    if (target.origin === 'https://kagane.org') return assertReadOnlyKaganePost(request)
+    return assertReadOnlyMangaSushiPost(request)
+}
+
+// Kagane uses POST for public search, uploader taxonomy and the normal public-reader
+// integrity/bootstrap handshake. These exact read-only routes are allowed, not a
+// general-purpose POST escape hatch. Account, collection, upload and paid routes fail.
+export function assertReadOnlyKaganePost(request) {
+    const target = new URL(request.url)
+    const reject = () => { throw new Error('Live test host rejects unsupported Kagane operation') }
+    if (request.method !== 'POST' || target.origin !== 'https://kagane.org' || target.hash) return reject()
+    const params = [...target.searchParams.keys()]
+    if (new Set(params).size !== params.length) return reject()
+    let body = request.body
+    if (typeof body === 'string') {
+        try { body = JSON.parse(body) } catch { return reject() }
+    }
+    if (body != null && (typeof body !== 'object' || Array.isArray(body))) return reject()
+    const keys = Object.keys(body ?? {})
+    if (target.pathname === '/api/integrity' && !target.search && !keys.length) return
+    if (/^\/api\/v2\/books\/[A-Za-z0-9-]+$/.test(target.pathname)
+        && !keys.length && [...target.searchParams.keys()].every((key) => key === 'is_datasaver')
+        && ['true', 'false', null].includes(target.searchParams.get('is_datasaver'))) return
+    if (target.pathname === '/api/v2/sources/list' && !target.search
+        && keys.length === 1 && keys[0] === 'source_types'
+        && (body.source_types === null || (Array.isArray(body.source_types)
+            && body.source_types.every((type) => ['Official', 'Unofficial', 'Mixed'].includes(type))))) return
+    const searchKeys = ['source_type', 'title', 'content_rating', 'age_rating', 'is_pornographic', 'content_lang', 'format', 'upload_status', 'source_id', 'genres', 'tags']
+    if (target.pathname === '/api/v2/search/series' && body != null
+        && keys.every((key) => searchKeys.includes(key))
+        && new Set(params).size === params.length
+        && params.every((key) => ['page', 'size', 'sort', 'exact_match'].includes(key))
+        && /^\d+$/.test(target.searchParams.get('page') ?? '')
+        && /^[1-9]\d*$/.test(target.searchParams.get('size') ?? '')
+        && ['true', 'false', null].includes(target.searchParams.get('exact_match'))) return
+    return reject()
 }
 
 // These two public AJAX operations retrieve catalog/chapter HTML, not account state.

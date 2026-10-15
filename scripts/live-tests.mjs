@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { performance } from 'node:perf_hooks';
-import { createManaRuntime } from './mana-runtime.mjs';
+import { createManaRuntime, redactURL, redactText } from './mana-runtime.mjs';
+import { testKagane } from './kagane-live-tests.mjs';
 import { discoverSources } from './test-sources.mjs';
 import { testMangaSushi } from './mangasushi-live-tests.mjs';
 
@@ -29,8 +30,8 @@ async function image(source, imageUrl) {
     headers: request.headers,
     signal: AbortSignal.timeout(30_000),
   });
-  console.log(`IMAGE ${response.status} ${request.url}`);
-  assert(response.ok, `Image HTTP ${response.status}: ${request.url}`);
+  console.log(`IMAGE ${response.status} ${redactURL(request.url)}`);
+  assert(response.ok, `Image HTTP ${response.status}: ${redactURL(request.url)}`);
   assert(response.headers.get('content-type')?.startsWith('image/'), 'Response is not an image');
   const reader = response.body.getReader();
   try {
@@ -49,8 +50,8 @@ for (const name of names) {
       tests.push({ name: label, status: 'pass', duration: performance.now() - start });
       console.log(`PASS ${name}: ${label}`);
     } catch (error) {
-      tests.push({ name: label, status: 'fail', duration: performance.now() - start, error: error.stack ?? String(error) });
-      console.error(`FAIL ${name}: ${label}\n${error.stack ?? error}`);
+      tests.push({ name: label, status: 'fail', duration: performance.now() - start, error: redactText(error.stack ?? String(error)) });
+      console.error(`FAIL ${name}: ${label}\n${redactText(error.stack ?? error)}`);
     }
   }
   let source, catalog, content, chapters, pages, sections, form, context;
@@ -64,7 +65,9 @@ for (const name of names) {
     nonempty(source.info.version, 'Version'); url(source.info.website);
   });
   if (name !== 'VortexScans') {
-    if (name === 'MangaSushi') {
+    if (name === 'Kagane') {
+      await testKagane({ source, check, highlights, searchResult, image, requests, freshSource: () => new context.Target() });
+    } else if (name === 'MangaSushi') {
       await testMangaSushi({ source, check, highlights, searchResult, image, requests, freshSource: () => new context.Target() });
     } else await check('Supported source-specific live contract', () => assert.fail(`No live contract implemented for ${name}`));
     report[name] = { tests, summary: { total: tests.length, passed: tests.filter((test) => test.status === 'pass').length,
