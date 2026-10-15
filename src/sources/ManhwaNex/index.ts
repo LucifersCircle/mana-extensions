@@ -3,6 +3,7 @@ import {
     Chapter,
     ChapterData,
     Content,
+    ContentRating,
     ContentSource,
     DeepLinkContext,
     Form,
@@ -34,9 +35,11 @@ import { ManhwaNexApi } from './ManhwaNexApi'
 import {
     chapterURL,
     DOMAIN,
+    HomeCategory,
     Listing,
     parseChapters,
     parseContent,
+    parseHomeCategories,
     parseListing,
     parseReader,
     Series,
@@ -55,13 +58,13 @@ const STATUSES = new Set(['on-going', 'end', 'canceled', 'on-hold', 'upcoming'])
 const SORTS: SortOption[] = [{ id: 'relevance', title: 'Relevance', isDefault: true }]
 type Filters = { genres?: Option[], condition?: Option, author?: string, artist?: string, release?: string, status?: Option[], adult?: Option }
 type CacheEntry<T> = { at: number, value: T }
-type Home = { popular: Series[], latest: Listing }
+type Home = { popular: Series[], latest: Listing, categories: HomeCategory[] }
 class ExcludedContentError extends Error {}
 
 export class Target implements ContentSource, PageLinkResolver, ImageRequestHandler, SourcePreferenceProvider {
     readonly info: SourceInfo = {
-        id: 'ManhwaNex', version: '0.0.1-alpha.2', name: 'ManhwaNex',
-        description: 'ManhwaNex with native Popular Series, Latest Updates, search filters and persistent NSFW exclusion.',
+        id: 'ManhwaNex', version: '0.0.1-alpha.3', name: 'ManhwaNex',
+        description: 'ManhwaNex with native Popular Series, Latest Updates, home categories, search filters and persistent NSFW exclusion.',
         thumbnail: 'ManhwaNex.png', rating: CatalogRating.MIXED, website: DOMAIN,
         badges: ['Manhwa', 'Manhua', 'Manga'], supportedLanguages: ['en_US'],
         developers: [{ name: 'Lucifers Circle', github: 'https://github.com/LucifersCircle' }]
@@ -74,6 +77,7 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
     private readonly contentCache = new Map<string, CacheEntry<Content>>()
     private readonly pending = new Map<string, Promise<Listing>>()
     private readonly pendingContent = new Map<string, Promise<Content>>()
+    private readonly pendingMetadata = new Map<string, Promise<void>>()
     private homeCache?: CacheEntry<Home>
     private homePending?: Promise<Home>
     private homeExclude?: boolean
@@ -88,7 +92,7 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
             children: [UIToggle({ id: 'excludeNSFW', title: 'Exclude NSFW content', value: await this.excludeNSFW(), didChange: async (value) => {
                 this.revision += 1
                 await ObjectStore.set(SETTING, value)
-                this.listings.clear(); this.metadata.clear(); this.contentCache.clear(); this.pending.clear(); this.pendingContent.clear()
+                this.listings.clear(); this.metadata.clear(); this.contentCache.clear(); this.pending.clear(); this.pendingContent.clear(); this.pendingMetadata.clear()
                 this.homeCache = undefined; this.homePending = undefined
             } })] })] }
     }
@@ -122,11 +126,15 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
             const page = request.page ?? 1
             if (!Number.isInteger(page) || page < 1 || page > 100) throw new Error('Invalid ManhwaNex page')
             if (request.listId) {
-                if (!['popular', 'latest'].includes(request.listId)) throw new Error('Unknown ManhwaNex home section')
                 const home = await this.home(exclude)
-                if (request.listId === 'popular') return { results: page === 1 ? await this.highlights(home.popular, exclude) : [], isLastPage: true }
-                const listing = page === 1 ? home.latest : await this.page(`${DOMAIN}/`, page, '.page-item-detail', false, exclude, home.latest)
-                await this.classifyHome(listing.items, exclude)
+                if (['popular', 'latest'].includes(request.listId)) {
+                    await this.classifyCards([...home.latest.items, ...home.popular], exclude)
+                    if (request.listId === 'popular') return { results: page === 1 ? await this.highlights(home.popular, exclude) : [], isLastPage: true }
+                }
+                const category = home.categories.find((item) => item.id === request.listId)
+                if (request.listId !== 'latest' && !category) throw new Error('Unknown ManhwaNex home section')
+                const listing = category ? await this.page(category.url, page, '.page-item-detail.manga', false, exclude)
+                    : await this.page(`${DOMAIN}/`, page, '.page-item-detail', false, exclude, home.latest)
                 return { results: await this.highlights(listing.items, exclude), isLastPage: !listing.next }
             }
             const listing = await this.page(this.searchURL(request, exclude), page, '.c-tabs-item__content', true, exclude)
@@ -136,33 +144,37 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
 
     async getSectionsForPage(link: PageLink): Promise<PageSection[]> {
         this.checkHome(link)
-        await this.withSettings((exclude) => this.home(exclude))
+        const home = await this.withSettings((exclude) => this.home(exclude))
         return [{ id: 'popular', title: 'Popular Series', style: SectionStyle.SimpleSingleRow },
-            { id: 'latest', title: 'Latest Updates', style: SectionStyle.SimpleSingleRow }]
+            { id: 'latest', title: 'Latest Updates', style: SectionStyle.SimpleSingleRow },
+            ...home.categories.map(({ id, title }) => ({ id, title, style: SectionStyle.SimpleSingleRow }))]
     }
 
     async resolvePageSection(link: PageLink, sectionId: string): Promise<ResolvedPageSection> {
         this.checkHome(link)
         const result = await this.search({ page: 1, listId: sectionId })
-        return { items: result.results, viewMoreLink: sectionId === 'latest' && !result.isLastPage ? { request: { page: 1, listId: sectionId } } : undefined }
+        return { items: result.results, viewMoreLink: !result.isLastPage ? { request: { page: 1, listId: sectionId } } : undefined }
     }
 
-    async getContent(contentId: string): Promise<Content> { return this.withSettings((exclude) => this.content(contentId, exclude)) }
+    async getContent(contentId: string): Promise<Content> {
+        return this.withSettings((exclude) => this.content(contentId, exclude), (exclude) => this.checkAllowed(contentId, exclude))
+    }
 
     async getChapters(contentId: string): Promise<Chapter[]> {
         return this.withSettings(async (exclude) => {
             await this.requireAllowed(contentId, exclude)
             return parseChapters(await this.api.chapters(contentId), contentId)
-        })
+        }, (exclude) => this.checkAllowed(contentId, exclude))
     }
 
     async getChapterData(contentId: string, chapterId: string): Promise<ChapterData> {
         return this.withSettings(async (exclude) => {
             await this.requireAllowed(contentId, exclude)
             const result = parseReader(await this.api.text(chapterURL(contentId, chapterId)), contentId, chapterId)
+            this.checkAllowed(contentId, exclude)
             await this.recordImages((result.pages ?? []).map((page) => ({ url: page.url ?? '', id: contentId })))
             return result
-        })
+        }, (exclude) => this.checkAllowed(contentId, exclude))
     }
 
     async handleURL(url: string): Promise<DeepLinkContext | null> {
@@ -173,23 +185,26 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
     }
 
     async willRequestImage(url: string): Promise<NetworkRequest> {
+        let contentId = ''
         return this.withSettings(async (exclude) => {
             this.checkImage(url)
             await this.loadIssued()
             const id = this.issued.get(url)
             if (!id) throw new Error('ManhwaNex image was not issued by this source; refresh the title or reader')
+            contentId = id
             await this.requireAllowed(id, exclude)
             return { url, headers: { Referer: `${DOMAIN}/`, Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5' } }
-        })
+        }, (exclude) => this.checkAllowed(contentId, exclude))
     }
 
     private checkHome(link: PageLink): void { if (link.id !== 'home') throw new Error('Unknown ManhwaNex page') }
     private async excludeNSFW(): Promise<boolean> { return (await ObjectStore.boolean(SETTING)) !== false }
-    private async withSettings<T>(operation: (exclude: boolean) => Promise<T>): Promise<T> {
+    private async withSettings<T>(operation: (exclude: boolean) => Promise<T>, validate?: (exclude: boolean) => void): Promise<T> {
         const revision = this.revision, exclude = await this.excludeNSFW()
         if (revision !== this.revision) throw new Error('ManhwaNex settings changed during this request; refresh to continue')
         const result = await operation(exclude)
         if (revision !== this.revision || exclude !== await this.excludeNSFW()) throw new Error('ManhwaNex settings changed during this request; refresh to continue')
+        validate?.(exclude)
         return result
     }
     private fresh<T>(entry?: CacheEntry<T>): T | undefined { return entry && Date.now() - entry.at < TTL ? entry.value : undefined }
@@ -197,7 +212,15 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
         map.delete(key); map.set(key, { at: Date.now(), value })
         while (map.size > limit) map.delete(map.keys().next().value as string)
     }
-    private cacheMetadata(item: Series, exclude: boolean): void { this.put(this.metadata, `${exclude}:${item.id}`, item, 512) }
+    private cacheMetadata(item: Series, exclude: boolean): void {
+        const key = `${exclude}:${item.id}`, entry = this.metadata.get(key), prior = this.fresh(entry)
+        const explicit = item.explicit || prior?.explicit === true
+        this.put(this.metadata, key, explicit ? { ...item, explicit, contentRating: ContentRating.EXPLICIT } : item, 512)
+        // No cache reuse, safe batch or repeated warning extends live evidence.
+        const updated = this.metadata.get(key)
+        if (prior?.explicit && entry && updated) updated.at = entry.at
+        if (explicit) this.contentCache.delete(key)
+    }
     private allowed(item?: Series): boolean { return Boolean(item?.classified && !item.explicit) }
 
     private searchURL(request: SearchRequest<Filters>, exclude: boolean): string {
@@ -235,15 +258,26 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
     }
 
     private async page(firstURL: string, requestedPage: number, selector: string, isSearch: boolean, exclude: boolean, suppliedFirst?: Listing): Promise<Listing> {
-        let result = suppliedFirst ?? await this.listing(firstURL, selector, isSearch, exclude)
-        const seen = new Set(result.items.map((item) => item.id))
-        for (let page = 2; page <= requestedPage; page += 1) {
-            if (!result.next) return { items: [] }
-            result = await this.listing(result.next, selector, isSearch, exclude)
-            if (result.items.some((item) => seen.has(item.id))) throw new Error('ManhwaNex continuation repeated an earlier series')
-            for (const item of result.items) seen.add(item.id)
+        let raw = suppliedFirst ?? await this.listing(firstURL, selector, isSearch, exclude), logicalPage = 1
+        const seen = new Set<string>()
+        for (let sourcePage = 1; sourcePage <= 100; sourcePage += 1) {
+            const fresh = raw.items.filter((item) => !seen.has(item.id))
+            for (const item of raw.items) seen.add(item.id)
+            if (!isSearch) await this.classifyCards(fresh, exclude, raw.items)
+            else for (const item of raw.items) if (item.explicit) this.cardMetadata(item, exclude)
+            const items = fresh.filter((item) => !exclude || this.allowed(this.cardMetadata(item, exclude)))
+            // Mana stops on empty results, even with isLastPage=false. Reconstruct
+            // stable logical pages from cached native pages and skip empty overlap
+            // or exclusion pages without consuming a logical page number.
+            if (items.length) {
+                if (logicalPage === requestedPage) return { items, next: raw.next }
+                logicalPage += 1
+            }
+            if (!raw.next) return { items: [] }
+            if (sourcePage === 100) throw new Error('ManhwaNex listing traversal exceeded its verified bounds')
+            raw = await this.listing(raw.next, selector, isSearch, exclude)
         }
-        return result
+        throw new Error('ManhwaNex listing traversal exceeded its verified bounds')
     }
 
     private async home(exclude: boolean): Promise<Home> {
@@ -258,30 +292,48 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
             const popular = parseListing(html, '.widget-manga-popular-slider .slider__item').items
             const latest = parseListing(html, '.page-item-detail', `${DOMAIN}/`)
             if (!popular.length || !latest.items.length) throw new Error('ManhwaNex homepage is incomplete')
-            await this.classifyHome([...latest.items, ...popular], exclude)
             if (revision !== this.revision) throw new Error('ManhwaNex settings changed; refresh to continue')
-            const value = { popular, latest }; this.homeExclude = exclude; this.homeCache = { at: Date.now(), value }; return value
+            const value = { popular, latest, categories: parseHomeCategories($) }; this.homeExclude = exclude; this.homeCache = { at: Date.now(), value }; return value
         })()
         this.homePending = request; this.homePendingExclude = exclude
         try { return await request } finally { if (this.homePending === request) this.homePending = undefined }
     }
 
-    private async classifyHome(items: Series[], exclude: boolean): Promise<void> {
+    private async classifyCards(items: Series[], exclude: boolean, observed = items): Promise<void> {
         const missing = items.filter((item) => !this.fresh(this.metadata.get(`${exclude}:${item.id}`)))
+        // Record all observed warnings before an unrelated metadata await, including
+        // duplicate cards. Compute missing IDs first so new warnings still get full metadata.
+        for (const item of observed) if (item.explicit) this.cardMetadata(item, exclude)
         if (!missing.length) return
-        // Home cards have no taxonomy. One exact-ID native search-card batch supplies
-        // all sections' metadata without reordering the homepage or N+1 detail loads.
+        // Home and archive cards have no taxonomy. One exact-ID native search-card
+        // batch supplies a requested page without reordering it or N+1 detail loads.
         const ids = [...new Set(missing.map((item) => item.id))]
-        const revision = this.revision, expected = new Set(missing.map((item) => item.id))
-        const metadata = await this.api.metadata(ids, exclude)
-        if (revision !== this.revision) throw new Error('ManhwaNex settings changed; refresh to continue')
-        if (metadata.some((item) => !expected.has(item.id))) throw new Error('ManhwaNex metadata batch returned a foreign series')
-        for (const item of metadata) this.cacheMetadata(item, exclude)
+        const key = `${exclude}:${[...ids].sort().join(',')}`, pending = this.pendingMetadata.get(key)
+        if (pending) return pending
+        const revision = this.revision, expected = new Set(ids)
+        const request = (async () => {
+            const metadata = await this.api.metadata(ids, exclude)
+            if (revision !== this.revision) throw new Error('ManhwaNex settings changed; refresh to continue')
+            if (metadata.some((item) => !expected.has(item.id))) throw new Error('ManhwaNex metadata batch returned a foreign series')
+            for (const item of metadata) this.cacheMetadata(item, exclude)
+        })()
+        this.pendingMetadata.set(key, request)
+        try { await request } finally { if (this.pendingMetadata.get(key) === request) this.pendingMetadata.delete(key) }
+    }
+
+    private cardMetadata(item: Series, exclude: boolean): Series {
+        const cached = this.fresh(this.metadata.get(`${exclude}:${item.id}`)), base = cached ?? item
+        // Non-adult bulk membership cannot erase an adult marker or blocked
+        // genre on the current native card. Preserve the complete bulk metadata.
+        const explicit = base.explicit || item.explicit
+        const metadata = { ...base, explicit, contentRating: explicit ? ContentRating.EXPLICIT : base.contentRating }
+        if (item.explicit && !cached?.explicit) this.cacheMetadata(metadata, exclude)
+        return metadata
     }
 
     private async highlights(items: Series[], exclude: boolean): Promise<Highlight[]> {
         const results = items.flatMap((item): Highlight[] => {
-            const metadata = this.fresh(this.metadata.get(`${exclude}:${item.id}`)) ?? item
+            const metadata = this.cardMetadata(item, exclude)
             if (exclude && !this.allowed(metadata)) return []
             return [{ id: item.id, title: item.title, cover: item.cover, webUrl: item.webUrl, subtitle: item.subtitle, contentRating: metadata.contentRating }]
         })
@@ -305,6 +357,10 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
         const revision = this.revision
         const html = await this.api.text(seriesURL(id))
         let result = parseContent(html, id, this.fresh(this.metadata.get(key)))
+        if (this.fresh(this.metadata.get(key))?.explicit) {
+            result.metadata = { ...result.metadata, explicit: true, contentRating: ContentRating.EXPLICIT }
+            result.content = { ...result.content, contentRating: ContentRating.EXPLICIT }
+        }
         if (exclude && !this.fresh(this.metadata.get(key))) {
             const bulk = await this.api.metadata([id], true)
             if (bulk.some((item) => item.id !== id)) throw new Error('ManhwaNex metadata returned a different series')
@@ -324,6 +380,10 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
         if (!exclude) return
         if (this.allowed(this.fresh(this.metadata.get(`true:${id}`)))) return
         await this.content(id, true)
+    }
+
+    private checkAllowed(id: string, exclude: boolean): void {
+        if (exclude && !this.allowed(this.fresh(this.metadata.get(`true:${id}`)))) throw new ExcludedContentError('This title is excluded or its current source classification could not be verified')
     }
 
     private checkImage(value: string): void {

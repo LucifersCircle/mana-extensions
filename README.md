@@ -80,7 +80,7 @@ Icon: [`assets/MangaSushi.png`](assets/MangaSushi.png), from the site's publishe
 
 ## ManhwaNex
 
-[ManhwaNex](https://manhwanex.com/) is a native Mana source, version `0.0.1-alpha.2`.
+[ManhwaNex](https://manhwanex.com/) is a native Mana source, version `0.0.1-alpha.3`.
 It preserves the site's **Popular Series** carousel and **Latest Updates** feed,
 source order, real next-page links, English source titles and complete alternative
 fields, staff, publication metadata and separately grouped source SEO tags (ten
@@ -91,9 +91,16 @@ numbers, labels and dates; any actual chapter pagination is traversed, not infer
 from the largest chapter number. Reader pages retain source order.
 
 Covers use the largest valid rendition advertised in each existing response,
-without guessed originals or per-card detail requests. Both discovery sections
-share one homepage and one bounded canonical-ID metadata batch; caches are bounded
-and setting-aware. Reader selection is independent of cover selection.
+without guessed originals or per-card detail requests. Popular Series and Latest
+Updates share one homepage and one bounded canonical-ID metadata batch; caches
+are bounded and setting-aware. Reader selection is independent of cover selection.
+
+The eight genre archives linked from the homepage are separate Discover sections,
+in the site's order. Each archive loads only when requested and uses bounded,
+page-sized metadata batches. Native archive order and next-page links are preserved.
+Repeated canonical IDs are omitted across a pagination chain, including
+duplicate-only or excluded-only intermediate pages; distinct source entries
+remain separate even when they share titles or artwork.
 
 **Exclude NSFW content** is persistent and on by default. It requires native
 non-adult membership and verified source genres, rejects explicit Adult, Mature,

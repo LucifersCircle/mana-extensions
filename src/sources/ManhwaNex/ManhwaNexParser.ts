@@ -29,6 +29,7 @@ export interface Series extends Highlight {
     postId?: string
 }
 export interface Listing { items: Series[], next?: string }
+export interface HomeCategory { id: string, title: string, url: string }
 export type QueryValue = string | number | boolean | null | QueryValue[] | { [key: string]: QueryValue }
 
 export function text(value: string): string { return value.replace(/\s+/g, ' ').trim() }
@@ -148,7 +149,8 @@ function fields($: ReturnType<typeof load>, root: cheerio.Cheerio, detail: boole
     }).first().find('.summary-content') : root.find(`.mg_${name} .summary-content`).first()
     const genres = taxonomy($, field('genres').find('a'), 'genre')
     const explicit = genres.some((genre) => BLOCKED_GENRES.has(genre.id.toLowerCase()))
-        || root.find('.adult-content, .manga-adult, .adult-warning, [data-adult="1"], [data-adult="true"]').length > 0
+        || root.find('.adult-content, .manga-adult, .adult-warning, [data-adult="1"], [data-adult="true"]')
+            .add(root.filter('.adult-content, .manga-adult, .adult-warning, [data-adult="1"], [data-adult="true"]')).length > 0
     return {
         genres,
         authors: field('author').find('a').toArray().map((node) => text($(node).text())).filter(Boolean),
@@ -170,17 +172,39 @@ function context(url: URL): string {
     return pairs.join('&')
 }
 
+export function parseHomeCategories($: ReturnType<typeof load>): HomeCategory[] {
+    const categories: HomeCategory[] = [], seen = new Set<string>()
+    $('li.menu-item-object-wp-manga-genre > a').each((_, node) => {
+        const id = taxonomyId($(node).attr('href') ?? '', 'genre'), title = text($(node).text())
+        if (!VERIFIED_GENRES.has(id) || !title) throw new Error('ManhwaNex home category changed')
+        if (seen.has(id)) return
+        seen.add(id)
+        categories.push({ id: `genre:${id}`, title, url: `${DOMAIN}/manga-genre/${id}/` })
+    })
+    if (!categories.length) throw new Error('ManhwaNex home categories are missing')
+    return categories
+}
+
 export function parseNext($: ReturnType<typeof load>, requestURL: string): string | undefined {
     const requested = new URL(requestURL)
-    const currentPage = Number(requested.pathname.match(/^\/page\/([1-9]\d*)\/$/)?.[1] ?? '1')
-    if (requested.origin !== DOMAIN || !['/', `/page/${currentPage}/`].includes(requested.pathname)) throw new Error('Invalid ManhwaNex listing URL')
+    const category = requested.pathname.match(/^\/manga-genre\/([^/]+)\/(?:page\/([1-9]\d*)\/)?$/)
+    const currentPage = Number(category?.[2] ?? requested.pathname.match(/^\/page\/([1-9]\d*)\/$/)?.[1] ?? '1')
+    const root = category ? `/manga-genre/${category[1]}/` : '/'
+    if (requested.origin !== DOMAIN || requested.username || requested.password || requested.hash
+        || !Number.isSafeInteger(currentPage) || currentPage > 100
+        || (category ? !VERIFIED_GENRES.has(category[1] ?? '') : !['/', `/page/${currentPage}/`].includes(requested.pathname))) throw new Error('Invalid ManhwaNex listing URL')
+    if (category) {
+        const classes = new Set(($('body').attr('class') ?? '').split(/\s+/))
+        if ($('link[rel="canonical"]').attr('href') !== requested.href || !classes.has('tax-wp-manga-genre')
+            || !classes.has(`term-${category[1]}`) || (currentPage > 1 && !classes.has(`paged-${currentPage}`))) throw new Error('ManhwaNex returned a different category archive')
+    }
     const shown = text($('.wp-pagenavi .current').text())
     if (shown && Number(shown) !== currentPage) throw new Error('ManhwaNex returned a different catalog page')
     const href = $('.wp-pagenavi a.nextpostslink').attr('href')
     if (!href) return undefined
     const next = new URL(href, requestURL)
     if (next.origin !== DOMAIN || next.username || next.password || next.hash
-        || next.pathname !== `/page/${currentPage + 1}/` || context(next) !== context(requested)) {
+        || next.pathname !== `${root}page/${currentPage + 1}/` || context(next) !== context(requested)) {
         throw new Error('ManhwaNex continuation changed the query or did not advance')
     }
     return next.href
