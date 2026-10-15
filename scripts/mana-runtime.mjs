@@ -2,7 +2,8 @@ import { setTimeout as delay } from 'node:timers/promises'
 
 // A small Node host for live source checks, not a Mana/iOS emulator. The built
 // bundle supplies the real @mana-app/types enums and NetworkClientBuilder.
-// Stores, WebViews, automatic retries, and cookie persistence are not emulated.
+// ObjectStore is process-local for preference callbacks; iOS persistence, WebViews,
+// automatic retries and cookie persistence are not emulated.
 export function createManaRuntime({ logger = logRequest } = {}) {
     class NetworkError extends Error {
         constructor(name, message, req, res) {
@@ -31,8 +32,8 @@ export function createManaRuntime({ logger = logRequest } = {}) {
             return this.request({ ...config, url, method: 'GET' })
         }
 
-        post() {
-            throw new Error('Live test host supports only read-only GET/HEAD requests')
+        post(url, config) {
+            return this.request({ ...config, url, method: 'POST' })
         }
 
         async request(input) {
@@ -52,7 +53,7 @@ export function createManaRuntime({ logger = logRequest } = {}) {
                 request = await transform(request)
             }
             if (!['GET', 'HEAD'].includes(request.method) || request.body != null) {
-                throw new Error('Live test host supports only read-only GET/HEAD requests without a body')
+                assertReadOnlyMangaSushiPost(request)
             }
             if (request.maxRetries !== 0) {
                 throw new Error('Automatic retries are unsupported by the live test host')
@@ -95,6 +96,7 @@ export function createManaRuntime({ logger = logRequest } = {}) {
                 const raw = await fetch(url, {
                     method: request.method,
                     headers,
+                    body: request.body,
                     signal: AbortSignal.timeout(request.timeout)
                 })
                 status = raw.status
@@ -126,7 +128,7 @@ export function createManaRuntime({ logger = logRequest } = {}) {
         NetworkClient,
         NetworkError,
         CloudflareError,
-        ObjectStore: unsupported('ObjectStore'),
+        ObjectStore: createObjectStore(),
         SecureStore: unsupported('SecureStore'),
         WebViewPage: unsupported('WebViewPage'),
         console,
@@ -158,4 +160,42 @@ function unsupported(name) {
 
 function logRequest({ url, status, durationMs, error }) {
     console.log(`[http] ${status ?? 'ERROR'} ${url} (${durationMs}ms)${error ? `: ${error}` : ''}`)
+}
+
+// These two public AJAX operations retrieve catalog/chapter HTML, not account state.
+// All other POST targets and actions remain unsupported and fail closed.
+export function assertReadOnlyMangaSushiPost(request) {
+    const target = new URL(request.url)
+    if (request.method !== 'POST' || target.origin !== 'https://mangasushi.org'
+        || typeof request.body !== 'string' || target.search || target.hash) {
+        throw new Error('Live test host rejects unsupported non-read-only request')
+    }
+    if (/^\/manga\/[^/]+\/ajax\/chapters\/$/.test(target.pathname) && request.body === '') return
+    const body = new URLSearchParams(request.body)
+    const keys = [...body.keys()]
+    if (new Set(keys).size !== keys.length
+        || keys.some((key) => keys.some((other) => other !== key && other.startsWith(`${key}[`)))) {
+        throw new Error('Live test host rejects duplicate or conflicting AJAX parameters')
+    }
+    if (target.pathname === '/wp-admin/admin-ajax.php'
+        && body.get('action') === 'madara_load_more'
+        && /^\d+$/.test(body.get('page') ?? '')
+        && /^madara-core\/content\/content-(search|archive)$/.test(body.get('template') ?? '')
+        && body.get('vars[post_type]') === 'wp-manga'
+        && keys.every((key) => ['action', 'page', 'template'].includes(key) || /^vars(?:\[[A-Za-z0-9_]+\])+$/.test(key))) return
+    throw new Error('Live test host rejects unsupported MangaSushi AJAX action')
+}
+
+function createObjectStore() {
+    const values = new Map()
+    return {
+        async get(key) { return values.get(key) ?? null },
+        async set(key, value) { values.set(key, structuredClone(value)) },
+        async remove(key) { values.delete(key) },
+        async boolean(key) {
+            const value = values.get(key) ?? null
+            if (value !== null && typeof value !== 'boolean') throw new Error('ObjectStore value is not a boolean')
+            return value
+        }
+    }
 }

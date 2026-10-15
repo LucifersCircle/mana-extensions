@@ -4,6 +4,7 @@ import vm from 'node:vm';
 import { performance } from 'node:perf_hooks';
 import { createManaRuntime } from './mana-runtime.mjs';
 import { discoverSources } from './test-sources.mjs';
+import { testMangaSushi } from './mangasushi-live-tests.mjs';
 
 const report = {};
 const names = discoverSources();
@@ -52,15 +53,24 @@ for (const name of names) {
       console.error(`FAIL ${name}: ${label}\n${error.stack ?? error}`);
     }
   }
-  let source, catalog, content, chapters, pages, sections, form;
+  let source, catalog, content, chapters, pages, sections, form, context;
+  const requests = [];
   await check('Built Mana bundle and source metadata', () => {
     assert(manifest.sources.some((entry) => entry.id === name), 'Source missing from built manifest');
-    const context = vm.createContext(createManaRuntime());
+    context = vm.createContext(createManaRuntime({ logger: (request) => { requests.push(request); console.log(`[http] ${request.status ?? 'ERROR'} ${request.url} (${request.durationMs}ms)${request.error ? `: ${request.error}` : ''}`); } }));
     vm.runInContext(readFileSync(`dist/sources/${name}.mana`, 'utf8'), context, { timeout: 10_000 });
     source = new context.Target();
     assert.equal(source.info.id, name);
     nonempty(source.info.version, 'Version'); url(source.info.website);
   });
+  if (name !== 'VortexScans') {
+    if (name === 'MangaSushi') {
+      await testMangaSushi({ source, check, highlights, searchResult, image, requests, freshSource: () => new context.Target() });
+    } else await check('Supported source-specific live contract', () => assert.fail(`No live contract implemented for ${name}`));
+    report[name] = { tests, summary: { total: tests.length, passed: tests.filter((test) => test.status === 'pass').length,
+      failed: tests.filter((test) => test.status === 'fail').length, duration: performance.now() - started } };
+    continue;
+  }
   await check('Catalog search returns usable highlights', async () => {
     catalog = await source.search({ page: 1 }); searchResult(catalog);
   });

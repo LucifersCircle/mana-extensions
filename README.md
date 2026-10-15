@@ -1,13 +1,13 @@
-# VortexScans for Mana
+# Pirate Vodka Extensions for Mana
 
-This repository contains one Mana extension: **VortexScans**.
+This repository contains native Mana extensions for **VortexScans** and **MangaSushi**.
 
 Mana repository URL: `https://mana.pirate.vodka/sources.json`
 
-The implementation is a native Mana port of the Paperback VortexScans source
+The VortexScans implementation is a native Mana port of the Paperback VortexScans source
 from [pirate.vodka extensions](https://github.com/LucifersCircle/pirate.vodka-extensions/tree/0.9/stable/src/VortexScans).
 
-## Features
+## VortexScans features
 
 - Dynamic discovery rows for Popular Today, Latest, New, every published
   collection, and Most Popular
@@ -18,6 +18,41 @@ from [pirate.vodka extensions](https://github.com/LucifersCircle/pirate.vodka-ex
 - Ordered webtoon pages from the VortexScans API, with an HTML fallback
 - Cloudflare and vShield challenge detection through Mana's built-in resolution flow
 - VortexScans deep-link handling and image request headers
+
+## MangaSushi
+
+[MangaSushi](https://mangasushi.org/) is a fresh native implementation, not a
+Paperback converter. Version `0.0.1-alpha.1` includes:
+
+- The site's finite **Popular Series** carousel and **What's New** feed, in source
+  order. What's New uses the site's actual AJAX Load More query and continuation.
+- All seven native search orders, live genre taxonomy with OR/AND matching,
+  author, artist, release year, all five statuses and the site's adult selector.
+- Full titles, alternative-title text, available authors/artists/status/genres,
+  synopsis, asynchronous chapter lists, original chapter labels and decimals.
+- Ordered lazy reader images, canonical series/chapter identity checks, duplicate
+  and numbered-page-gap detection, source referer headers and series deep links.
+- The site's square 192-pixel icon, and a fixed three-requests-per-second limit.
+
+**Exclude NSFW content** is a persistent global preference, enabled by default.
+It combines the native `adult=0` filter with explicit Adult, Mature, Smut, Hentai,
+Erotica and Ecchi tags. BL, Yuri and demographic genres are not adult classifications
+by themselves. Discovery, continuation, search, details, chapters and reading use
+the same setting; changing it clears setting-keyed caches and invalidates in-flight
+responses. Unknown or unverifiable classifications are hidden, not assumed safe.
+Site labels can be incomplete, so this cannot guarantee the content of every image.
+
+MangaSushi omits some detail metadata, so canonical-ID-matched search rows supply
+available genres and staff. Missing information is not invented. Consequently,
+legitimate but unclassified titles can be hidden by default, including the tested
+*Welcome to the Cheap Restaurant of Outcasts!* sample as of 2026-10-15. Disable the
+preference to access such titles. Rows can be shorter or empty after exclusion;
+no unrelated titles replace them, and continuation follows upstream results rather
+than the filtered count. The two verified donation/recruitment notices are excluded
+regardless of this preference because they are not reading content.
+
+Source: [`src/sources/MangaSushi`](src/sources/MangaSushi).
+Icon: [`assets/MangaSushi.png`](assets/MangaSushi.png), from the site's published icon.
 
 ## Live extension tests
 
@@ -89,7 +124,12 @@ checks catalog search and pagination, title search, genre inclusion/exclusion,
 available filter/sort options, all published home sections, details, chapters, chapter-page URLs, cover/page image
 responses and deep links. Request logs, individual assertions, counts, timestamps
 and the tested commit are retained as workflow artifacts and in the run summary.
-Missing, malformed or empty source reports are errors, never passing checks.
+Missing, malformed or empty source reports are errors, never passing checks. Each
+discovered source needs an explicit live contract; an unimplemented source fails
+closed. MangaSushi additionally checks all native orders and filters, setting
+persistence and in-flight invalidation, exact home order/continuation, explicit and
+unknown exclusions, editorial notices, malformed markup and reader identity/page
+integrity against freshly fetched live responses.
 
 Mana's official [development CLI](https://github.com/Mana-iOS/mana-dev) provides
 build/serve commands, not a dedicated live source test suite. Its build-time
@@ -98,7 +138,10 @@ the iOS app: it does not validate UI rendering, persistent cookies/stores, WebVi
 or interactive Cloudflare/vShield resolution. A challenge fails visibly rather
 than being silently bypassed. New sources must support the exercised contract;
 unsupported host APIs or incomplete suites fail closed and need explicit support.
-No new offline fixtures or permanent parser tests are added.
+The host supports only GET/HEAD plus MangaSushi’s two verified read-only AJAX
+operations. Its small process-local ObjectStore exercises preference callbacks and
+new source instances, not iOS persistence. No new offline fixtures or permanent
+parser tests are added.
 
 Run the same checks locally with Node 24:
 
@@ -125,7 +168,7 @@ The test repository is then available at
 `http://127.0.0.1:8080/sources.json`. Use `npm run dev` instead when you want
 the server to restart automatically after TypeScript changes.
 
-The source is in [`src/sources/VortexScans`](src/sources/VortexScans) and its
+The VortexScans source is in [`src/sources/VortexScans`](src/sources/VortexScans) and its
 icon is [`assets/VortexScans.png`](assets/VortexScans.png).
 
 ## Upstream behavior
