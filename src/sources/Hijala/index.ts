@@ -85,7 +85,7 @@ const options = (ids: string[]): Option[] => ids.map((id) => ({ id, title: LABEL
 
 export class Target implements ChapterSource, PageLinkResolver, SourcePreferenceProvider, ImageRequestHandler {
     readonly info: SourceInfo = {
-        id: 'Hijala', version: '0.0.1-alpha.1', name: 'Hijala', thumbnail: 'Hijala.png', website: DOMAIN,
+        id: 'Hijala', version: '0.0.1-alpha.2', name: 'Hijala', thumbnail: 'Hijala.png', website: DOMAIN,
         description: 'Hijala public manga catalog, site filters, complete chapters and public reader. Default-on NSFW genre exclusion.',
         rating: CatalogRating.MIXED, supportedLanguages: ['en_US', 'es_ES', 'ru_RU'], badges: ['Manga', 'Manhwa', 'Manhua'],
         developers: [{ name: 'Lucifers Circle', website: 'https://pirate.vodka', github: 'https://github.com/LucifersCircle' }]
@@ -150,7 +150,7 @@ export class Target implements ChapterSource, PageLinkResolver, SourcePreference
         } finally { if (this.pending.get(url) === request) this.pending.delete(url) }
     }
     async getPreferenceMenu(): Promise<Form> {
-        const saved = await this.preferences(), taxonomy = genreOptions(await this.text(`${DOMAIN}/series`))
+        const saved = await this.preferences(), taxonomy = genreOptions(await this.text(`${DOMAIN}/series/`))
         return { sections: [UIListSection({ header: 'Content safety',
             footer: 'NSFW exclusion is on by default. Uses verified genre labels (including Mature, Ecchi, Adult and Smut), not a four-category site rating. Missing or invalid genres are hidden. Labels may be incomplete; this does not guarantee image content. Applies to discovery, search, details, chapters and reading. Paid/login chapters always remain on the website.',
             children: [UIToggle({ id: 'excludeNSFW', title: 'Exclude NSFW content', value: saved.excludeNSFW, didChange: (value) => this.set('excludeNSFW', value) }),
@@ -164,7 +164,7 @@ export class Target implements ChapterSource, PageLinkResolver, SourcePreference
     async getSortOptions(): Promise<SortOption[]> { return SORTS.map(({ id, title }, index) => ({ id, title, isDefault: index === 0 })) }
     async getSearchForm(): Promise<SearchForm> {
         return { sections: [SearchListSection({ header: 'Filter series', footer: 'Persistent content types and excluded genres also apply. Dates use YYYY-MM-DD. Genre browsing is available here.', children: [
-            SearchExcludableMultiPickerSheet({ id: 'genres', title: 'Genres', options: genreOptions(await this.text(`${DOMAIN}/series`)) }),
+            SearchExcludableMultiPickerSheet({ id: 'genres', title: 'Genres', options: genreOptions(await this.text(`${DOMAIN}/series/`)) }),
             SearchMultiPickerSheet({ id: 'statuses', title: 'Status', options: options(STATUSES) }),
             SearchMultiPickerSheet({ id: 'types', title: 'Content types', options: options(TYPES) }),
             SearchMenuPicker({ id: 'direction', title: 'Order direction', options: [{ id: 'default', title: 'Default' }, { id: 'asc', title: 'Ascending' }, { id: 'desc', title: 'Descending' }] }),
@@ -234,7 +234,7 @@ export class Target implements ChapterSource, PageLinkResolver, SourcePreference
             if (!this.releaseFilters(html).includes(request.listId)) throw new Error('This Hijala release tab is disabled by the source')
             if (request.listId === 'latest') latestTag = this.latestTag(html)
         }
-        const excluded = saved.excludeNSFW ? genreOptions(await this.text(`${DOMAIN}/series`)).filter((genre) => blockedGenre(genre.title)).map((genre) => genre.id) : []
+        const excluded = saved.excludeNSFW ? genreOptions(await this.text(`${DOMAIN}/series/`)).filter((genre) => blockedGenre(genre.title)).map((genre) => genre.id) : []
         const stateKey = JSON.stringify([{ ...request, page: undefined }, saved, preferenceRevision])
         const expired = this.pages.get(stateKey)
         for (const [key, entry] of this.pages) if (Date.now() - entry.at >= 180_000 && !(key === stateKey && request.page > 1)) this.pages.delete(key)
