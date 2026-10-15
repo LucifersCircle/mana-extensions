@@ -7,6 +7,7 @@ import { testKagane } from './kagane-live-tests.mjs';
 import { createManaTestTransport } from './mana-test-browser.mjs';
 import { discoverSources } from './test-sources.mjs';
 import { testMangaSushi, coverDimensions } from './mangasushi-live-tests.mjs';
+import { testManhwaNex } from './manhwanex-live-tests.mjs';
 import { load } from 'cheerio';
 
 const report = {};
@@ -89,6 +90,8 @@ for (const name of names) {
       await testKagane({ source, check, referenceFetch: testTransport.fetch, highlights, searchResult, image, requests, freshSource: () => new context.Target() });
     } else if (name === 'MangaSushi') {
       await testMangaSushi({ source, check, highlights, searchResult, image, requests, freshSource: () => new context.Target() });
+    } else if (name === 'ManhwaNex') {
+      await testManhwaNex({ source, check, requests, freshSource: () => new context.Target() });
     } else await check('Supported source-specific live contract', () => assert.fail(`No live contract implemented for ${name}`));
     report[name] = { tests, summary: { total: tests.length, passed: tests.filter((test) => test.status === 'pass').length,
       failed: tests.filter((test) => test.status === 'fail').length, duration: performance.now() - started } };

@@ -203,6 +203,7 @@ export function assertPublicKaganeRequest(request) {
 function assertReadOnlyPost(request) {
     const target = new URL(request.url)
     if (target.origin === 'https://kagane.org') return assertReadOnlyKaganePost(request)
+    if (target.origin === 'https://manhwanex.com') return assertReadOnlyManhwaNexPost(request)
     return assertReadOnlyMangaSushiPost(request)
 }
 
@@ -276,4 +277,28 @@ function createObjectStore() {
             return value
         }
     }
+}
+
+// ManhwaNex's native public chapter and bounded metadata reads only.
+export function assertReadOnlyManhwaNexPost(request) {
+    const target = new URL(request.url)
+    const reject = () => { throw new Error('Live test host rejects unsupported ManhwaNex operation') }
+    if (request.method !== 'POST' || target.origin !== 'https://manhwanex.com' || target.username || target.password || target.hash) return reject()
+    if (/^\/manga\/[A-Za-z0-9][A-Za-z0-9_-]*\/ajax\/chapters\/$/.test(target.pathname)
+        && /^\?t=[1-9]\d{0,2}$/.test(target.search) && Number(target.searchParams.get('t')) <= 100 && request.body == null) return
+    if (target.pathname !== '/wp-admin/admin-ajax.php' || target.search || typeof request.body !== 'string') return reject()
+    const body = new URLSearchParams(request.body), keys = [...body.keys()]
+    if (new Set(keys).size !== keys.length) return reject()
+    const exact = { action: 'madara_load_more', page: '-1', template: 'madara-core/content/content-search',
+        'vars[post_type]': 'wp-manga', 'vars[template]': 'search', 'vars[paged]': '0', 'vars[s]': '' }
+    if (Object.entries(exact).some(([key, value]) => body.get(key) !== value)) return reject()
+    const count = Number(body.get('vars[posts_per_page]'))
+    if (!Number.isSafeInteger(count) || count < 1 || count > 64) return reject()
+    const idKeys = keys.filter((key) => /^vars\[post_name__in\]\[\d+\]$/.test(key))
+    if (idKeys.length !== count || idKeys.some((key, index) => key !== `vars[post_name__in][${index}]`
+        || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(body.get(key) ?? ''))) return reject()
+    const safe = ['vars[meta_query][relation]', 'vars[meta_query][0][key]', 'vars[meta_query][0][value]']
+    const hasSafety = safe.some((key) => body.has(key))
+    if (hasSafety && (body.get(safe[0]) !== 'AND' || body.get(safe[1]) !== 'manga_adult_content' || body.get(safe[2]) !== '')) return reject()
+    if (keys.some((key) => !Object.prototype.hasOwnProperty.call(exact, key) && key !== 'vars[posts_per_page]' && !idKeys.includes(key) && !(hasSafety && safe.includes(key)))) return reject()
 }
