@@ -38,7 +38,10 @@ import { MangaSushiApi } from './MangaSushiApi'
 import { englishTitle,
     searchTitle } from './MangaSushiTitles'
 import {
+    assertGenreSearch,
     DOMAIN,
+    GenreSelection,
+    genreSelection,
     Listing,
     parseChapters,
     parseContent,
@@ -69,7 +72,7 @@ class ExcludedContentError extends Error {}
 export class Target implements ContentSource, PageLinkResolver, ImageRequestHandler, SourcePreferenceProvider {
     readonly info: SourceInfo = {
         id: 'MangaSushi',
-        version: '0.0.1-alpha.7',
+        version: '0.0.1-alpha.8',
         name: 'MangaSushi',
         description: 'MangaSushi with native discovery, search filters and Mana content-rating policy.',
         thumbnail: 'MangaSushi.png',
@@ -151,7 +154,8 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
         if (request.listId && request.listId !== 'latest') throw new Error(`Unknown MangaSushi list: ${request.listId}`)
         const home = request.listId === 'latest' ? await this.home(exclude) : undefined
         const url = home ? 'home' : this.searchURL({ ...request, query: searchTitle(request.query ?? '') }, exclude)
-        const first = home?.latest ?? await this.firstListing(url, exclude)
+        const genres = home ? undefined : genreSelection((request.filters?.genres ?? []).map((genre) => genre.id), request.filters?.condition?.id, request.filters)
+        const first = home?.latest ?? await this.firstListing(url, exclude, genres)
         const selector = home ? '.page-item-detail' : '.c-tabs-item__content'
         const scope = `${exclude}:${url}`
         let listing = first, logicalPage = 1, noRawProgress = 0
@@ -175,7 +179,7 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
             }
             if (listing.ended || !first.next) return { results: [], isLastPage: true }
             if (physicalPage === 100) throw new Error('MangaSushi listing traversal exceeded its verified bounds')
-            listing = await this.continuation(first, physicalPage + 1, selector, scope)
+            listing = await this.continuation(first, physicalPage + 1, selector, scope, exclude, genres)
         }
         throw new Error('MangaSushi listing traversal exceeded its verified bounds')
     }
@@ -304,17 +308,21 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
         this.metadata.set(key, { at: prior?.explicit && entry ? entry.at : Date.now(), value })
     }
 
-    private async firstListing(url: string, exclude: boolean): Promise<Listing> {
+    private async firstListing(url: string, exclude: boolean, genres?: GenreSelection): Promise<Listing> {
         const key = `${exclude}:${url}`
         const cached = this.fresh(this.listings.get(key))
-        if (cached) return cached
+        if (cached) { assertGenreSearch(cached, genres, true); return cached }
         const html = await this.api.text(url)
         if (!html.includes('search-advanced-form')) throw new Error('MangaSushi search page is incomplete')
         const result = parseListing(html)
         const emptyMessage = text(load(html)('.c-page-content .no-results.not-found .not-found-content').text())
-        if (!result.items.length && !/^No matches found\./i.test(emptyMessage)) {
+        if (!result.items.length && (!/^No matches found\./i.test(emptyMessage) || result.next)) {
             throw new Error('MangaSushi search result layout changed without a verified empty state')
         }
+        // Positive warnings remain safety evidence even when this response
+        // fails genre integrity. Do not cache unrelated Safe metadata.
+        for (const item of result.items) if (item.explicit) this.cacheMetadata(item, exclude)
+        assertGenreSearch(result, genres, true)
         for (const prior of this.listings.keys()) if (prior.startsWith(`${key}:page:`)) this.listings.delete(prior)
         this.listings.set(key, { at: Date.now(), value: result })
         for (const item of result.items) this.cacheMetadata(item, exclude)
@@ -339,15 +347,20 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
         return `${DOMAIN}/?${params.toString()}`
     }
 
-    private async continuation(first: Listing, page: number, selector: string, scope: string): Promise<Listing> {
+    private async continuation(first: Listing, page: number, selector: string, scope: string, exclude: boolean, genres?: GenreSelection): Promise<Listing> {
         if (!first.next) return { items: [], ended: true }
         const key = `${scope}:page:${page}`, cached = this.fresh(this.listings.get(key))
-        if (cached) return cached
+        if (cached) { assertGenreSearch(cached, genres); return cached }
         const pending = this.pendingListings.get(key)
         if (pending) return pending
         const revision = this.settingsRevision
         const request = (async () => {
             const result = await this.api.more(first.next as NonNullable<Listing['next']>, page, selector)
+            for (const item of result.items) if (item.explicit) this.cacheMetadata(item, exclude)
+            assertGenreSearch(result, genres)
+            if (genres && result.queryVars && JSON.stringify(result.queryVars.tax_query) !== JSON.stringify(first.queryVars?.tax_query)) {
+                throw new Error('MangaSushi continuation changed the requested genre filter')
+            }
             if (revision !== this.settingsRevision) throw new Error('MangaSushi settings changed during this request; refresh to continue')
             this.listings.set(key, { at: Date.now(), value: result })
             return result
