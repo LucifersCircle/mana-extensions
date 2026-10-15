@@ -32,11 +32,11 @@
       "path": "Kagane",
       "environment": "source",
       "intents": 6298637,
-      "hash": "040f75ca040f75ca040f75ca040f75ca040f75ca040f75ca040f75ca040f75ca"
+      "hash": "0e6943490e6943490e6943490e6943490e6943490e6943490e6943490e694349"
     },
     {
       "id": "MangaSushi",
-      "version": "0.0.1-alpha.5",
+      "version": "0.0.1-alpha.6",
       "name": "MangaSushi",
       "description": "MangaSushi with the site’s discovery, search filters, and a global NSFW exclusion setting.",
       "thumbnail": "MangaSushi.png",
@@ -50,18 +50,18 @@
       ],
       "developers": [
         {
-          "name": "LucifersCircle",
+          "name": "Lucifers Circle",
           "github": "https://github.com/LucifersCircle"
         }
       ],
       "path": "MangaSushi",
       "environment": "source",
       "intents": 6298637,
-      "hash": "0e0f32a90e0f32a90e0f32a90e0f32a90e0f32a90e0f32a90e0f32a90e0f32a9"
+      "hash": "27b31c7f27b31c7f27b31c7f27b31c7f27b31c7f27b31c7f27b31c7f27b31c7f"
     },
     {
       "id": "ManhwaNex",
-      "version": "0.0.1-alpha.1",
+      "version": "0.0.1-alpha.2",
       "name": "ManhwaNex",
       "description": "ManhwaNex with native Popular Series, Latest Updates, search filters and persistent NSFW exclusion.",
       "thumbnail": "ManhwaNex.png",
@@ -77,14 +77,14 @@
       ],
       "developers": [
         {
-          "name": "LucifersCircle",
+          "name": "Lucifers Circle",
           "github": "https://github.com/LucifersCircle"
         }
       ],
       "path": "ManhwaNex",
       "environment": "source",
       "intents": 6298637,
-      "hash": "1d19de1f1d19de1f1d19de1f1d19de1f1d19de1f1d19de1f1d19de1f1d19de1f"
+      "hash": "14bd665014bd665014bd665014bd665014bd665014bd665014bd665014bd6650"
     },
     {
       "id": "VortexScans",
@@ -111,7 +111,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 6298636,
-      "hash": "6039116760391167603911676039116760391167603911676039116760391167"
+      "hash": "6a92dee26a92dee26a92dee26a92dee26a92dee26a92dee26a92dee26a92dee2"
     }
   ]
 }
