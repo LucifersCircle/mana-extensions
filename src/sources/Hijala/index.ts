@@ -35,6 +35,7 @@ import { CatalogRating,
     UIListSection,
     UIMultiPicker,
     UIToggle } from '@mana-app/types'
+import { ratingAllowed } from '../../ContentRatingPolicy'
 import { HijalaApi } from './HijalaApi'
 import { API,
     Catalog,
@@ -53,6 +54,7 @@ import { blockedGenre,
     catalog,
     chapterTitle,
     content,
+    completeGenres,
     Detail,
     detail,
     genreOptions,
@@ -85,8 +87,8 @@ const options = (ids: string[]): Option[] => ids.map((id) => ({ id, title: LABEL
 
 export class Target implements ChapterSource, PageLinkResolver, SourcePreferenceProvider, ImageRequestHandler {
     readonly info: SourceInfo = {
-        id: 'Hijala', version: '0.0.1-alpha.2', name: 'Hijala', thumbnail: 'Hijala.png', website: DOMAIN,
-        description: 'Hijala public manga catalog, site filters, complete chapters and public reader. Default-on NSFW genre exclusion.',
+        id: 'Hijala', version: '0.0.1-alpha.3', name: 'Hijala', thumbnail: 'Hijala.png', website: DOMAIN,
+        description: 'Hijala public manga catalog, site filters, complete chapters and public reader. Optional NSFW genre exclusion.',
         rating: CatalogRating.MIXED, supportedLanguages: ['en_US', 'es_ES', 'ru_RU'], badges: ['Manga', 'Manhwa', 'Manhua'],
         developers: [{ name: 'Lucifers Circle', website: 'https://pirate.vodka', github: 'https://github.com/LucifersCircle' }]
     }
@@ -99,7 +101,10 @@ export class Target implements ChapterSource, PageLinkResolver, SourcePreference
 
     private async preferences(): Promise<Preferences> {
         const saved = await ObjectStore.get(SETTING) as Partial<Preferences> | null
-        return { excludeNSFW: saved?.excludeNSFW !== false, hidePaid: saved?.hidePaid !== false,
+        // Old writes materialized defaulttrue even for unrelated settings. Only a
+        // versioned future toggle proves a deliberate exclusion choice.
+        return { excludeNSFW: saved?.ratingPreferenceVersion === 1 && saved.excludeNSFW === true,
+            ratingPreferenceVersion: saved?.ratingPreferenceVersion === 1 ? 1 : undefined, hidePaid: saved?.hidePaid !== false,
             types: Array.isArray(saved?.types) ? TYPES.filter((id) => saved!.types!.includes(id)) : [...TYPES],
             sections: Array.isArray(saved?.sections) ? SECTIONS.map((item) => item.id).filter((id) => saved!.sections!.includes(id)) : SECTIONS.map((item) => item.id),
             excludedGenres: Array.isArray(saved?.excludedGenres) ? saved!.excludedGenres!.filter((id) => /^\d+$/.test(id)) : [] }
@@ -107,7 +112,7 @@ export class Target implements ChapterSource, PageLinkResolver, SourcePreference
     private async set<K extends keyof Preferences>(key: K, value: Preferences[K]): Promise<void> {
         preferenceRevision += 1
         const write = preferenceWrite.then(async () => {
-            await ObjectStore.set(SETTING, { ...await this.preferences(), [key]: value })
+            await ObjectStore.set(SETTING, { ...await this.preferences(), [key]: value, ...(key === 'excludeNSFW' ? { ratingPreferenceVersion: 1 } : {}) })
             this.cache.clear(); this.pending.clear(); this.pages.clear()
         })
         preferenceWrite = write.catch(() => undefined)
@@ -152,7 +157,7 @@ export class Target implements ChapterSource, PageLinkResolver, SourcePreference
     async getPreferenceMenu(): Promise<Form> {
         const saved = await this.preferences(), taxonomy = genreOptions(await this.text(`${DOMAIN}/series/`))
         return { sections: [UIListSection({ header: 'Content safety',
-            footer: 'NSFW exclusion is on by default. Uses verified genre labels (including Mature, Ecchi, Adult and Smut), not a four-category site rating. Missing or invalid genres are hidden. Labels may be incomplete; this does not guarantee image content. Applies to discovery, search, details, chapters and reading. Paid/login chapters always remain on the website.',
+            footer: 'Native Mana rating policy controls visibility when supplied. Source NSFW exclusion is optional and defaults off; only a deliberate new source choice applies it. Uses verified genre labels (including Mature, Ecchi, Adult and Smut), not a four-category site rating. Incomplete genres use a Mature compatibility rating with a details note. Labels may be incomplete; this does not guarantee image content. Applies to discovery, search, details, chapters and reading. Paid/login chapters always remain on the website.',
             children: [UIToggle({ id: 'excludeNSFW', title: 'Exclude NSFW content', value: saved.excludeNSFW, didChange: (value) => this.set('excludeNSFW', value) }),
                 UIToggle({ id: 'hidePaid', title: 'Hide paid chapters', value: saved.hidePaid, didChange: (value) => this.set('hidePaid', value) })] }),
         UIListSection({ header: 'Catalog and discovery', children: [
@@ -193,10 +198,10 @@ export class Target implements ChapterSource, PageLinkResolver, SourcePreference
     private allowed(post: Post, saved: Preferences, context?: SourceContext): boolean {
         const value = rating(post)
         return !post.isNovel && !!post.seriesType && saved.types.includes(post.seriesType)
-            && (!saved.excludedGenres.length || value !== undefined)
+            && (!saved.excludedGenres.length || completeGenres(post))
             && !genres(post).some((genre) => saved.excludedGenres.includes(String(genre.id)))
             && (!saved.excludeNSFW || value === ContentRating.SAFE)
-            && (context?.allowedContentRatings === undefined || (value !== undefined && context.allowedContentRatings.includes(value)))
+            && ratingAllowed(value, context)
     }
     private queryURL(request: SearchRequest<Filters>, saved: Preferences, excluded: string[]): string | undefined {
         this.validateFilters(request.filters)
@@ -226,7 +231,7 @@ export class Target implements ChapterSource, PageLinkResolver, SourcePreference
         if (request.listId === 'featured') {
             const posts = pageProperty<Post[]>(await this.text(`${DOMAIN}/`), 'combinedSliderPosts')
             if (!Array.isArray(posts)) throw new Error('Hijala returned invalid featured series')
-            return { results: request.page === 1 ? posts.filter((post) => this.allowed(post, saved, request.context)).map(highlight) : [], isLastPage: true }
+            return { results: request.page === 1 ? posts.filter((post) => this.allowed(post, saved, request.context)).map((post) => ({ ...highlight(post), context: request.context })) : [], isLastPage: true }
         }
         let latestTag = 'latestUpdate'
         if (request.listId === 'latest' || request.listId === 'new') {
@@ -317,7 +322,7 @@ export class Target implements ChapterSource, PageLinkResolver, SourcePreference
             })
             // Offset pages may overlap. Only the stable advertised unique total,
             // not physical page * page size, establishes complete traversal.
-            const result = { results, isLastPage: rawIDs.size === data.totalCount }
+            const result = { results: results.map((item) => ({ ...item, context: request.context })), isLastPage: rawIDs.size === data.totalCount }
             if (results.length || result.isLastPage) {
                 state.set(request.page, { next: apiPage + 1, result })
                 return result
@@ -392,7 +397,7 @@ export class Target implements ChapterSource, PageLinkResolver, SourcePreference
             if (sectionId === 'featured' || sectionId === 'latest') {
                 const posts = pageProperty<Post[]>(html, sectionId === 'featured' ? 'combinedSliderPosts' : 'latestMangaPosts')
                 if (!Array.isArray(posts)) throw new Error('Hijala returned invalid home series')
-                const items = posts.filter((post) => this.allowed(post, saved, link.context)).map(highlight)
+                const items = posts.filter((post) => this.allowed(post, saved, link.context)).map((post) => ({ ...highlight(post), context: link.context }))
                 if (new Set(items.map((item) => item.id)).size !== items.length) throw new Error('Hijala returned duplicate home series')
                 // Home's20 releases and API's latest catalog are ordered differently. View more opens the full catalog from its first page, not an invented continuation.
                 return { items, viewMoreLink: sectionId === 'latest' ? { request: { page: 1, listId: 'latest', context: link.context } } : undefined }
@@ -405,7 +410,7 @@ export class Target implements ChapterSource, PageLinkResolver, SourcePreference
                     const full = metadata.get(post.slug)
                     if (!full || !this.allowed(full, saved, link.context)) return []
                     if (post.title.trim() !== full.postTitle.trim() || post.coverImage !== full.featuredImage) throw new Error('Hijala popular metadata disagrees with the home page')
-                    return [highlight(full)]
+                    return [{ ...highlight(full), context: link.context }]
                 })
                 return { items }
             }
@@ -419,7 +424,7 @@ export class Target implements ChapterSource, PageLinkResolver, SourcePreference
                 if (!full || seen.has(update.seriesSlug) || (saved.hidePaid && update.isPaid) || !this.allowed(full, saved, link.context)) continue
                 seen.add(update.seriesSlug)
                 const item = highlight(full), title = chapterTitle(update.chapterTitle, update.chapterNumber)
-                items.push({ ...item, subtitle: `${update.isPaid ? '[Paid] ' : ''}Chapter ${update.chapterNumber}${title ? `: ${title}` : ''}` })
+                items.push({ ...item, context: link.context, subtitle: `${update.isPaid ? '[Paid] ' : ''}Chapter ${update.chapterNumber}${title ? `: ${title}` : ''}` })
             }
             // The site has45 home update entries. Native Mana has series links only, so show the latest visible update per series, without pretending there is a paged chapter feed.
             return { items }
@@ -431,6 +436,7 @@ export class Target implements ChapterSource, PageLinkResolver, SourcePreference
         return result
     }
     async getContent(contentId: string, context?: SourceContext): Promise<Content> {
+        if (context?.allowedContentRatings?.length === 0) throw new Error('This title is excluded by Mana content-rating policy')
         return this.withPreferences(async (saved) => content(await this.allowedDetail(contentId, saved, context), contentId, saved.hidePaid))
     }
     async getChapters(contentId: string): Promise<Chapter[]> {

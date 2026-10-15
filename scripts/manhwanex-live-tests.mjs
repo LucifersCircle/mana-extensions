@@ -34,7 +34,107 @@ function webpDimensions(bytes) {
   return [bytes.readUInt16LE(26) & 0x3fff, bytes.readUInt16LE(28) & 0x3fff];
 }
 
-export async function testManhwaNex({ source, check, requests, freshSource }) {
+export async function testManhwaNexNativeRatings({ source, check, requests, freshSource, nativeStore }) {
+  const setting = async (target, value) => {
+    const field = (await target.getPreferenceMenu()).sections[0].children[0];
+    if (value !== undefined) await field.didChange(value);
+    return field;
+  };
+  const context = (ratings) => ({ allowedContentRatings: ratings });
+  const fields = '.mg_genres .summary-content a, .tab-summary .genres-content a';
+  const warning = '.adult-content, .manga-adult, .adult-warning, [data-adult="1"], [data-adult="true"]';
+  let baseline;
+  await check('Native rating authority defaults to no extra source cap and replays raw cached pages under changed contexts', async () => {
+    if (nativeStore) assert.equal(await nativeStore.get('ManhwaNex.excludeNSFW'), null);
+    assert.equal((await setting(source)).value, false, 'Never-saved preference silently imposed an adult cap');
+    const start = requests.length;
+    baseline = await source.search({ page: 1 });
+    assert(baseline.results.length);
+    assert(requests.slice(start).every((request) => new URL(request.url).searchParams.get('adult') !== '0'));
+    assert(baseline.results.every((item) => [2, 3].includes(item.contentRating)));
+    if (nativeStore) assert.equal(await nativeStore.get('ManhwaNex.excludeNSFW'), null, 'Reading an unset preference must not save a default');
+    const warm = requests.length;
+    const all = await source.search({ page: 1, context: context([0, 1, 2, 3]) });
+    assert.deepEqual(ids(all.results), ids(baseline.results));
+    const mature = await source.search({ page: 1, context: context([2]) });
+    assert(mature.results.every((item) => item.contentRating === 2));
+    for (const ratings of [[], [0], [1]]) {
+      const none = await source.search({ page: 1, context: context(ratings) });
+      assert.equal(none.results.length, 0); assert.equal(none.isLastPage, true);
+    }
+    assert.deepEqual(ids((await source.search({ page: 1 })).results), ids(baseline.results));
+    const narrowContext = context([2]), broadContext = context([0, 1, 2, 3]);
+    const concurrent = await Promise.all([source.search({ page: 1, context: narrowContext }), source.search({ page: 1, context: broadContext })]);
+    assert(concurrent[0].results.every((item) => item.contentRating === 2 && item.context === narrowContext));
+    assert(concurrent[1].results.every((item) => item.context === broadContext));
+    assert.deepEqual(ids(concurrent[1].results), ids(baseline.results));
+    assert.equal(requests.length, warm, 'Context changes discarded reusable raw native pages');
+    const changed = context([2]);
+    const row = await source.resolvePageSection({ id: 'home', context: changed }, 'latest');
+    assert(row.items.every((item) => item.contentRating === 2 && item.context === changed));
+    assert.strictEqual(row.viewMoreLink.request.context, changed, 'viewMore lost its exact native context');
+    await setting(source, false);
+    if (nativeStore) assert.equal(await nativeStore.get('ManhwaNex.excludeNSFW'), false);
+    assert.equal((await setting(freshSource())).value, false, 'Saved false did not survive source restart');
+    await setting(source, true);
+    assert.equal((await setting(freshSource())).value, true, 'Saved true did not survive source restart');
+    await setting(source, false);
+  });
+  await check('Native details use supported Mature fallback only for incomplete metadata and retain positive adult warnings', async () => {
+    const id = baseline.results.find((item) => item.contentRating === 2).id;
+    for (const adult of [false, true]) {
+      const cold = freshSource(), original = cold.api.text.bind(cold.api);
+      cold.api.text = async (...args) => {
+        const $ = load(await original(...args)); $(fields).remove(); $(warning).remove();
+        if (adult) $('.tab-summary').first().append('<span class="adult-warning"></span>');
+        return $.html();
+      };
+      const details = await cold.getContent(id, context([adult ? 3 : 2]));
+      assert.equal(details.contentRating, adult ? 3 : 2);
+      const markers = details.additionalInfo.filter((section) => section.id === 'content-rating-metadata');
+      assert.equal(markers.length, adult ? 0 : 1);
+      if (!adult) assert(markers[0].items.some((item) => /Incomplete metadata.*Mature compatibility fallback/.test(item.title)));
+      assert.equal(details.webUrl, `${domain}/manga/${id}/`);
+      await assert.rejects(() => cold.getContent(id, context([adult ? 2 : 0])), /Mana.*content-rating policy/);
+      await assert.rejects(() => cold.getContent(id, context([])), /Mana.*content-rating policy/);
+    }
+    const allowed = freshSource(), details = await allowed.getContent(id, context([2]));
+    await assert.rejects(() => allowed.getContent(id, context([3])), /Mana.*content-rating policy/);
+    // Reader callbacks have no native SourceContext. A preceding restricted call
+    // must not poison authorized source-only chapter or image access.
+    const chapters = await allowed.getChapters(id);
+    assert(chapters.length);
+    const reader = await allowed.getChapterData(id, chapters.at(-1).chapterId);
+    await imageBytes(allowed, reader.pages[0].url);
+    await imageBytes(allowed, details.cover);
+  });
+  await check('Native singleton policy skips excluded-only physical pages and never caches a reader policy', async () => {
+    const cold = freshSource(), original = cold.api.text.bind(cold.api);
+    let second, third;
+    cold.api.text = async (...args) => {
+      const value = await original(...args);
+      if (args[1] === 'POST') return value;
+      const $ = load(value);
+      if (args[0] === `${domain}/?s=&post_type=wp-manga`) second = $('.wp-pagenavi a.nextpostslink').attr('href');
+      else if (args[0] === second) { $('.c-tabs-item__content').append('<span class="adult-warning"></span>'); third = $('.wp-pagenavi a.nextpostslink').attr('href'); }
+      else if (args[0] === third) $('.wp-pagenavi a.nextpostslink').remove();
+      return $.html();
+    };
+    const first = await cold.search({ page: 1, context: context([2]) });
+    const next = await cold.search({ page: 2, context: context([2]) });
+    assert(first.results.length && next.results.length && next.isLastPage);
+    assert(first.results.every((item) => item.contentRating === 2) && next.results.every((item) => item.contentRating === 2));
+    assert.equal(new Set([...ids(first.results), ...ids(next.results)]).size, first.results.length + next.results.length);
+    const explicit = await cold.search({ page: 1, context: context([3]) });
+    assert(explicit.results.length && explicit.results.every((item) => item.contentRating === 3));
+    assert.deepEqual(ids((await cold.search({ page: 2, context: context([2]) })).results), ids(next.results));
+  });
+  // Existing safety/authorization tests below explicitly exercise saved true.
+  await setting(source, true);
+}
+
+export async function testManhwaNex({ source, check, requests, freshSource, nativeStore }) {
+  await testManhwaNexNativeRatings({ source, check, requests, freshSource, nativeStore });
   const preference = async (value) => {
     const field = (await source.getPreferenceMenu()).sections.flatMap((section) => section.children ?? []).find((item) => item.id === 'excludeNSFW');
     assert(field, 'Missing persistent NSFW setting');
@@ -43,7 +143,7 @@ export async function testManhwaNex({ source, check, requests, freshSource }) {
   };
   let sections, home, catalog, content, chapters, form;
   const sample = 'logging-10000-years-into-the-future';
-  await check('Default-safe native discovery uses two cold requests and zero warm requests', async () => {
+  await check('Explicitly saved source exclusion uses two cold requests and zero warm requests', async () => {
     assert.equal((await preference()).value, true);
     const before = requests.length;
     sections = await source.getSectionsForPage({ id: 'home' });

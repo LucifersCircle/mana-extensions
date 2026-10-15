@@ -50,6 +50,7 @@ import { Challenge,
     validId } from './KaganeModels'
 import { allowed,
     available,
+    classify,
     chapters,
     content,
     highlight,
@@ -58,17 +59,18 @@ import { hasHidden,
     hostRatingKey,
     includedTagGroups,
     matchesTagGroups,
+    selectedOptions,
     searchBody,
     selectedRatings } from './KaganeSearch'
 import { groupTags,
     tagFilterId } from './tag-groups'
 
 type ReaderSession = { challenge: Challenge, expiry: number }
-type SearchPage = { result: PagedSearchResult, next: number, fingerprint: string }
+type SearchPage = { result: PagedSearchResult, next: number, seenIDs: string[] }
 
 export class Target implements ContentSource, PageLinkResolver, ImageRequestHandler, SourcePreferenceProvider {
     readonly info: SourceInfo = {
-        id: 'Kagane', version: '0.0.1-alpha.1', name: 'Kagane',
+        id: 'Kagane', version: '0.0.1-alpha.2', name: 'Kagane',
         description: 'Kagane with current API support, grouped tags and global four-category content settings.',
         thumbnail: 'Kagane.png', rating: CatalogRating.MIXED, website: DOMAIN,
         badges: ['Manga', 'Manhwa', 'Manhua', 'Comic'], supportedLanguages: ['en_US'],
@@ -90,7 +92,7 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
         const [contentRatings, showSource, showEdition, cleanTitle, showSpoilers, dataSaver, uploadSource, languages, excludedGenres, excludedTags, chapterTitle] = values
         const stringArray = (value: unknown, fallback: string[]): string[] => Array.isArray(value) && value.every((item) => typeof item === 'string') ? value : fallback
         const settings: Settings = {
-            contentRatings: Array.isArray(contentRatings) ? RATINGS.filter((rating) => contentRatings.includes(rating)) : ['Safe', 'Suggestive'], showSource: showSource === true, showEdition: showEdition === true,
+            contentRatings: Array.isArray(contentRatings) ? RATINGS.filter((rating) => contentRatings.includes(rating)) : [...RATINGS], showSource: showSource === true, showEdition: showEdition === true,
             cleanTitle: cleanTitle === true, showSpoilers: showSpoilers === true, dataSaver: dataSaver === true,
             uploadSource: UPLOADS.some((option) => option.id === uploadSource) ? uploadSource as string : 'all',
             languages: stringArray(languages, ['en']), excludedGenres: stringArray(excludedGenres, []), excludedTags: stringArray(excludedTags, []),
@@ -131,7 +133,7 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
         const settings = await this.settings()
         const [genres, tags] = await Promise.all([this.api.genres().catch(() => []), this.api.tags().catch(() => [])])
         return { sections: [
-            UIListSection({ header: 'Content safety', footer: 'Safe and Suggestive are selected by default. Choose the categories to show; selecting none hides all titles. Unknown or conflicting ratings are hidden. Applied locally to browsing, searches, details, chapters and reading because API filters can be ignored. Site labels are not a guarantee of image content.', children: [
+            UIListSection({ header: 'Content safety', footer: 'Native Mana rating policy controls visibility when supplied. All source categories are available by default; an explicitly saved source selection remains an additional filter. Selecting none hides all titles. Incomplete rating metadata uses a Mature compatibility fallback with a details note. Applied locally to browsing, searches, details, chapters and reading because API filters can be ignored. Site labels are not a guarantee of image content.', children: [
                 UIMultiPicker({ id: 'contentRatings', title: 'Content categories to show', options: options(RATINGS), value: settings.contentRatings, didChange: (value) => this.save('contentRatings', value) }),
                 UIMultiPicker({ id: 'excludedGenres', title: 'Hidden genres', options: genres.map((genre) => ({ id: genre.id, title: genre.genre_name })), value: settings.excludedGenres, didChange: (value) => this.save('excludedGenres', value) })
             ] }),
@@ -177,10 +179,11 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
     async search(request: SearchRequest<Filters>): Promise<PagedSearchResult> {
         return this.withSettings(async (settings) => {
             const page = request.page ?? 1
-            if (!Number.isInteger(page) || page < 1) throw new Error('Invalid Kagane page')
+            if (!Number.isSafeInteger(page) || page < 1 || page > 1000) throw new Error('Invalid Kagane page')
             const section = request.listId ? SECTIONS.find((entry) => entry.id === request.listId) : undefined
             if (request.listId && !section) throw new Error('Unknown Kagane discovery list')
             const ratings = selectedRatings(request, settings)
+            const explicitSourceRatings = selectedOptions(request.filters, 'content_rating')
             if (!ratings.length) return { results: [], isLastPage: true }
             const tags = typeof request.filters?.tag_query === 'string' && request.filters.tag_query.trim() ? await this.api.tags() : []
             const conceptualTags = includedTagGroups(request.filters, tags)
@@ -202,35 +205,41 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
                 if (existing) return existing
                 const promise = (async (): Promise<SearchPage> => {
                     const previous = logicalPage > 1 ? await loadPage(logicalPage - 1) : undefined
-                    if (previous?.result.isLastPage) return { result: { results: [], isLastPage: true }, next: previous.next, fingerprint: previous.fingerprint }
+                    if (previous?.result.isLastPage) return { result: { results: [], isLastPage: true }, next: previous.next, seenIDs: previous.seenIDs }
                     let rawPage = previous?.next ?? 1
-                    const seen = new Set<string>(previous?.fingerprint ? [previous.fingerprint] : [])
+                    const seenIDs = new Set<string>(previous?.seenIDs ?? [])
                     for (let attempt = 0; attempt < 20; attempt += 1, rawPage += 1) {
+                        if (rawPage > 1000) throw new Error('Kagane pagination exceeded its bounded page limit; refresh')
                         const response = await this.api.search(body, rawPage, PAGE_SIZE, sortParameter, exact)
-                        const fingerprint = JSON.stringify(response.content.map((item) => item?.series_id))
-                        if (!response.last && seen.has(fingerprint)) throw new Error('Kagane search pagination repeated a page')
-                        seen.add(fingerprint)
                         const visible = response.content.filter((item) => {
                             if (!item || typeof item.series_id !== 'string' || typeof item.title !== 'string' || !item.title.trim()) throw new Error('Kagane search contains invalid titles')
                             validId(item.series_id)
+                            if (seenIDs.has(item.series_id)) return false
+                            seenIDs.add(item.series_id)
+                            if (seenIDs.size > 10000) throw new Error('Kagane pagination exceeded its bounded title limit; refresh')
+                            if (!classify(item) && explicitSourceRatings.length) return false
                             return matchesTagGroups(item.tags, conceptualTags, request.filters?.match_all_tags === true) && allowed(item, settings, ratings, request.context?.allowedContentRatings) && !!item.cover_image_id?.trim() && !hasHidden(item.genres, settings.excludedGenres) && !hasHidden(item.tags, settings.excludedTags)
                         })
                         if (visible.length || response.last) {
                             const sources = settings.showSource ? await this.api.sources() : []
-                            return { result: { results: visible.map((item) => highlight(item, settings, sources)), isLastPage: response.last }, next: rawPage + 1, fingerprint }
+                            return { result: { results: visible.map((item) => highlight(item, settings, sources)), isLastPage: response.last }, next: rawPage + 1, seenIDs: [...seenIDs] }
                         }
                     }
-                    throw new Error('Kagane returned too many filtered-out pages; narrow your search')
+                    throw new Error('Kagane returned too many repeated or filtered-out pages; narrow your search')
                 })().catch((error: unknown) => { session.delete(logicalPage); throw error })
                 session.set(logicalPage, promise)
                 return promise
             }
-            return (await loadPage(page)).result
+            const result = (await loadPage(page)).result
+            // Only policy-filtered metadata is cached; origin and other native
+            // context belong to the current request, including cache hits.
+            return { ...result, results: result.results.map((item) => ({ ...item, context: request.context })) }
         })
     }
 
     private async requireAllowed(id: string, settings: Settings, context?: SourceContext): Promise<Detail> {
         validId(id)
+        if (!settings.contentRatings.length || context?.allowedContentRatings?.length === 0) throw new Error('This title is excluded by Kagane or Mana content-rating policy')
         const details = await this.api.series(id)
         if (!allowed(details, settings, undefined, context?.allowedContentRatings) || hasHidden(details.genres?.map((genre) => genre.genre_id ?? ''), settings.excludedGenres) || hasHidden(details.tags?.map((tag) => tag.tag_id ?? ''), settings.excludedTags)) throw new Error('This title is excluded by Kagane content settings or its rating cannot be verified')
         const source = settings.uploadSource !== 'all' ? (await this.api.sources()).find((entry) => entry.source_id === details.source_id) : undefined

@@ -114,8 +114,12 @@ describe('VortexScans metadata parsing', () => {
         ])[0]?.contentRating).toBe(ContentRating.MATURE)
         expect(parser.parseContent({
             ...post,
-            genres: [{ id: 49, name: 'Harem' }]
+            genres: [{ id: 49, name: 'Ecchi' }]
         }).contentRating).toBe(ContentRating.SUGGESTIVE)
+        expect(parser.parseContent({ ...post, genres: [{ id: 49, name: 'Harem' }] }).contentRating).toBe(ContentRating.SAFE)
+        const unrated = parser.parseContent({ ...post, genres: [] })
+        expect(unrated.contentRating).toBe(ContentRating.MATURE)
+        expect(unrated.additionalInfo?.some((section) => section.id === 'content-rating-metadata')).toBe(true)
     })
 })
 

@@ -44,7 +44,7 @@ export interface ReaderChapter extends SiteChapter {
     mangaPost?: { slug: string, isNovel?: boolean }, images?: { url: string, order: number }[]
 }
 export interface Preferences {
-    excludeNSFW: boolean, hidePaid: boolean, types: string[], sections: string[], excludedGenres: string[]
+    excludeNSFW: boolean, ratingPreferenceVersion?: number, hidePaid: boolean, types: string[], sections: string[], excludedGenres: string[]
 }
 
 export interface HomeUpdate {

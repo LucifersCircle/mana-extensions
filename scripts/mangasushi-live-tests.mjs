@@ -70,7 +70,145 @@ export async function coverDimensions(source, url) {
 
 // Source-specific live assertions use the real native bundle passed by the runner.
 // No saved pages, parser fixtures or substitute source implementation are used.
-export async function testMangaSushi({ source, check, highlights, searchResult, image, requests, freshSource }) {
+export async function testMangaSushiNativeRatings({ source, check, requests, freshSource, nativeStore }) {
+  const domain = 'https://mangasushi.org';
+  const setting = async (target, value) => {
+    const field = (await target.getPreferenceMenu()).sections[0].children[0];
+    if (value !== undefined) await field.didChange(value);
+    return field;
+  };
+  const context = (ratings) => ({ allowedContentRatings: ratings });
+  const ids = (items) => Array.from(items, (item) => item.id);
+  let baseline, sample;
+  await check('Native rating policy is authoritative with no never-saved source cap and reusable context-neutral caches', async () => {
+    if (nativeStore) assert.equal(await nativeStore.get('MangaSushi.excludeNSFW'), null);
+    assert.equal((await setting(source)).value, false);
+    const start = requests.length;
+    baseline = await source.search({ page: 1 });
+    assert(baseline.results.length);
+    assert(requests.slice(start).every((request) => new URL(request.url).searchParams.get('adult') !== '0'));
+    assert(baseline.results.every((item) => [0, 2, 3].includes(item.contentRating)));
+    if (nativeStore) assert.equal(await nativeStore.get('MangaSushi.excludeNSFW'), null, 'Reading an unset preference must not save a default');
+    const warm = requests.length;
+    assert.deepEqual(ids((await source.search({ page: 1, context: context([0, 1, 2, 3]) })).results), ids(baseline.results));
+    const safe = await source.search({ page: 1, context: context([0]) });
+    assert(safe.results.length && safe.results.every((item) => item.contentRating === 0)); sample = safe.results[0];
+    assert.deepEqual(ids((await source.search({ page: 1 })).results), ids(baseline.results));
+    const narrowContext = context([0]), broadContext = context([0, 1, 2, 3]);
+    const concurrent = await Promise.all([source.search({ page: 1, context: narrowContext }), source.search({ page: 1, context: broadContext })]);
+    assert(concurrent[0].results.every((item) => item.contentRating === 0 && item.context === narrowContext));
+    assert(concurrent[1].results.every((item) => item.context === broadContext));
+    assert.deepEqual(ids(concurrent[1].results), ids(baseline.results));
+    const none = await source.search({ page: 1, context: context([]) });
+    assert.equal(none.results.length, 0); assert.equal(none.isLastPage, true);
+    assert.equal(requests.length, warm, 'Changed native policies lost reusable raw page caches');
+    const exact = context([0, 2, 3]), row = await source.resolvePageSection({ id: 'home', context: exact }, 'latest');
+    assert(row.items.length && row.items.every((item) => item.context === exact));
+    assert.strictEqual(row.viewMoreLink.request.context, exact);
+    await setting(source, false); assert.equal((await setting(freshSource())).value, false);
+    await setting(source, true); assert.equal((await setting(freshSource())).value, true);
+    await setting(source, false);
+  });
+  await check('Live native parsers map incomplete metadata to Mature and keep actual adult warnings Explicit', async () => {
+    for (const adult of [false, true]) {
+      const cold = freshSource(), original = cold.api.text.bind(cold.api);
+      cold.api.text = async (...args) => {
+        const $ = load(await original(...args));
+        $('.mg_genres .summary-content a, .tab-summary .genres-content a').remove();
+        $('.adult-content, .manga-adult, .adult-warning, [data-adult="1"], [data-adult="true"]').remove();
+        if (adult) { $('.tab-summary').first().append('<span class="adult-warning"></span>'); $('.c-tabs-item__content').append('<span class="adult-warning"></span>'); }
+        return $.html();
+      };
+      const details = await cold.getContent(sample.id, context([adult ? 3 : 2]));
+      assert.equal(details.contentRating, adult ? 3 : 2);
+      const markers = details.additionalInfo.filter((section) => section.id === 'content-rating-metadata');
+      assert.equal(markers.length, adult ? 0 : 1);
+      if (!adult) assert(markers[0].items.some((item) => /Incomplete metadata.*Mature compatibility fallback/.test(item.title)));
+      assert.equal(details.webUrl, sample.webUrl);
+      await assert.rejects(() => cold.getContent(sample.id, context([adult ? 2 : 0])), /Mana.*content-rating policy/);
+      await assert.rejects(() => cold.getContent(sample.id, context([])), /Mana.*content-rating policy/);
+    }
+    const cold = freshSource(), details = await cold.getContent(sample.id, context([0]));
+    await assert.rejects(() => cold.getContent(sample.id, context([3])), /Mana.*content-rating policy/);
+    const chapters = await cold.getChapters(sample.id);
+    assert(chapters.length);
+    const reader = await cold.getChapterData(sample.id, chapters.at(-1).chapterId);
+    await coverDimensions(cold, reader.pages[0].url);
+    await coverDimensions(cold, details.cover);
+  });
+  await check('Native singleton ratings use only verified coarse source markers and never infer a Suggestive taxonomy', async () => {
+    for (const [genre, expected] of [[null, 2], ['mature', 2], ['ecchi', 2], ['hentai', 3], ['smut', 3], ['erotica', 3]]) {
+      const cold = freshSource(), original = cold.api.text.bind(cold.api);
+      cold.api.text = async (...args) => {
+        const $ = load(await original(...args));
+        $('#navigation-ajax').remove();
+        $('.c-tabs-item__content').each((_, node) => {
+          const row = $(node); row.find('.mg_genres .summary-content').empty();
+          row.find('.adult-content, .manga-adult, .adult-warning, [data-adult="1"], [data-adult="true"]').remove();
+          if (genre) row.find('.mg_genres .summary-content').append(`<a href="${domain}/manga-genre/${genre}/">${genre}</a>`);
+        });
+        return $.html();
+      };
+      const result = await cold.search({ page: 1, context: context([expected]) });
+      assert(result.results.length && result.isLastPage);
+      assert(result.results.every((item) => item.contentRating === expected));
+      for (const ratings of [[1], [expected === 2 ? 3 : 2], []]) {
+        const none = await cold.search({ page: 1, context: context(ratings) });
+        assert.equal(none.results.length, 0); assert.equal(none.isLastPage, true);
+      }
+    }
+  });
+  await check('Warm native search pages retain a newly observed adult warning instead of relabeling it Safe', async () => {
+    const cold = freshSource(), initial = await cold.search({ page: 1 });
+    const item = initial.results.find((item) => item.contentRating === 0);
+    assert(item);
+    const original = cold.api.text.bind(cold.api);
+    cold.api.text = async (...args) => {
+      const value = await original(...args);
+      if (args[0] !== item.webUrl) return value;
+      const $ = load(value); $('.tab-summary').first().append('<span class="adult-warning"></span>'); return $.html();
+    };
+    assert.equal((await cold.getContent(item.id, context([3]))).contentRating, 3);
+    const safe = await cold.search({ page: 1, context: context([0]) });
+    assert(!safe.results.some((row) => row.id === item.id));
+    const all = await cold.search({ page: 1 });
+    assert.equal(all.results.find((row) => row.id === item.id).contentRating, 3);
+    await assert.rejects(() => cold.getContent(item.id, context([0])), /Mana.*content-rating policy/);
+  });
+  for (const mode of ['excluded-only', 'duplicate-only']) await check(`Native logical pagination passes ${mode} physical pages without losing later eligible IDs`, async () => {
+    const cold = freshSource(), original = cold.api.text.bind(cold.api);
+    let firstRows;
+    cold.api.text = async (url, body) => {
+      const value = await original(url, body), $ = load(value);
+      if (body === undefined && url === `${domain}/?s=&post_type=wp-manga`) firstRows = $('.c-tabs-item__content').toArray().map((node) => $.html(node));
+      if (body) {
+        const page = Number(new URLSearchParams(body).get('page')) + 1;
+        if (page === 2) {
+          if (mode === 'excluded-only') $('.c-tabs-item__content').append('<span class="adult-warning"></span>');
+          else $('.c-tabs-item__content').each((index, node) => $(node).replaceWith(firstRows[index % firstRows.length]));
+        }
+        if (page === 3) $.root().append('<span class="no-posts"></span>');
+      }
+      return $.html();
+    };
+    const first = await cold.search({ page: 1, context: context([0]) }), next = await cold.search({ page: 2, context: context([0]) });
+    assert(first.results.length && next.results.length && next.isLastPage);
+    assert(first.results.every((item) => item.contentRating === 0) && next.results.every((item) => item.contentRating === 0));
+    const combined = [...ids(first.results), ...ids(next.results)]; assert.equal(new Set(combined).size, combined.length);
+    const end = await cold.search({ page: 3, context: context([0]) }); assert.equal(end.results.length, 0); assert.equal(end.isLastPage, true);
+    const warm = requests.length;
+    assert.deepEqual(ids((await cold.search({ page: 2, context: context([0]) })).results), ids(next.results));
+    assert.equal(requests.length, warm);
+    if (mode === 'excluded-only') {
+      const adult = await cold.search({ page: 1, context: context([3]) });
+      assert(adult.results.length && adult.results.every((item) => item.contentRating === 3));
+    }
+  });
+  await setting(source, true);
+}
+
+export async function testMangaSushi({ source, check, highlights, searchResult, image, requests, freshSource, nativeStore }) {
+  await testMangaSushiNativeRatings({ source, check, requests, freshSource, nativeStore });
   const domain = 'https://mangasushi.org';
   const sample = 'welcome-to-the-cheap-restaurant-of-outcasts';
   const blockedTags = new Set(['adult', 'mature', 'smut', 'hentai', 'erotica', 'ecchi']);
@@ -82,7 +220,7 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
   };
   let catalog, safeContent, form, unfiltered, home, chapters, knownBlocked, coverEvidence;
   const homeIDs = {};
-  await check('Global NSFW exclusion defaults on and uses native adult=0', async () => {
+  await check('Explicitly saved NSFW exclusion uses native adult=0', async () => {
     assert.equal((await preference()).value, true);
     catalog = await source.search({ page: 1 }); searchResult(catalog);
     assert(requests.some((request) => new URL(request.url).searchParams.get('adult') === '0'));
@@ -536,15 +674,23 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
     assert.throws(() => assertReadOnlyMangaSushiPost({ url: `${domain}/wp-admin/admin-ajax.php`, method: 'POST',
       body: 'action=madara_load_more&action=wp-manga-save-rating&page=1&template=madara-core%2Fcontent%2Fcontent-search&vars%5Bpost_type%5D=wp-manga' }), /duplicate|conflicting/i);
   });
-  await check('Repeated nonempty AJAX pages fail visibly instead of looping', async () => {
+  await check('Repeated provider pages stop within ten consecutive no-new-raw-ID reads', async () => {
     await preference(true);
-    await source.search({ page: 1 });
-    const html = await source.api.text(`${domain}/?s=&post_type=wp-manga&adult=0`);
-    const original = source.api.text;
+    const cold = freshSource(), original = cold.api.text.bind(cold.api);
+    let html, physicalReads = 0;
     try {
-      source.api.text = async () => html;
-      await assert.rejects(source.search({ page: 2 }), /repeated a catalog page/i);
-    } finally { source.api.text = original; }
+      cold.api.text = async (...args) => {
+        physicalReads += 1;
+        html ??= await original(...args);
+        return html;
+      };
+      await cold.search({ page: 1 });
+      await assert.rejects(cold.search({ page: 2 }), /provider repeated.*without new raw series IDs/i);
+      assert.equal(physicalReads, 11, 'One initial page plus at most ten no-progress continuation reads');
+      const bounded = physicalReads;
+      await assert.rejects(cold.search({ page: 101 }), /Invalid MangaSushi page/i);
+      assert.equal(physicalReads, bounded, 'The independent 100-page bound must reject before an outgoing request');
+    } finally { cold.api.text = original; }
   });
   await preference(true);
 }
