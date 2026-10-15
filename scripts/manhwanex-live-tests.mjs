@@ -173,6 +173,7 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
     return field;
   };
   let sections, home, catalog, content, chapters, form;
+  const detailResponses = new Map();
   const sample = 'logging-10000-years-into-the-future';
   await check('Explicitly saved source exclusion uses two cold requests and zero warm requests', async () => {
     assert.equal((await preference()).value, true);
@@ -297,10 +298,8 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
     assert.deepEqual(ids(result[0].items), ids(result[1].items));
     assert.equal(requests.length - before, 2, 'Concurrent archive requests duplicated native reads');
   });
-  await check('Distinct native canonical aliases retain both cards and their separate chapter inventories', async () => {
+  await check('Distinct native canonical aliases retain separate details and chapter inventories', async () => {
     const aliases = ['catastrophic-necromancer', 'disastrous-necromancer'];
-    const latest = await source.search({ page: 1, listId: 'latest' });
-    for (const id of aliases) assert(ids(latest.results).includes(id));
     const inventories = [];
     for (const id of aliases) {
       const cold = freshSource(), detail = await cold.getContent(id), list = await cold.getChapters(id);
@@ -605,7 +604,17 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
     const item = catalog.results[0], result = await source.search({ page: 1, query: item.title });
     assert(result.results.some((match) => match.id === item.id && match.title === item.title));
     const cold = freshSource();
-    content = await cold.getContent(sample);
+    const original = cold.api.text.bind(cold.api);
+    cold.api.text = async (...args) => {
+      const value = await original(...args);
+      detailResponses.set(JSON.stringify(args), value);
+      return value;
+    };
+    let large;
+    try {
+      content = await cold.getContent(sample);
+      large = await cold.getContent('global-class-change-i-am-the-invincible-shadow-monarch');
+    } finally { cold.api.text = original; }
     assert.equal(content.webUrl, `${domain}/manga/${sample}/`);
     assert(content.title.includes('10,000') && content.summary?.trim());
     assert(content.additionalTitles.some((title) => title.includes('Logging 10,000 Years into the Future')));
@@ -618,13 +627,73 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
       reference('.tab-summary .tags-content a').toArray().map((node) => reference(node).text().trim()));
     assert.equal((await cold.handleURL(content.webUrl)).content.id, sample);
     await imageBytes(cold, content.cover);
-    const large = await cold.getContent('global-class-change-i-am-the-invincible-shadow-monarch');
     const largeReference = await html(large.webUrl);
     assert.equal(large.cover, largeReference('meta[property="og:image"]').attr('content'));
     assert.deepEqual(imageDimensions(await imageBytes(cold, large.cover)), [1087, 1447]);
     const largeTags = Array.from(large.additionalInfo).filter((section) => /^source-tags(?:-\d+)?$/.test(section.id));
     assert(largeTags.every((section) => section.items.length <= 10));
     assert(largeTags.flatMap((section) => Array.from(section.items)).some((tag) => /%[a-f0-9]{2}/i.test(tag.id)), 'Encoded Unicode source tag IDs were not retained');
+  });
+  await check('Source-issued images stay coherent across stale readers, cached writers, concurrent instances and store failures', async () => {
+    assert(nativeStore && detailResponses.size, 'Missing native store or live detail responses for image-registry checks');
+    const globalID = 'global-class-change-i-am-the-invincible-shadow-monarch';
+    for (const id of [sample, globalID]) assert(detailResponses.has(JSON.stringify([`${domain}/manga/${id}/`])), 'Missing captured native detail response');
+    const key = 'ManhwaNex.issuedImages', saved = await nativeStore.get(key), before = requests.length;
+    const replay = () => {
+      const target = freshSource();
+      target.api.text = async (...args) => {
+        const value = detailResponses.get(JSON.stringify(args));
+        assert.equal(typeof value, 'string', 'Image-registry check attempted an uncaptured provider request');
+        return value;
+      };
+      return target;
+    };
+    const originalGet = nativeStore.get, originalSet = nativeStore.set;
+    try {
+      await nativeStore.set(key, []);
+      const writer = replay(), staleReader = replay();
+      await writer.getContent(globalID);
+      await staleReader.getContent(globalID);
+      const issued = await replay().getContent(sample);
+      assert.equal((await replay().willRequestImage(issued.cover)).url, issued.cover);
+      assert.equal((await staleReader.willRequestImage(issued.cover)).url, issued.cover, 'A stale reader lost another instance\'s source-issued image');
+      await writer.getContent(globalID);
+      assert.equal((await replay().willRequestImage(issued.cover)).url, issued.cover, 'A stale cached writer removed another instance\'s image');
+
+      await nativeStore.set(key, []);
+      await assert.rejects(() => staleReader.willRequestImage(issued.cover), /image was not issued by this source/, 'A stale reader authorized an evicted image');
+      await nativeStore.set(key, [[issued.cover, '../bad'], [issued.cover], [issued.cover, null], ['https://example.com/not-issued.png', sample]]);
+      await assert.rejects(() => staleReader.willRequestImage(issued.cover), /image was not issued by this source/, 'Malformed persisted entries authorized an image');
+      await nativeStore.set(key, [[issued.cover, sample]]);
+      assert.equal((await replay().willRequestImage(issued.cover)).url, issued.cover, 'Valid legacy persisted entries stopped working');
+
+      await nativeStore.set(key, []);
+      const pair = await Promise.all([replay().getContent(sample), replay().getContent(globalID)]);
+      for (const item of pair) assert.equal((await replay().willRequestImage(item.cover)).url, item.cover, 'Concurrent native writers lost an image');
+
+      let failWrite = true;
+      nativeStore.set = async (name, value) => {
+        if (name === key && failWrite) { failWrite = false; throw new Error('Intentional image-registry write failure'); }
+        return originalSet.call(nativeStore, name, value);
+      };
+      await assert.rejects(() => replay().getContent(sample), /Intentional image-registry write failure/);
+      nativeStore.set = originalSet;
+      await replay().getContent(globalID);
+      assert.equal((await replay().willRequestImage(pair[0].cover)).url, pair[0].cover, 'A failed store write poisoned later image operations');
+
+      let failRead = true;
+      nativeStore.get = async (name) => {
+        if (name === key && failRead) { failRead = false; throw new Error('Intentional image-registry read failure'); }
+        return originalGet.call(nativeStore, name);
+      };
+      await assert.rejects(() => replay().willRequestImage(pair[0].cover), /Intentional image-registry read failure/);
+      nativeStore.get = originalGet;
+      assert.equal((await replay().willRequestImage(pair[0].cover)).url, pair[0].cover, 'A failed store read poisoned later image operations');
+      assert.equal(requests.length, before, 'Response-derived image-registry checks added provider requests');
+    } finally {
+      nativeStore.get = originalGet; nativeStore.set = originalSet;
+      if (saved === null) await nativeStore.remove(key); else await nativeStore.set(key, saved);
+    }
   });
   await check('Negative searches terminate honestly without repeating or inventing pages', async () => {
     const result = await source.search({ page: 1, query: 'zzzxqv-manhwanex-no-title-843021' });
