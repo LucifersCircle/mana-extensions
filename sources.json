@@ -4,7 +4,7 @@
   "sources": [
     {
       "id": "Hijala",
-      "version": "0.0.1-alpha.5",
+      "version": "0.0.1-alpha.6",
       "name": "Hijala",
       "thumbnail": "Hijala.png",
       "website": "https://en-hijala.com",
@@ -30,7 +30,7 @@
       "path": "Hijala",
       "environment": "source",
       "intents": 6298637,
-      "hash": "4cde720e4cde720e4cde720e4cde720e4cde720e4cde720e4cde720e4cde720e"
+      "hash": "68978ecb68978ecb68978ecb68978ecb68978ecb68978ecb68978ecb68978ecb"
     },
     {
       "id": "Kagane",
@@ -59,11 +59,11 @@
       "path": "Kagane",
       "environment": "source",
       "intents": 6298637,
-      "hash": "6e891f266e891f266e891f266e891f266e891f266e891f266e891f266e891f26"
+      "hash": "68a4342868a4342868a4342868a4342868a4342868a4342868a4342868a43428"
     },
     {
       "id": "MangaSushi",
-      "version": "0.0.1-alpha.10",
+      "version": "0.0.1-alpha.11",
       "name": "MangaSushi",
       "description": "MangaSushi with native discovery, search filters and Mana content-rating policy.",
       "thumbnail": "MangaSushi.png",
@@ -84,11 +84,11 @@
       "path": "MangaSushi",
       "environment": "source",
       "intents": 6298637,
-      "hash": "4af0444d4af0444d4af0444d4af0444d4af0444d4af0444d4af0444d4af0444d"
+      "hash": "5337efcd5337efcd5337efcd5337efcd5337efcd5337efcd5337efcd5337efcd"
     },
     {
       "id": "ManhwaNex",
-      "version": "0.0.1-alpha.8",
+      "version": "0.0.1-alpha.9",
       "name": "ManhwaNex",
       "description": "ManhwaNex with native discovery, search filters and Mana content-rating policy.",
       "thumbnail": "ManhwaNex.png",
@@ -111,7 +111,7 @@
       "path": "ManhwaNex",
       "environment": "source",
       "intents": 6298637,
-      "hash": "5936743f5936743f5936743f5936743f5936743f5936743f5936743f5936743f"
+      "hash": "10e7729610e7729610e7729610e7729610e7729610e7729610e7729610e77296"
     },
     {
       "id": "VortexScans",
@@ -138,7 +138,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 6298636,
-      "hash": "4469bd8b4469bd8b4469bd8b4469bd8b4469bd8b4469bd8b4469bd8b4469bd8b"
+      "hash": "1b970acf1b970acf1b970acf1b970acf1b970acf1b970acf1b970acf1b970acf"
     }
   ]
 }
