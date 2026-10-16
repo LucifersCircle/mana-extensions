@@ -72,7 +72,7 @@ type SearchPage = { result: PagedSearchResult, next: number, seenIDs: string[] }
 
 export class Target implements ContentSource, PageLinkResolver, ImageRequestHandler, SourcePreferenceProvider {
     readonly info: SourceInfo = {
-        id: 'Kagane', version: '0.0.1-alpha.10', name: 'Kagane',
+        id: 'Kagane', version: '0.0.1-alpha.11', name: 'Kagane',
         description: 'Kagane with current API support, grouped tags and global four-category content settings.',
         thumbnail: 'Kagane.png', rating: CatalogRating.MIXED, website: DOMAIN,
         badges: ['Manga', 'Manhwa', 'Manhua', 'Comic'],
@@ -190,15 +190,18 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
             if (!Number.isSafeInteger(page) || page < 1 || page > 1000) throw new Error('Invalid Kagane page')
             const section = request.listId ? SECTIONS.find((entry) => entry.id === request.listId) : undefined
             if (request.listId && !section) throw new Error('Unknown Kagane discovery list')
-            const requestedSort = section?.sort ?? request.sort?.id ?? 'relevance'
-            if (['series_name', 'series_name,asc', 'series_name,desc'].includes(requestedSort)) throw new Error('Kagane no longer supports By Name; choose another sort')
-            // Only the known saved count IDs migrate. Other sorts keep their
-            // existing descending behavior, without accepting arbitrary suffixes.
+            const requestedSort = section?.sort ?? (request.sort == null ? 'relevance' : request.sort?.id)
+            if (typeof requestedSort !== 'string') throw new Error('Unknown Kagane sort; choose another sort')
+            if (/^series_name(?:,|$)/.test(requestedSort)) throw new Error('Kagane no longer supports By Name; choose another sort')
+            if (!section && request.sort?.ascending !== undefined && typeof request.sort.ascending !== 'boolean') throw new Error('Invalid Kagane sort direction; choose another sort')
+            // Only known saved count IDs migrate; an explicit suffix owns direction.
             const legacyCount = /^books_count(?:,(asc|desc))?$/.exec(requestedSort)
             const sort = legacyCount ? 'current_books' : requestedSort
-            if (!SORTS.some((option) => option.id === sort)) throw new Error('Unknown Kagane sort; choose another sort')
-            // An explicit saved suffix wins over a conflicting native direction.
-            const ascending = sort === 'current_books' && (legacyCount?.[1] ? legacyCount[1] === 'asc' : request.sort?.ascending === true)
+            const option = SORTS.find((option) => option.id === sort)
+            if (!option) throw new Error('Unknown Kagane sort; choose another sort')
+            // Discovery owns its descending route. Popularity and Relevance keep
+            // their established semantics, without advertising native direction.
+            const ascending = !section && option.isOrderable === true && (legacyCount?.[1] ? legacyCount[1] === 'asc' : request.sort?.ascending === true)
             const sortParameter = sort === 'relevance' ? '' : `${sort},${ascending ? 'asc' : 'desc'}`
             // Validate original inputs even when discovery owns the final query body.
             readNumericRanges(request.filters)

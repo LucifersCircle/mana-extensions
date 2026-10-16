@@ -192,45 +192,87 @@ export async function assertKaganeTagFilters({ freshSource, tags, response, opti
   } finally { await target.save('excludedTags', saved); }
 }
 
-// Reuse this run's actual count-sort response without extra provider requests.
+// Validate the field actually consumed by this native request. Equal values are
+// valid ties; unrated rows are omitted from rating comparisons, never coerced
+// to zero. Counts must be present nonnegative integers.
+export function assertKaganeNumericSortOrder({ response, result, field, ascending }) {
+  const rows = response.content, values = Array.from(rows, (item) => item[field]);
+  assert(values.length > 1, 'Need a numeric sort sample');
+  assert(values.every(value => field === 'rating' && value == null || typeof value === 'number' && Number.isFinite(value) && value >= 0 && (field === 'rating' ? value <= 100 : Number.isInteger(value))), `Invalid consumed ${field}`);
+  const numeric = values.filter(value => typeof value === 'number');
+  assert(numeric.length > 1, 'Insufficient numeric sort observations');
+  assert(numeric.every((value, index) => index === 0 || (ascending ? numeric[index - 1] <= value : numeric[index - 1] >= value)), `${field} direction is wrong; tied values are valid`);
+  const ids = new Set(Array.from(result.results, item => item.id));
+  assert.deepEqual(Array.from(result.results, item => item.id), Array.from(rows).filter(row => ids.has(row.series_id)).map(row => row.series_id), 'Native numeric sort changed consumed row order');
+}
+
+// Reuse this run's actual response at the API-method boundary, without probes.
 export async function assertKaganeSavedSorts({ freshSource, response }) {
-  assert(response?.content?.length, 'Need a successful count-sort response for saved sorts');
+  assert(response?.content?.length > 1, 'Need a successful sort response');
   const target = freshSource(), calls = [];
-  target.api.client.request = async () => { assert.fail('Saved-sort checks must not request provider data'); };
-  target.api.search = async (...args) => { calls.push(args); return response; };
-  const request = { page: 1, query: 'saved count sort', filters: { exact_match: true } };
-  const search = (sort) => target.search({ ...request, ...(sort ? { sort } : {}) });
+  target.api.client.request = async () => assert.fail('Saved-sort checks must not request provider data');
+  target.api.search = async (...args) => { calls.push(JSON.parse(JSON.stringify(args))); return { ...response, last: true }; };
+  const request = { page: 1, query: 'saved sort', filters: { exact_match: true, current_books_min: '0', start_year_max: '9999' } };
+  const search = (sort) => target.search({ ...request, ...(sort === undefined ? {} : { sort }) });
   const canonical = await search({ id: 'current_books' });
-  assert.equal(calls.length, 1); assert.equal(calls[0][3], 'current_books,desc');
-  assert.equal(calls[0][1], 1); assert.equal(calls[0][2], 50);
-  assert.equal(calls[0][0].title, request.query); assert.equal(calls[0][4], true);
+  const body = calls[0][0];
+  assert.equal(calls[0][3], 'current_books,desc');
+  assert.equal(calls[0][1], 1); assert.equal(calls[0][2], 50); assert.equal(calls[0][4], true);
+  assert.equal(body.title, request.query); assert.deepEqual(body.current_books, { min: 0 }); assert.deepEqual(body.start_year, { max: 9999 });
   for (const sort of [{ id: 'books_count' }, { id: 'books_count', ascending: false }, { id: 'current_books', ascending: false }, { id: 'books_count,desc' }, { id: 'books_count,desc', ascending: true }]) {
     assert.deepEqual(await search(sort), canonical);
-    assert.equal(calls.length, 1, 'Equivalent descending count sorts did not share their cache');
+    assert.equal(calls.length, 1, 'Equivalent descending count sorts did not share cache');
   }
   const ascending = await search({ id: 'current_books', ascending: true });
-  assert.equal(calls.length, 2); assert.equal(calls[1][3], 'current_books,asc');
-  assert.deepEqual(calls[1].slice(0, 3), calls[0].slice(0, 3)); assert.equal(calls[1][4], calls[0][4]);
   for (const sort of [{ id: 'books_count', ascending: true }, { id: 'books_count,asc' }, { id: 'books_count,asc', ascending: false }]) {
     assert.deepEqual(await search(sort), ascending);
-    assert.equal(calls.length, 2, 'Explicit saved direction must override the native ascending field and share its cache');
+    assert.equal(calls.length, 2, 'Explicit saved suffix must override native direction');
   }
-  await search(); assert.equal(calls.length, 3); assert.equal(calls[2][3], '');
+  for (const id of ['updated_at', 'created_at', 'current_books', 'rating']) {
+    target.searchPages.clear();
+    for (const ascending of [undefined, false, true]) {
+      await search({ id, ascending });
+      assert.equal(calls.at(-1)[3], `${id},${ascending === true ? 'asc' : 'desc'}`);
+      assert.deepEqual(calls.at(-1).slice(0, 3), [body, 1, 50]); assert.equal(calls.at(-1)[4], true);
+    }
+  }
+  await search(); const relevanceCalls = calls.length; assert.equal(calls.at(-1)[3], '');
+  await search(null); assert.equal(calls.length, relevanceCalls, 'Whole-null optional sort no longer shares Relevance cache');
   for (const ascending of [undefined, false, true]) {
-    await search({ id: 'relevance', ascending }); assert.equal(calls.length, 3, 'Relevance changed its empty provider sort');
+    await search({ id: 'relevance', ascending }); assert.equal(calls.length, relevanceCalls, 'Relevance changed its empty provider sort');
   }
-  await search({ id: 'total_views', ascending: true });
-  assert.equal(calls.length, 4); assert.equal(calls[3][3], 'total_views,desc', 'Unrelated sorts changed direction');
-  await target.search({ ...request, listId: 'popular', sort: { id: 'series_name' } });
-  assert.equal(calls.length, 5); assert.equal(calls.at(-1)[0].title, undefined, 'Native discovery lost its own body');
-  assert.equal(calls.at(-1)[3], 'total_views,desc', 'Native discovery lost its own sort');
-  for (const id of ['series_name', 'series_name,asc', 'series_name,desc', 'current_books,asc', 'books_count,invalid', 'total_views,asc', 'rating', 'popular_now']) {
+  for (const id of ['total_views', 'avg_views', 'avg_views_today', 'avg_views_week', 'avg_views_month']) {
+    await search({ id, ascending: true }); assert.equal(calls.at(-1)[3], `${id},desc`, 'Nonorderable popularity changed direction');
+  }
+  for (const [listId, sort] of [['popular', 'total_views'], ['latest_updates', 'updated_at'], ['recently_added', 'created_at']]) {
+    await target.search({ ...request, listId, sort: { id: 'rating', ascending: true } });
+    assert.equal(calls.at(-1)[0].title, undefined); assert.equal(calls.at(-1)[3], `${sort},desc`, 'Discovery lost its descending route');
+  }
+  const invalid = ['series_name', 'series_name,asc', 'series_name,desc', 'series_name,invalid', 'current_books,asc', 'books_count,invalid', 'total_views,asc', 'rating,asc', 'rating,ASC', 'created_at,sideways', 'popular_now', '', null, undefined, 42, {}].map(id => ({ id }));
+  invalid.push(...[null, 'true', 0, 1, {}, []].map(ascending => ({ id: 'rating', ascending })));
+  for (const sort of invalid) {
     const stale = freshSource(); let providerRequests = 0;
-    stale.api.client.request = async () => { providerRequests += 1; assert.fail('Unsupported sort reached the provider'); };
+    stale.api.client.request = async () => { providerRequests += 1; assert.fail('Unsupported sort reached provider'); };
     stale.api.search = async () => { providerRequests += 1; assert.fail('Unsupported sort reached search'); };
-    // A constrained tag query would request taxonomy if validation happened late.
-    await assert.rejects(stale.search({ page: 1, sort: { id }, filters: { tag_query: 'requires taxonomy' } }), /choose another sort/i);
-    assert.equal(providerRequests, 0, `Unsupported ${id} requested provider data before rejection`);
+    await assert.rejects(stale.search({ page: 1, sort, filters: { tag_query: 'requires taxonomy' } }), /choose another sort/i);
+    assert.equal(providerRequests, 0, 'Malformed sort requested provider data');
+  }
+  // Every directional page session must own its continuation, including direct
+  // page-2 loads. A repeated descending page must survive ascending cache use.
+  const paged = freshSource(), pages = [];
+  paged.api.client.request = async () => assert.fail('Sort pagination cannot request provider');
+  const split = Math.ceil(response.content.length / 2);
+  paged.api.search = async (...args) => { pages.push(JSON.parse(JSON.stringify(args))); return { ...response, content: args[1] === 1 ? response.content.slice(0, split) : response.content.slice(split), last: args[1] >= 2 }; };
+  for (const id of ['updated_at', 'created_at', 'current_books', 'rating']) {
+    for (const ascending of [false, true]) {
+      const before = pages.length;
+      await paged.search({ ...request, page: 2, sort: { id, ascending } });
+      assert.deepEqual(pages.slice(before).map(args => args[1]), [1, 2], 'Direction reused another session continuation');
+      for (const args of pages.slice(before)) { assert.deepEqual(args[0], body); assert.equal(args[3], `${id},${ascending ? 'asc' : 'desc'}`); assert.equal(args[4], true); }
+    }
+    const before = pages.length;
+    await paged.search({ ...request, page: 2, sort: { id, ascending: false } });
+    assert.equal(pages.length, before, 'Ascending request corrupted descending page cache');
   }
 }
 
@@ -543,7 +585,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   }
   let catalog, form, chapterList, index, content, blocked, readerData, safeBody;
   await check('Never-saved source categories follow native policy and explicit source selection persists', async () => {
-    assert.equal(source.info.version, '0.0.1-alpha.10');
+    assert.equal(source.info.version, '0.0.1-alpha.11');
     assert.deepEqual(Array.from((await preference('contentRatings')).value), allRatings);
     const start = requests.length, empty = await source.search({ page: 1, context: { allowedContentRatings: [] } });
     assert.equal(empty.results.length, 0); assert.equal(empty.isLastPage, true); assert.equal(requests.length, start);
@@ -630,18 +672,19 @@ export async function testKagane({ source, check, highlights, searchResult, imag
     assert(tags.length > 1000); assert.equal(new Set(tags.map((tag) => tag.id)).size, tags.length);
     assert(all.find((field) => field.id === 'genres').options.length > 30);
     assert(all.find((field) => field.id === 'source_id').options.length > 10);
-    assert.deepEqual(Array.from(await source.getSortOptions(), (sort) => sort.id), ['relevance', 'total_views', 'avg_views', 'avg_views_today', 'avg_views_week', 'avg_views_month', 'updated_at', 'current_books', 'created_at']);
+    assert.deepEqual(Array.from(await source.getSortOptions(), (sort) => sort.id), ['relevance', 'total_views', 'avg_views', 'avg_views_today', 'avg_views_week', 'avg_views_month', 'updated_at', 'current_books', 'created_at', 'rating']);
+    const sorts = await source.getSortOptions();
+    assert.deepEqual(Array.from(sorts.filter(option => option.isOrderable), option => [option.id, option.title, option.defaultAscending]), [['updated_at', 'Updated', false], ['current_books', 'Chapter count', false], ['created_at', 'Added', false], ['rating', 'Rating', false]]);
+    assert.equal(sorts.filter(option => option.isDefault).length, 1); assert.equal(sorts[0].isDefault, true);
   });
   await check('Every native sort and exact-title mode makes a valid live request', async () => {
     for (const sort of await source.getSortOptions()) {
-      validResult(await source.search({ page: 1, sort: { id: sort.id } }));
-      assert.equal(searches.at(-1).args[3], sort.id === 'relevance' ? '' : `${sort.id},desc`);
-      if (sort.id === 'current_books') {
-        const response = searches.at(-1).response, counts = Array.from(response.content, (item) => item.current_books);
-        assert(counts.length, 'Count sort returned no live titles');
-        assert(counts.every((count) => Number.isInteger(count) && Number.isFinite(count) && count >= 0), 'Count sort contains missing or invalid counts');
-        assert(counts.every((count, index) => index === 0 || counts[index - 1] >= count), 'Books Count is not nonincreasing; tied counts are valid');
-        await assertKaganeSavedSorts({ freshSource, response });
+      for (const ascending of sort.isOrderable ? [false, true] : [false]) {
+        const result = await source.search({ page: 1, sort: { id: sort.id, ascending } }); validResult(result);
+        assert.equal(searches.at(-1).args[3], sort.id === 'relevance' ? '' : `${sort.id},${ascending ? 'asc' : 'desc'}`);
+        const response = searches.at(-1).response;
+        if (sort.id === 'current_books' || sort.id === 'rating') assertKaganeNumericSortOrder({ response, result, field: sort.id, ascending });
+        if (sort.id === 'current_books' && !ascending) await assertKaganeSavedSorts({ freshSource, response });
       }
     }
     const title = seen.get(catalog.results[0].id).title;
