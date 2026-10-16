@@ -511,12 +511,15 @@ export function assertKaganeDetailMetadata({ content, metadata, sources, id, tag
   const additionalTitles = [...new Set([metadata.title, ...aliases.map(entry => entry?.title)].filter(value => typeof value === 'string').map(value => value.trim()).filter(Boolean))];
   assert.deepEqual(Array.from(content.additionalTitles), additionalTitles, 'Native alternate titles must preserve every source script and exact deduplication');
   const names = additionalTitles.filter(value => value !== primary && value !== content.title);
-  assert.equal(content.summary, [
+  const stats = [
     typeof score === 'number' && Number.isFinite(score) && score > 0 && score <= 100 ? `★ ${(score / 10).toFixed(1)}` : '',
-    typeof views === 'number' && Number.isFinite(views) && views >= 0 ? `Views: ${views}` : '',
+    typeof views === 'number' && Number.isFinite(views) && views >= 0 ? `\u{1F441}\uFE0E ${views}` : '',
+  ].filter(Boolean).join(' · ');
+  assert.equal(content.summary, [
+    stats,
     description, names.length ? `Associated names:\n${names.join('\n')}` : '', source ? `Source: ${source}` : '', metadata.edition_info ? `Edition: ${metadata.edition_info}` : '',
     upload ? `Upload status: ${upload}` : '', ...tagSummary,
-  ].filter(Boolean).join('\n\n'), 'Detail summary must preserve source text and show only its average score and labeled views');
+  ].filter(Boolean).join('\n\n'), 'Detail summary must preserve source text and combine its average score and text-presentation views on one line');
   const rules = new Map([
     ['anilist.co', ['Tracker', 'anilist', 'AniList', /^\/manga\/([1-9][0-9]*)\/?$/]],
     ['myanimelist.net', ['Tracker', 'mal', 'MyAnimeList', /^\/manga\/([1-9][0-9]*)(?:\/[A-Za-z0-9_-]+)?\/?$/]],
@@ -628,6 +631,9 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   let uploadSources = [];
   const originalSources = source.api.sources.bind(source.api);
   source.api.sources = async (...args) => { const value = await originalSources(...args); uploadSources = value; return value; };
+  let detailTags = [];
+  const originalTags = source.api.tags.bind(source.api);
+  source.api.tags = async (...args) => { const value = await originalTags(...args); detailTags = value; return value; };
   const listingRows = new WeakMap();
   const originalSearch = source.api.search.bind(source.api);
   source.api.search = async (...args) => {
@@ -707,7 +713,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   }
   let catalog, form, chapterList, index, content, blocked, readerData, safeBody;
   await check('Never-saved source categories follow native policy and explicit source selection persists', async () => {
-    assert.equal(source.info.version, '0.0.1-alpha.13');
+    assert.equal(source.info.version, '0.0.1-alpha.14');
     assert.deepEqual(Array.from((await preference('contentRatings')).value), allRatings);
     const start = requests.length, empty = await source.search({ page: 1, context: { allowedContentRatings: [] } });
     assert.equal(empty.results.length, 0); assert.equal(empty.isLastPage, true); assert.equal(requests.length, start);
@@ -751,6 +757,31 @@ export async function testKagane({ source, check, highlights, searchResult, imag
     if (eligible && !priorTrackers.has(tracker)) assert.equal(bulkCalls.length, 1, 'Uncached native detail must consume exactly one real bulk response');
     assert(detailCalls.every(request => !new URL(request.url).pathname.startsWith('/api/v2/series/') || new URL(request.url).pathname === `/api/v2/series/${item.id}`), 'Edition enrichment added per-row metadata requests');
     assertKaganeEditionMetadata({ content, rows: eligible ? editionRows.get(tracker) : [], id: item.id, settings });
+    // Reuse this consumed response for compact presentation boundaries, never provider fixtures.
+    const eye = String.fromCodePoint(0x1f441, 0xfe0e);
+    for (const [average_rating, total_views, stats] of [
+      [85, 123, `★ 8.5 · ${eye} 123`], [85, undefined, '★ 8.5'], [0, 0, `${eye} 0`],
+      [undefined, undefined, ''], [85, 1.5, `★ 8.5 · ${eye} 1.5`], [NaN, -1, ''],
+    ]) {
+      const raw = { ...metadata, average_rating, total_views, rating: 12 }, target = freshSource();
+      const denied = async () => assert.fail('Detail stat variants must not request provider data');
+      target.api.client.request = denied;
+      for (const method of ['response', 'search', 'books', 'challenge', 'genres']) target.api[method] = denied;
+      target.api.series = async id => { assert.equal(id, item.id); return raw; };
+      target.api.sources = async () => uploadSources;
+      target.api.tags = async () => detailTags;
+      target.api.trackerSeries = async id => { assert.equal(id, tracker); return editionRows.get(tracker) ?? []; };
+      const variant = await target.getContent(item.id);
+      assertKaganeDetailMetadata({ content: variant, metadata: raw, sources: uploadSources, id: item.id, tagSummary });
+      if (stats) assert.equal(variant.summary.split('\n\n')[0], stats);
+      if (stats.includes(eye)) {
+        const symbol = variant.summary.match(/\u{1f441}[\ufe0e\ufe0f]?/u)?.[0];
+        assert.deepEqual(Array.from(symbol ?? '', character => character.codePointAt(0)), [0x1f441, 0xfe0e]);
+        assert(!variant.summary.split('\n\n')[0].includes('\ufe0f'));
+      }
+      const withoutSummary = ({ summary, ...fields }) => JSON.parse(JSON.stringify(fields));
+      assert.deepEqual(withoutSummary(variant), withoutSummary(content), 'Stat presentation changed unrelated details');
+    }
     const english = (language) => typeof language === 'string' && /^(?:en(?:[-_][a-z0-9]{2,8})*|english)$/i.test(language.trim());
     const expectedTitle = english(metadata.title_language) ? metadata.title : metadata.series_alternate_titles?.find((alias) => english(alias.label) && alias.title.trim())?.title ?? metadata.title;
     assert.equal(content.title, expectedTitle.trim()); assert(content.summary?.trim());

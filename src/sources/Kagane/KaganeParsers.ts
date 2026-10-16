@@ -197,9 +197,12 @@ export function content(id: string, details: Detail, settings: Settings, sources
     const title = displayTitle(primary, settings, sources, details.source_id, details.edition_info)
     const additionalTitles = [...new Set([details.title, ...(Array.isArray(details.series_alternate_titles) ? details.series_alternate_titles : []).map((entry) => entry?.title)].filter((value): value is string => typeof value === 'string').map((value) => value.trim()).filter(Boolean))]
     const associatedNames = additionalTitles.filter((value) => value !== primary && value !== title)
-    const summary = [
+    const stats = [
         typeof details.average_rating === 'number' && Number.isFinite(details.average_rating) && details.average_rating > 0 && details.average_rating <= 100 ? `★ ${(details.average_rating / 10).toFixed(1)}` : '',
-        typeof details.total_views === 'number' && Number.isFinite(details.total_views) && details.total_views >= 0 ? `Views: ${details.total_views}` : '',
+        typeof details.total_views === 'number' && Number.isFinite(details.total_views) && details.total_views >= 0 ? `\u{1F441}\uFE0E ${details.total_views}` : ''
+    ].filter(Boolean).join(' · ')
+    const summary = [
+        stats,
         description, associatedNames.length ? `Associated names:\n${associatedNames.join('\n')}` : '', source ? `Source: ${source}` : '', details.edition_info ? `Edition: ${details.edition_info}` : '',
         uploadStatus ? `Upload status: ${uploadStatus}` : '', ...extraTags
     ].filter(Boolean).join('\n\n')
