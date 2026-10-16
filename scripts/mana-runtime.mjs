@@ -230,9 +230,29 @@ export function assertReadOnlyKaganePost(request) {
         && keys.length === 1 && keys[0] === 'source_types'
         && (body.source_types === null || (Array.isArray(body.source_types)
             && body.source_types.every((type) => ['Official', 'Unofficial', 'Mixed'].includes(type))))) return
-    const searchKeys = ['source_type', 'title', 'content_rating', 'age_rating', 'is_pornographic', 'content_lang', 'format', 'upload_status', 'source_id', 'genres', 'tags']
+    const searchKeys = ['source_type', 'title', 'content_rating', 'age_rating', 'is_pornographic', 'content_lang', 'format', 'upload_status', 'source_id', 'genres', 'tags', 'current_books', 'start_year']
+    const numericRange = (field, minimum, maximum) => {
+        if (!keys.includes(field)) return true
+        const fieldDescriptor = Object.getOwnPropertyDescriptor(body, field)
+        const range = fieldDescriptor?.value
+        if (range === null || typeof range !== 'object' || Array.isArray(range)) return false
+        // Bodies can originate in the bundle's VM realm. Recognize its ordinary
+        // Object prototype too, without accepting inherited bounds/custom prototypes.
+        const prototype = Object.getPrototypeOf(range)
+        const constructor = prototype && Object.getOwnPropertyDescriptor(prototype, 'constructor')?.value
+        if (!prototype || Object.getPrototypeOf(prototype) !== null || typeof constructor !== 'function'
+            || Function.prototype.toString.call(constructor) !== Function.prototype.toString.call(Object)) return false
+        const rangeKeys = Reflect.ownKeys(range)
+        if (!rangeKeys.length || !rangeKeys.every((key) => ['min', 'max'].includes(key))) return false
+        const bounds = Object.getOwnPropertyDescriptors(range)
+        if (!rangeKeys.every((key) => bounds[key].enumerable && Number.isInteger(bounds[key].value)
+            && bounds[key].value >= minimum && bounds[key].value <= maximum)) return false
+        return !bounds.min || !bounds.max || bounds.min.value <= bounds.max.value
+    }
     if (target.pathname === '/api/v2/search/series' && body != null
         && keys.every((key) => searchKeys.includes(key))
+        && numericRange('current_books', 0, 2147483647)
+        && numericRange('start_year', 1, 9999)
         && new Set(params).size === params.length
         && params.every((key) => ['page', 'size', 'sort', 'exact_match'].includes(key))
         && /^\d+$/.test(target.searchParams.get('page') ?? '')

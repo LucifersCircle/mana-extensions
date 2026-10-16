@@ -60,6 +60,7 @@ import { hasHidden,
     includedTagGroups,
     matchesTagGroups,
     needsTagTaxonomy,
+    readNumericRanges,
     selectedOptions,
     searchBody,
     selectedRatings } from './KaganeSearch'
@@ -71,7 +72,7 @@ type SearchPage = { result: PagedSearchResult, next: number, seenIDs: string[] }
 
 export class Target implements ContentSource, PageLinkResolver, ImageRequestHandler, SourcePreferenceProvider {
     readonly info: SourceInfo = {
-        id: 'Kagane', version: '0.0.1-alpha.7', name: 'Kagane',
+        id: 'Kagane', version: '0.0.1-alpha.8', name: 'Kagane',
         description: 'Kagane with current API support, grouped tags and global four-category content settings.',
         thumbnail: 'Kagane.png', rating: CatalogRating.MIXED, website: DOMAIN,
         badges: ['Manga', 'Manhwa', 'Manhua', 'Comic'],
@@ -165,6 +166,12 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
                     SearchExcludableMultiPickerSheet({ id: 'genres', title: 'Genres', options: genres.map((genre) => ({ id: genre.id, title: genre.genre_name })) }),
                     SearchToggle({ id: 'match_all_genres', title: 'Match all genres' })
                 ] }),
+                SearchListSection({ header: 'Chapter count and start year', footer: 'Chapter count means uploaded Kagane chapter entries, not the highest chapter number. Leave either bound blank to omit it.', children: [
+                    SearchTextField({ id: 'current_books_min', title: 'Minimum chapters', placeholder: '0–2147483647 (optional)' }),
+                    SearchTextField({ id: 'current_books_max', title: 'Maximum chapters', placeholder: '0–2147483647 (optional)' }),
+                    SearchTextField({ id: 'start_year_min', title: 'Earliest start year', placeholder: '1–9999 (optional)' }),
+                    SearchTextField({ id: 'start_year_max', title: 'Latest start year', placeholder: '1–9999 (optional)' })
+                ] }),
                 SearchListSection({ header: 'Tags', footer: 'Match All Tags is off by default. Comma-separated tag names can be prefixed with - to exclude them.', children: [
                     SearchTextField({ id: 'tag_query', title: 'Find tags by name', placeholder: 'Tag, -excluded tag' }),
                     SearchToggle({ id: 'match_all_tags', title: 'Match All Tags' }),
@@ -193,6 +200,8 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
             // An explicit saved suffix wins over a conflicting native direction.
             const ascending = sort === 'current_books' && (legacyCount?.[1] ? legacyCount[1] === 'asc' : request.sort?.ascending === true)
             const sortParameter = sort === 'relevance' ? '' : `${sort},${ascending ? 'asc' : 'desc'}`
+            // Validate original inputs even when discovery owns the final query body.
+            readNumericRanges(request.filters)
             const ratings = selectedRatings(request, settings)
             const explicitSourceRatings = selectedOptions(request.filters, 'content_rating')
             if (!ratings.length) return { results: [], isLastPage: true }
