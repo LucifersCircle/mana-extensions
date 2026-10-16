@@ -10,6 +10,7 @@ import { failedSources } from './test-sources.mjs';
 import { readSelection } from './changed-sources.mjs';
 import { testMangaSushi, coverDimensions } from './mangasushi-live-tests.mjs';
 import { testManhwaNex } from './manhwanex-live-tests.mjs';
+import { testMangaStash } from './mangastash-live-tests.mjs';
 import { getVortexContentWithSynopsis, testVortexRatings, testVortexSynopsis } from './vortexscans-live-tests.mjs';
 import { load } from 'cheerio';
 
@@ -133,6 +134,8 @@ for (const name of names) {
       await testMangaSushi({ source, check, nativeStore: context.ObjectStore, highlights, searchResult, image, requests, freshSource: () => new context.Target() });
     } else if (name === 'ManhwaNex') {
       await testManhwaNex({ source, check, nativeStore: context.ObjectStore, requests, freshSource: () => new context.Target() });
+    } else if (name === 'MangaStash') {
+      await testMangaStash({ check, referenceFetch: testTransport.fetch });
     } else await check('Supported source-specific live contract', () => assert.fail(`No live contract implemented for ${name}`));
     continue;
   }

@@ -90,7 +90,7 @@ for (const [aborted, partial] of [['Kagane', false], ['ManhwaNex', true]]) {
       assert.equal(snapshot.sources.Hijala.status, 'pass');
       assert.equal(snapshot.sources.VortexScans.status, 'fail');
       assert.deepEqual(snapshot.sourceCounts, { available: names.length, selected: names.length,
-        completed: names.length - 1, passed: partial ? 16 : 15, failed: partial ? 16 : 15, total: partial ? 32 : 30 });
+        completed: names.length - 1, passed: names.length * 3 + (partial ? 1 : 0), failed: partial ? 16 : 15, total: names.length * 3 + (partial ? 17 : 15) });
       assert.match(readFileSync(join(dir, 'summary.md'), 'utf8'), /remaining checks were not run/);
       assert.ok(!snapshot.sources[aborted].tests.some(({ name }) => name === 'unrun after abort'));
       // A changed-source run remains non-publishable even when it reports its abort truthfully.
