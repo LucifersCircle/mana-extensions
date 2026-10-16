@@ -4,7 +4,11 @@ import { load } from 'cheerio';
 import { assertReadOnlyMangaSushiPost } from './mana-runtime.mjs';
 
 export async function coverDimensions(source, url) {
-  const request = await source.willRequestImage(url);
+  return readCoverDimensions(await source.willRequestImage(url));
+}
+
+async function readCoverDimensions(request) {
+  const url = request.url;
   const response = await fetch(request.url, { headers: request.headers, signal: AbortSignal.timeout(30_000) });
   assert(response.ok, `Cover HTTP ${response.status}: ${url}`);
   const chunks = [], reader = response.body.getReader();
@@ -574,21 +578,26 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
     const cold = freshSource(), bodies = new Map(), original = cold.api.text.bind(cold.api);
     cold.api.text = async (url, ...args) => { const html = await original(url, ...args); bodies.set(url, html); return html; };
     const before = requests.length;
-    const nativeHome = await cold.home(false);
-    assert.equal(requests.length - before, 1, 'Cover selection adds no home metadata requests');
+    const sections = await cold.getSectionsForPage({ id: 'home' });
+    assert(sections.some((section) => section.id === 'popular') && sections.some((section) => section.id === 'latest'));
+    const nativeHome = {
+      popular: await cold.resolvePageSection({ id: 'home' }, 'popular'),
+      latest: await cold.resolvePageSection({ id: 'home' }, 'latest')
+    };
+    assert.equal(requests.length - before, 2, 'Public Discover uses one home and one bulk metadata request, never per-card cover lookups');
     const request = { page: 1, query: 'Hisabisa Ni Kenko', filters: { adult: { id: '0' } } };
     const searchURL = cold.searchURL(request, false);
     const search = await cold.search(request);
-    assert.equal(requests.length - before, 2, 'Cover selection adds no search metadata requests');
+    assert.equal(requests.length - before, 3, 'Cover selection adds no search metadata requests');
     const id = 'hisabisa-ni-kenko-shindan-wo-uketara-saikyo-status-ni-natteita-tsuiho-sareta-ossan-boken-sha-imasara-eiyu-wo-mezasu';
     const detail = await cold.getContent(id);
-    assert.equal(requests.length - before, 3, 'Cached search metadata avoids per-title cover lookups');
+    assert.equal(requests.length - before, 4, 'Cached search metadata avoids per-title cover lookups');
     coverEvidence = { home: bodies.get(`${domain}/`), search: bodies.get(searchURL), detail: bodies.get(`${domain}/manga/${id}/`), id };
     assert(coverEvidence.home && coverEvidence.search && coverEvidence.detail, 'Missing actual live cover provenance');
     const hp = load(coverEvidence.home), sp = load(coverEvidence.search), dp = load(coverEvidence.detail);
     const findImage = ($, selector, series) => $(selector).toArray().map((node) => $(node)).find((row) => row.find('.post-title a').attr('href') === `${domain}/manga/${series}/`)?.find('img').first();
     const homeSample = (selector, items) => {
-      const row = hp(selector).toArray().map((node) => hp(node)).find((row) => row.find('img').first().attr('data-srcset'));
+      const row = hp(selector).toArray().map((node) => hp(node)).find((row) => row.find('img').first().attr('data-srcset') && items.some((item) => row.find('.post-title a').attr('href') === `${domain}/manga/${item.id}/`));
       assert(row, 'No live homepage sample advertises responsive covers');
       const series = row.find('.post-title a').attr('href').match(/\/manga\/([^/]+)/)[1];
       return [row.find('img').first(), items.find((item) => item.id === series)?.cover];
@@ -600,7 +609,15 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
       [dp('.summary_image img').first(), detail.cover]
     ];
     const decoded = new Map();
-    const dimensions = (url) => { if (!decoded.has(url)) decoded.set(url, coverDimensions(source, url)); return decoded.get(url); };
+    const dimensions = (request) => { if (!decoded.has(request.url)) decoded.set(request.url, readCoverDimensions(request)); return decoded.get(request.url); };
+    const referenceCover = (url, headers) => {
+      const parsed = new URL(url);
+      assert.equal(parsed.origin, domain); assert.equal(parsed.username, ''); assert.equal(parsed.password, '');
+      assert.equal(parsed.search, ''); assert.equal(parsed.hash, ''); assert(parsed.pathname.startsWith('/wp-content/uploads/'));
+      // This is an independent, source-advertised thumbnail reference, not an
+      // image emitted by the extension. It must not manufacture an image grant.
+      return { url, headers };
+    };
     for (const [image, cover] of samples) {
       assert(image?.length && cover, 'Live largest-cover sample disappeared');
       const currentURL = image.attr('data-src') || image.attr('data-lazy-src') || image.attr('src');
@@ -610,7 +627,9 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
       assert(advertised.length, 'Live source stopped advertising same-asset cover widths');
       const [expected, descriptor] = advertised.sort((left, right) => parseInt(right[1]) - parseInt(left[1]))[0];
       assert.equal(cover, expected, 'Cover must be the largest URL actually advertised by this image');
-      const current = await dimensions(currentURL), largest = await dimensions(cover);
+      const issued = await cold.willRequestImage(cover); assert.equal(issued.url, cover);
+      const current = await dimensions(currentURL === cover ? issued : referenceCover(currentURL, issued.headers));
+      const largest = await dimensions(issued);
       assert.equal(largest.width, parseInt(descriptor), 'Advertised largest width must match actual decoded pixels');
       assert(largest.width >= current.width && largest.height >= current.height, 'Selection must not downgrade real dimensions');
       assert(largest.bytes > 0);
@@ -628,7 +647,7 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
     const largeImage = findImage(largePage, '.c-tabs-item__content', largeId);
     assert(largeImage.attr('data-srcset').split(',').some((entry) => entry.trim() === `${largeItem.cover} 640w`), '640px original must be explicitly advertised, not manufactured');
     assert.equal(largeDetail.cover, largeItem.cover);
-    assert.equal((await dimensions(largeItem.cover)).width, 640, 'The former medium cap must not limit a real 640px PNG original');
+    assert.equal((await dimensions(await cold.willRequestImage(largeItem.cover))).width, 640, 'The former medium cap must not limit a real 640px PNG original');
   });
   await check('Cover fallbacks reject malformed or unrelated metadata and retain explicitly advertised originals', async () => {
     assert(coverEvidence, 'Live cover evidence was not captured');

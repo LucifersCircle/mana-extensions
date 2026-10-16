@@ -53,7 +53,7 @@ for (const [aborted, partial] of [['Kagane', false], ['ManhwaNex', true]]) {
         export async function testVortexSynopsis({ check }) { await check('later synopsis contract', () => {}); }
         export async function testVortexRatings({ check }) { await check('later ratings contract', () => {}); }
       `);
-      put('dist/sources.json', JSON.stringify({ sources: names.map((id) => ({ id })) }));
+      put('dist/sources.json', JSON.stringify({ sources: names.map((id) => ({ id, version: 'test' })) }));
       const selection = allSelection(names, 'Infrastructure test', { testedSha: sha });
       put('bundles/live-status/selection.json', JSON.stringify(selection));
       put('bundles/live-test-results.json', JSON.stringify({ stale: true }));
