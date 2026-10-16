@@ -230,6 +230,22 @@ export function parseListing(html: string, selector: string, requestURL?: string
     return { items, next: requestURL ? parseNext($, requestURL) : undefined }
 }
 
+// Only the detail response's visible aggregate establishes a positive score.
+// Missing/zero/malformed scores or vote counts do not imply a user rating.
+function sourceScore($: ReturnType<typeof load>): ReturnType<typeof tags.item> | undefined {
+    const aggregate = $('.tab-summary .vote-details[typeof="AggregateRating"]')
+    const value = (property: string): string => {
+        const nodes = aggregate.find(`[property="${property}"]`)
+        return nodes.length === 1 ? text(nodes.text()) : ''
+    }
+    const scoreText = value('ratingValue'), scaleText = value('bestRating'), countText = value('ratingCount')
+    const score = /^\d+(?:\.\d+)?$/.test(scoreText) ? Number(scoreText) : NaN
+    const count = /^[1-9]\d*$/.test(countText) ? Number(countText) : NaN
+    if (aggregate.length !== 1 || scaleText !== '5' || !Number.isFinite(score) || score <= 0 || score > 5
+        || !Number.isSafeInteger(count) || count <= 0) return undefined
+    return tags.item({ id: 'source-score', title: `★ ${score}/5 (${count} ${count === 1 ? 'vote' : 'votes'})`, isNonInteractive: true })
+}
+
 export function parseContent(html: string, id: string, bulk?: Series): { content: Content, metadata: Series } {
     const $ = load(html), canonical = $('link[rel="canonical"]').attr('href')
     if (canonical !== seriesURL(id)) throw new Error('ManhwaNex returned a different series detail page')
@@ -255,7 +271,7 @@ export function parseContent(html: string, id: string, bulk?: Series): { content
             title: group === 1 ? 'Source tags' : `Source tags (${group})`, items: sourceTags.slice(offset, offset + 10) }))
     }
     const details = [metadata.statusText ? tags.item({ id: `status:${metadata.statusText}`, title: `Status: ${metadata.statusText}`, isNonInteractive: true }) : undefined, metadata.release ? tags.item({ id: `release:${metadata.release}`, title: `Release: ${metadata.release}`, isNonInteractive: true }) : undefined,
-        type ? tags.item({ id: `type:${type}`, title: `Type: ${type}`, isNonInteractive: true }) : undefined].filter((item): item is ReturnType<typeof tags.item> => Boolean(item))
+        type ? tags.item({ id: `type:${type}`, title: `Type: ${type}`, isNonInteractive: true }) : undefined, sourceScore($)].filter((item): item is ReturnType<typeof tags.item> => Boolean(item))
     return { metadata, content: { title, cover: metadata.cover, webUrl: metadata.webUrl,
         summary: summary.text().replace(/[ \t]+/g, ' ').replace(/\n\s*\n/g, '\n\n').trim(),
         additionalTitles: metadata.alternatives, tags: metadata.genres, status: metadata.status,

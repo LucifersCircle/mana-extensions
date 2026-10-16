@@ -8,7 +8,8 @@ import {
     Option,
     PublicationStatus,
     ReadingMode,
-    staff
+    staff,
+    tags
 } from '@mana-app/types'
 import { load } from 'cheerio'
 import { incompleteRatingInfo,
@@ -328,6 +329,22 @@ export function parseDetailMetadata(html: string, id: string): Series {
         classified: genres.length > 0, contentRating: itemRating(genres, warning) }
 }
 
+// Only the detail response's visible aggregate establishes a positive score.
+// Missing/zero/malformed scores or vote counts do not imply a user rating.
+function sourceScore($: ReturnType<typeof load>): ReturnType<typeof tags.item> | undefined {
+    const aggregate = $('.tab-summary .vote-details[typeof="AggregateRating"]')
+    const value = (property: string): string => {
+        const nodes = aggregate.find(`[property="${property}"]`)
+        return nodes.length === 1 ? text(nodes.text()) : ''
+    }
+    const scoreText = value('ratingValue'), scaleText = value('bestRating'), countText = value('ratingCount')
+    const score = /^\d+(?:\.\d+)?$/.test(scoreText) ? Number(scoreText) : NaN
+    const count = /^[1-9]\d*$/.test(countText) ? Number(countText) : NaN
+    if (aggregate.length !== 1 || scaleText !== '5' || !Number.isFinite(score) || score <= 0 || score > 5
+        || !Number.isSafeInteger(count) || count <= 0) return undefined
+    return tags.item({ id: 'source-score', title: `★ ${score}/5 (${count} ${count === 1 ? 'vote' : 'votes'})`, isNonInteractive: true })
+}
+
 export function parseContent(html: string, series: Series): Content {
     const $ = load(html)
     if ($('link[rel="canonical"]').attr('href') !== series.webUrl) {
@@ -342,6 +359,13 @@ export function parseContent(html: string, series: Series): Content {
         ...series.authors.map((name) => staff.item({ id: `author:${name}`, title: name, subtitle: 'Author' })),
         ...series.artists.map((name) => staff.item({ id: `artist:${name}`, title: name, subtitle: 'Artist' }))
     ]
+    const field = (name: string): string => text($('.tab-summary .post-content_item').filter((_, node) =>
+        text($(node).find('.summary-heading').text()).toLowerCase() === name).first().find('.summary-content').text())
+    const type = field('type'), release = field('release'), score = sourceScore($)
+    const contentType = type === 'Manga' ? ContentType.MANGA : type === 'Manhwa' ? ContentType.MANHWA : type === 'Manhua' ? ContentType.MANHUA : undefined
+    const details = [type ? tags.item({ id: `type:${type}`, title: `Type: ${type}`, isNonInteractive: true }) : undefined,
+        release ? tags.item({ id: `release:${release}`, title: `Release: ${release}`, isNonInteractive: true }) : undefined,
+        score].filter((item): item is ReturnType<typeof tags.item> => Boolean(item))
     return {
         title,
         cover: coverURL($, $('.summary_image img').first().get(0)),
@@ -350,10 +374,11 @@ export function parseContent(html: string, series: Series): Content {
         additionalTitles: series.alternatives,
         tags: series.genres,
         status: series.status,
-        contentType: ContentType.MANGA,
+        contentType,
         contentRating: nativeRating(series.contentRating),
         recommendedPanelMode: ReadingMode.PAGED_MANGA,
         additionalInfo: [...(people.length ? [staff.section({ id: 'staff', title: 'Staff', hasMore: false, items: people })] : []),
+            ...(details.length ? [tags.section({ id: 'publication', title: 'Publication', items: details })] : []),
             ...(series.contentRating === undefined ? [incompleteRatingInfo()] : [])]
     }
 }
