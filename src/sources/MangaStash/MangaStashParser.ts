@@ -49,7 +49,13 @@ export function imageURL(value: string, id: string, chapter?: string): string {
     if (chapter) {
         chapterId(`/${chapter}`, id)
         if (!target.pathname.startsWith(`/content/${id}/chapter-`) || target.pathname.split('/').length !== 5) throw new Error('MangaStash reader image has wrong owner')
-    } else if (!new RegExp(`^/content/covers/(?:thumbnails/)?${id}\\.(?:jpe?g|png|webp|avif|gif)$`, 'i').test(target.pathname)) throw new Error('MangaStash cover has wrong owner')
+    } else {
+        const namedCover = new RegExp(`^/content/covers/(?:thumbnails/)?${id}\\.(?:jpe?g|png|webp|avif|gif)$`, 'i').test(target.pathname)
+        // The source also advertises an owned chapter page as a card/detail cover.
+        // This validates a supplied URL only; it never invents a page or reader grant.
+        const ownedPageCover = target.pathname.startsWith(`/content/${id}/`) && new RegExp(`^/content/${id}/chapter-\\d+(?:\\.\\d+)?/[a-zA-Z0-9_-]+\\.(?:jpe?g|png|webp|avif|gif)$`, 'i').test(target.pathname)
+        if (!namedCover && !ownedPageCover) throw new Error('MangaStash cover has wrong owner')
+    }
     return target.href
 }
 function canonical($: CheerioAPI, expected: string): void {

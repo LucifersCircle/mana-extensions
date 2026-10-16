@@ -24,7 +24,7 @@ function serial<T>(run: () => Promise<T>): Promise<T> { const result = queue.the
 async function state(): Promise<State> {
     const value = await ObjectStore.get(STORE) as State | undefined
     if (!value) return { revision: 0, onlySafe: false, titles: [], images: [] }
-    if (!Number.isSafeInteger(value.revision) || value.revision < 0 || typeof value.onlySafe !== 'boolean' || !Array.isArray(value.titles) || !Array.isArray(value.images)) throw new Error('Invalid saved MangaStash policy')
+    if (!Number.isSafeInteger(value.revision) || value.revision < 0 || typeof value.onlySafe !== 'boolean' || !Array.isArray(value.titles) || !Array.isArray(value.images) || value.images.length > IMAGE_LIMIT) throw new Error('Invalid saved MangaStash policy')
     return value
 }
 function snapshot(value: State, context?: SourceContext): Policy { return { revision: value.revision, onlySafe: value.onlySafe, allowed: context?.allowedContentRatings === undefined ? undefined : [...context.allowedContentRatings] } }
@@ -44,8 +44,8 @@ function titleMap(value: State): Map<string, Title> {
     }
     return entries
 }
-function imageMap(value: State): Map<string, Grant> {
-    const now = Date.now(), entries = new Map<string, Grant>()
+function imageMap(value: State): Map<string, Grant[]> {
+    const now = Date.now(), entries = new Map<string, Grant[]>()
     for (const entry of value.images.slice(-IMAGE_LIMIT)) {
         if (!Array.isArray(entry) || entry.length !== 2) continue
         const [url, grant] = entry
@@ -54,8 +54,10 @@ function imageMap(value: State): Map<string, Grant> {
                 || (grant.classified ? grant.rating === undefined || nativeRating(grant.rating) !== grant.rating : grant.rating !== undefined)) continue
             assertRatingPolicy({ allowedContentRatings: grant.allowed })
             if (imageURL(url, grant.id, grant.chapter || undefined) !== url) continue
-            entries.set(url, grant)
-        } catch { /* Unverifiable saved grants fail closed. */ }
+        } catch { /* Unverifiable saved grants fail closed. */ continue }
+        const roles = entries.get(url) ?? []
+        if (roles.some((old) => old.id !== grant.id || old.chapter === grant.chapter || (old.chapter && grant.chapter))) throw new Error('MangaStash saved image roles conflict')
+        roles.push(grant); entries.set(url, roles)
     }
     return entries
 }
@@ -116,25 +118,32 @@ export function issue(cards: Card[], policy: Policy, pages?: { id: string, chapt
             if (!title) throw new Error('MangaStash title evidence is missing')
             imageURL(item.url, item.id, item.chapter || undefined)
             if (item.chapter && !title.chapters?.some((chapter) => chapter.chapterId === item.chapter && !chapter.locked)) throw new Error('MangaStash image has unknown chapter owner')
-            const old = images.get(item.url)
-            if (old && (old.id !== item.id || old.chapter !== item.chapter)) throw new Error('MangaStash image owner conflict')
-            // Cache output and callbacks never renew the fixed grant lifetime.
+            const roles = images.get(item.url) ?? []
+            if (roles.some((old) => old.id !== item.id || (old.chapter && item.chapter && old.chapter !== item.chapter))) throw new Error('MangaStash image owner conflict')
+            const old = roles.find((grant) => grant.chapter === item.chapter)
+            // A public cover and a verified reader may advertise the same URL.
+            // Keep their evidence separate; issuing one role never renews the other.
             const at = old?.at ?? title.at
-            images.set(item.url, { ...item, rating: title.rating, classified: title.classified, at, expires: at + LIFETIME, revision: policy.revision, allowed: policy.allowed })
+            const grant = old ?? { ...item, rating: title.rating, classified: title.classified, at, expires: at + LIFETIME, revision: policy.revision, allowed: policy.allowed }
+            images.set(item.url, [...roles.filter((role) => role.chapter !== item.chapter), grant])
         }
-        while (images.size > IMAGE_LIMIT) images.delete(images.keys().next().value as string)
-        value.images = [...images]; await ObjectStore.set(STORE, value)
+        const stored: State['images'] = [...images].flatMap(([url, roles]) => roles.map((role) => [url, role] as [string, Grant]))
+        value.images = stored.slice(-IMAGE_LIMIT); await ObjectStore.set(STORE, value)
     })
 }
 export function authorizeImage(url: string, policy: Policy): Promise<void> {
     return serial(async () => {
         const value = await state(); matching(value, policy)
-        const grant = imageMap(value).get(url)
-        if (!grant) throw new Error('MangaStash image was not issued, expired, or its policy changed; refresh the source')
-        imageURL(url, grant.id, grant.chapter || undefined)
-        const issuingPolicy = { ...policy, allowed: grant.allowed }
-        requireAllowed(grant, issuingPolicy)
-        const title = titleMap(value).get(grant.id); requireAllowed(title, issuingPolicy)
-        if (grant.chapter && !title?.chapters?.some((chapter) => chapter.chapterId === grant.chapter && !chapter.locked)) throw new Error('MangaStash image chapter evidence is unavailable')
+        const roles = imageMap(value).get(url)
+        if (!roles?.length) throw new Error('MangaStash image was not issued, expired, or its policy changed; refresh the source')
+        const titles = titleMap(value)
+        for (const grant of roles) {
+            imageURL(url, grant.id, grant.chapter || undefined)
+            const issuingPolicy = { ...policy, allowed: grant.allowed }, title = titles.get(grant.id)
+            if (!title || !permitted(grant, issuingPolicy) || !permitted(title, issuingPolicy)) continue
+            if (grant.chapter && !title.chapters?.some((chapter) => chapter.chapterId === grant.chapter && !chapter.locked)) continue
+            return
+        }
+        throw new Error('MangaStash image roles are excluded by current policy or chapter evidence is unavailable')
     })
 }
