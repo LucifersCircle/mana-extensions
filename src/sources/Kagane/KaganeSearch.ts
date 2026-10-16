@@ -14,6 +14,35 @@ import { resolveTypedTags,
     tagFilterId,
     tagIdsOf } from './tag-groups'
 
+type NumericRange = { min?: number, max?: number }
+
+/** Native optional text inputs, validated before any provider/taxonomy request. */
+export function readNumericRanges(filters: Filters | undefined): Record<string, NumericRange> {
+    if (filters === undefined) return {}
+    if (!filters || typeof filters !== 'object' || Array.isArray(filters)) throw invalidNumericRange()
+    const body: Record<string, NumericRange> = {}
+    for (const [field, floor, ceiling] of [['current_books', 0, 2147483647], ['start_year', 1, 9999]] as const) {
+        const range: NumericRange = {}
+        for (const side of ['min', 'max'] as const) {
+            const id = `${field}_${side}`
+            if (!Object.prototype.hasOwnProperty.call(filters, id)) continue
+            const value = filters[id]
+            if (typeof value !== 'string') throw invalidNumericRange()
+            const text = value.trim()
+            if (!text) continue
+            if (!/^[0-9]+$/.test(text)) throw invalidNumericRange()
+            const number = Number(text)
+            if (!Number.isSafeInteger(number) || number < floor || number > ceiling) throw invalidNumericRange()
+            range[side] = number
+        }
+        if (range.min !== undefined && range.max !== undefined && range.min > range.max) throw invalidNumericRange()
+        if (Object.keys(range).length) body[field] = range
+    }
+    return body
+}
+
+function invalidNumericRange(): Error { return new Error('Invalid Kagane numeric range. Use whole chapter counts 0–2147483647 or start years 1–9999, with minimum no greater than maximum.') }
+
 export function selectedOptions(filters: Filters | undefined, id: string): string[] {
     const value = filters?.[id]
     return Array.isArray(value) ? value.filter((item): item is Option => !!item && typeof item === 'object' && typeof item.id === 'string').map((item) => item.id) : []
@@ -82,11 +111,13 @@ export function selectedRatings(request: SearchRequest<Filters>, settings: Setti
     return RATINGS.filter((rating) => settings.contentRatings.includes(rating) && (!selected.length || selected.includes(rating)) && (request.context?.allowedContentRatings === undefined || request.context.allowedContentRatings.includes(manaRating({ content_rating: rating }))))
 }
 export function searchBody(request: SearchRequest<Filters>, settings: Settings, tags: TagEntry[]): Record<string, unknown> {
+    const ranges = readNumericRanges(request.filters)
     needsTagTaxonomy(request.filters, settings.excludedTags)
     const pooled = ['tags', ...TAG_GROUPS.map((group) => tagFilterId(group.id))].map((id) => selection(request.filters, id))
     validateTagIds([...pooled.flatMap((pick) => [...pick.included, ...pick.excluded]), ...settings.excludedTags], tags)
     const ratings = selectedRatings(request, settings)
     const body: Record<string, unknown> = {
+        ...ranges,
         content_rating: ratings,
         age_rating: [...new Set(ratings.map((rating) => rating === 'Safe' ? 'Safe' : rating === 'Suggestive' ? 'FifteenPlus' : 'EighteenPlus'))],
         source_type: settings.uploadSource === 'official' ? ['Official'] : settings.uploadSource === 'scanlations' ? ['Unofficial', 'Mixed'] : ['Official', 'Unofficial', 'Mixed']

@@ -233,6 +233,117 @@ export async function assertKaganeSavedSorts({ freshSource, response }) {
   }
 }
 
+// Replay only this run's public bulk rows. These are native serialization/cache
+// regressions, not evidence that the provider implements the numeric predicates.
+export async function assertKaganeNumericRanges({ freshSource, response, tags, sample }) {
+  assert(response?.content?.length && sample && tags?.length, 'Need actual Kagane range replay seeds');
+  const copy = (value) => JSON.parse(JSON.stringify(value));
+  const makeReplay = (pageResponse = () => ({ ...response, last: true })) => {
+    const target = freshSource(), calls = [];
+    target.api.client.request = async () => assert.fail('Range replay must not request provider data');
+    target.api.tags = async () => tags;
+    target.api.search = async (...args) => { calls.push(copy(args)); return pageResponse(args[1]); };
+    return { target, calls };
+  };
+  const tag = tags.find((entry) => sample.tags?.includes(entry.id));
+  assert(tag, 'Need a live tag on the range replay sample');
+  const context = { allowedContentRatings: [0, 1], origin: 0 };
+  const filters = {
+    exact_match: true, tag_query: tag.id, match_all_tags: true,
+    ...(sample.format ? { format: [{ id: sample.format }] } : {}),
+    ...(sample.upload_status ? { upload_status: [{ id: sample.upload_status }] } : {}),
+    ...(sample.source_id ? { source_id: [{ id: sample.source_id }] } : {}),
+    ...(sample.genres?.length ? { genres: { included: [{ id: sample.genres[0] }], excluded: [] }, match_all_genres: true } : {}),
+  };
+  const request = { page: 1, query: `  ${sample.title}  `, filters, sort: { id: 'current_books', ascending: true }, context };
+  const baseline = makeReplay(), expected = await baseline.target.search(request);
+  assert(expected.results.length, 'The actual range sample must survive existing policies');
+  assert.equal(baseline.calls.length, 1);
+  const expectedBody = baseline.calls[0][0];
+  assert.equal(expectedBody.title, sample.title.trim());
+  assert.deepEqual(expectedBody.content_rating, ['Safe', 'Suggestive']);
+  assert.equal(expectedBody.is_pornographic, false);
+  assert(expectedBody.tags.values.includes(tag.id));
+  const cases = [
+    [{ current_books_min: ' 00100 ' }, { current_books: { min: 100 } }],
+    [{ current_books_max: '20' }, { current_books: { max: 20 } }],
+    [{ current_books_min: '20', current_books_max: '20' }, { current_books: { min: 20, max: 20 } }],
+    [{ current_books_min: '0', current_books_max: '0' }, { current_books: { min: 0, max: 0 } }],
+    [{ current_books_min: '2147483647', current_books_max: '2147483647' }, { current_books: { min: 2147483647, max: 2147483647 } }],
+    [{ start_year_min: '1' }, { start_year: { min: 1 } }],
+    [{ start_year_max: '9999' }, { start_year: { max: 9999 } }],
+    [{ start_year_min: ' 2020 ', start_year_max: '2020' }, { start_year: { min: 2020, max: 2020 } }],
+    [{ start_year_min: '9999', start_year_max: '9999' }, { start_year: { min: 9999, max: 9999 } }],
+    [{ current_books_min: '', current_books_max: ' \t ', start_year_min: '\n', start_year_max: ' ' }, {}],
+    [{ current_books_min: '', current_books_max: '20', start_year_min: '2020', start_year_max: '' }, { current_books: { max: 20 }, start_year: { min: 2020 } }],
+    [{ current_books_min: '100', current_books_max: '200', start_year_min: '2020', start_year_max: '2022' }, { current_books: { min: 100, max: 200 }, start_year: { min: 2020, max: 2022 } }],
+  ];
+  for (const [ranges, body] of cases) {
+    const replay = makeReplay();
+    const result = await replay.target.search({ ...request, filters: { ...filters, ...ranges } });
+    assert.equal(replay.calls.length, 1);
+    assert.deepEqual(replay.calls[0][0], { ...expectedBody, ...body }, 'Range inputs changed unrelated provider filters');
+    assert.deepEqual(replay.calls[0].slice(1), [1, 50, 'current_books,asc', true]);
+    assert.deepEqual(Array.from(result.results, (item) => item.id), Array.from(expected.results, (item) => item.id), 'Serialization replay changed canonical bulk-row identity/order');
+    for (const item of result.results) assert.deepEqual(item.context, context);
+    assert.equal(result.isLastPage, true);
+  }
+
+  const invalidValues = [undefined, null, 0, 1, -1, 1.5, NaN, Infinity, -Infinity, true, false, {}, [], ['1'], { id: '1' },
+    'bad', '1x', '1.0', '1.5', '-1', '+1', '1e2', '0x10', '1_000', '1,000', '1 0', '1\n2', '１２', '١', 'NaN', 'Infinity', '9007199254740992', '9'.repeat(400)];
+  const invalidFilters = Object.keys(cases.at(-1)[0]).flatMap((id) => invalidValues.map((value) => ({ [id]: value })));
+  invalidFilters.push({ current_books_min: '2147483648' }, { current_books_max: '2147483648' },
+    { start_year_min: '0' }, { start_year_max: '0' }, { start_year_min: '10000' }, { start_year_max: '10000' },
+    { current_books_min: '2', current_books_max: '1' }, { start_year_min: '2022', start_year_max: '2020' });
+  const invalid = freshSource(), touched = [];
+  for (const name of ['tags', 'genres', 'sources', 'search']) invalid.api[name] = async () => { touched.push(name); assert.fail(`Invalid range reached ${name}`); };
+  invalid.api.client.request = async () => { touched.push('client'); assert.fail('Invalid range reached client'); };
+  for (const input of [...invalidFilters.map((ranges) => ({ ...filters, ...ranges })), null, [], '100', 100]) {
+    for (const listId of [undefined, 'popular']) {
+      // Even a request which would otherwise stop at the rating gate must reject.
+      for (const allowedContentRatings of [[0, 1], []]) {
+        await assert.rejects(invalid.search({ page: 1, filters: input, ...(listId ? { listId } : {}), context: { allowedContentRatings } }), /Invalid Kagane numeric range/);
+        assert.deepEqual(touched, [], 'Invalid original range requested taxonomy or search before rejection');
+      }
+    }
+  }
+
+  const discovery = makeReplay();
+  await discovery.target.search({ ...request, listId: 'popular', filters: { ...filters, ...cases.at(-1)[0] } });
+  const ownDiscovery = makeReplay(); await ownDiscovery.target.search({ ...request, listId: 'popular', filters: { exact_match: true } });
+  assert.deepEqual(discovery.calls, ownDiscovery.calls, 'Valid injected ranges changed discovery-owned body/sort');
+  assert.equal(discovery.calls[0][0].title, undefined);
+  assert.equal(discovery.calls[0][0].current_books, undefined); assert.equal(discovery.calls[0][0].start_year, undefined);
+
+  const plain = makeReplay();
+  const visible = await plain.target.search({ page: 1, context });
+  const rows = Array.from(visible.results, (item) => response.content.find((row) => row.series_id === item.id));
+  assert(rows.length >= 2 && rows.every(Boolean), 'Need at least two actual policy-visible rows for native range continuation');
+  const split = Math.ceil(rows.length / 2);
+  const paged = makeReplay((page) => ({ ...response, content: page === 1 ? rows.slice(0, split) : rows.slice(split), last: page >= 2 }));
+  const rangeFilters = { ...cases.at(-1)[0], exact_match: true };
+  const pagedRequest = { page: 1, query: sample.title, filters: rangeFilters, sort: { id: 'current_books', ascending: true }, context };
+  const first = await paged.target.search(pagedRequest), next = await paged.target.search({ ...pagedRequest, page: 2 });
+  assert.equal(first.isLastPage, false); assert.equal(next.isLastPage, true);
+  assert.deepEqual([...first.results, ...next.results].map((item) => item.id), rows.map((row) => row.series_id));
+  assert.deepEqual(paged.calls.map((args) => args[1]), [1, 2]);
+  assert.deepEqual(paged.calls[0][0], paged.calls[1][0], 'Continuation lost its range body');
+  assert.deepEqual(paged.calls[1].slice(1), [2, 50, 'current_books,asc', true]);
+  const prior = paged.calls.length;
+  const cached = await paged.target.search({ ...pagedRequest, page: 2, context: { ...context, origin: 1 } });
+  assert.equal(paged.calls.length, prior, 'Identical bounds did not reuse the continuation cache');
+  assert(cached.results.every((item) => item.context.origin === 1), 'Cached range result retained stale native context');
+  for (const [id, value] of [['current_books_min', '101'], ['current_books_max', '201'], ['start_year_min', '2021'], ['start_year_max', '2023']]) {
+    const before = paged.calls.length;
+    await paged.target.search({ ...pagedRequest, page: 2, filters: { ...rangeFilters, [id]: value } });
+    assert.deepEqual(paged.calls.slice(before).map((args) => args[1]), [1, 2], `Changed ${id} reused another range's cached pages`);
+    assert.notDeepEqual(paged.calls.at(-1)[0], paged.calls[0][0]);
+  }
+  const before = paged.calls.length;
+  await paged.target.search({ ...pagedRequest, page: 2 });
+  assert.equal(paged.calls.length, before, 'Changing a bound corrupted the original continuation cache');
+}
+
 // Execute the native bundle against fresh public responses. Observability wrappers
 // record the data it actually consumed, never replace it with a parallel source.
 export async function testKagane({ source, check, highlights, searchResult, image, requests, freshSource, referenceFetch = globalThis.fetch }) {
@@ -306,7 +417,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   }
   let catalog, form, chapterList, index, content, blocked, readerData, safeBody;
   await check('Never-saved source categories follow native policy and explicit source selection persists', async () => {
-    assert.equal(source.info.version, '0.0.1-alpha.7');
+    assert.equal(source.info.version, '0.0.1-alpha.8');
     assert.deepEqual(Array.from((await preference('contentRatings')).value), allRatings);
     const start = requests.length, empty = await source.search({ page: 1, context: { allowedContentRatings: [] } });
     assert.equal(empty.results.length, 0); assert.equal(empty.isLastPage, true); assert.equal(requests.length, start);
@@ -373,6 +484,14 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   await check('Native search form preserves live taxonomy and grouped tag sheets', async () => {
     form = await source.getSearchForm(); const all = fields(form);
     for (const id of ['content_rating', 'format', 'upload_status', 'genres', 'match_all_genres', 'match_all_tags', 'tag_query', 'source_id', 'exact_match']) assert(all.some((field) => field.id === id), `Missing ${id}`);
+    for (const [id, title] of [['current_books_min', 'Minimum chapters'], ['current_books_max', 'Maximum chapters'], ['start_year_min', 'Earliest start year'], ['start_year_max', 'Latest start year']]) {
+      assert.equal(all.filter((field) => field.id === id).length, 1, `Missing or duplicate native range field ${id}`);
+      assert.equal(all.find((field) => field.id === id).title, title);
+      assert.equal(all.find((field) => field.id === id).type, all.find((field) => field.id === 'tag_query').type, `${id} is not a native text field`);
+    }
+    const rangeSection = form.sections.find((section) => section.children?.some((field) => field.id === 'current_books_min'));
+    assert.match(rangeSection?.footer ?? '', /uploaded Kagane chapter entries, not the highest chapter number/i);
+    assert.match(rangeSection.footer, /Leave either bound blank to omit it/i);
     const expected = ['Era', 'Adaptations', 'Spoilers', 'Taboo', 'Content Warnings', 'Sexual Content', 'BL & GL', 'Appearance', 'Personality', 'Character Roles', 'Relationships', 'Health', 'Occupations', 'Creatures', 'Places', 'Activities', 'Objects', 'Worldbuilding', 'Themes', 'Storytelling', 'Format', 'Demographic'];
     const groups = all.filter((field) => field.id?.startsWith('tags:'));
     assert(groups.length >= expected.length);
@@ -428,6 +547,66 @@ export async function testKagane({ source, check, highlights, searchResult, imag
     const group = fields(form).find((field) => field.id?.startsWith('tags:') && field.options.some((option) => option.id.includes('+')));
     assert(group, 'Need an actual legacy composite tag option');
     await assertKaganeTagFilters({ freshSource, tags: await source.api.tags(), response: searches[0].response, option: group.options.find((option) => option.id.includes('+')), groupId: group.id });
+  });
+  await check('Native numeric ranges serialize strictly before taxonomy and preserve policies, discovery and cached continuation', async () => {
+    const sample = seen.get(catalog.results[0].id);
+    const response = searches.find((entry) => entry.response.content.some((row) => row.series_id === sample.series_id))?.response;
+    await assertKaganeNumericRanges({ freshSource, response, tags: await source.api.tags(), sample });
+  });
+  await check('Live chapter-count and start-year bounds constrain consumed bulk rows without changing native identity or order', async () => {
+    const original = source.api.search;
+    let rangeCalls = 0;
+    source.api.search = async (...args) => {
+      assert(rangeCalls < 6, 'Numeric-range checks exceeded their six-search provider budget');
+      rangeCalls += 1;
+      return original(...args);
+    };
+    const checkRangePage = async (filters, bounds, page = 1, priorIDs = new Set()) => {
+      const before = searches.length;
+      const result = await source.search({ page, filters });
+      searchResult(result);
+      const consumed = searches.slice(before);
+      assert(consumed.length, 'Range check did not observe the response consumed by native search');
+      const rows = consumed.flatMap((entry) => Array.from(entry.response.content));
+      assert(rows.length, 'No actual bulk rows were available to verify range semantics');
+      for (const { args } of consumed) {
+        const body = JSON.parse(JSON.stringify(args[0]));
+        assert.deepEqual(body.current_books, bounds.current_books);
+        assert.deepEqual(body.start_year, bounds.start_year);
+        assert.deepEqual(Object.fromEntries(Object.entries(body).filter(([key]) => !['current_books', 'start_year'].includes(key))), JSON.parse(JSON.stringify(safeBody)), 'Range query changed the existing policy body');
+      }
+      for (const row of rows) {
+        for (const [field, { min, max }] of Object.entries(bounds)) {
+          const value = row[field];
+          assert(typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value), `Constrained ${field} is missing, null, nonnumeric or noninteger on ${row.series_id}`);
+          assert(min === undefined || value >= min, `${field} below live minimum on ${row.series_id}`);
+          assert(max === undefined || value <= max, `${field} above live maximum on ${row.series_id}`);
+        }
+      }
+      const unique = new Set(priorIDs), expected = [];
+      for (const row of rows) {
+        if (unique.has(row.series_id)) continue;
+        unique.add(row.series_id);
+        if (isSafe(row) && row.cover_image_id?.trim()) expected.push(row.series_id);
+      }
+      assert.deepEqual(Array.from(result.results, (item) => item.id), expected, 'Range search changed canonical provider IDs/order or existing visibility policy');
+      for (const item of result.results) assert(rows.some((row) => row.series_id === item.id), 'Native range result is not backed by its consumed bulk response');
+      assert.equal(result.isLastPage, consumed.at(-1).response.last, 'Range continuation ignored upstream completion');
+      return { result, ids: unique, lastRawPage: consumed.at(-1).args[1] };
+    };
+    try {
+      await checkRangePage({ current_books_min: '100' }, { current_books: { min: 100 } });
+      await checkRangePage({ current_books_max: '20' }, { current_books: { max: 20 } });
+      await checkRangePage({ start_year_min: '2020', start_year_max: '2022' }, { start_year: { min: 2020, max: 2022 } });
+      const filters = { current_books_min: '100', start_year_min: '2020', start_year_max: '2022' };
+      const bounds = { current_books: { min: 100 }, start_year: { min: 2020, max: 2022 } };
+      const first = await checkRangePage(filters, bounds);
+      if (!first.result.isLastPage) {
+        const before = searches.length;
+        await checkRangePage(filters, bounds, 2, first.ids);
+        assert.equal(searches[before].args[1], first.lastRawPage + 1, 'Combined range page two restarted its physical cursor');
+      }
+    } finally { source.api.search = original; }
   });
   await check('Format, status and uploader filters round-trip through the native request', async () => {
     const raw = seen.get(catalog.results[0].id), all = fields(form);

@@ -18,7 +18,7 @@ LOCKS_GUARD = threading.Lock()
 ID = r'[A-Za-z0-9-]+'
 SEARCH_KEYS = {'source_type', 'title', 'content_rating', 'age_rating',
                'is_pornographic', 'content_lang', 'format', 'upload_status',
-               'source_id', 'genres', 'tags'}
+               'source_id', 'genres', 'tags', 'current_books', 'start_year'}
 HEADERS = {'accept', 'content-type', 'origin', 'referer', 'user-agent', 'x-integrity-token'}
 
 FETCH_SCRIPT = """
@@ -63,6 +63,13 @@ CHALLENGE_FRAMES = ('iframe[src*="challenges.cloudflare.com"], '
 class BrowserGate(Exception):
     def __init__(self, code):
         self.code = code
+
+
+def valid_numeric_range(value, minimum, maximum):
+    """Only nonempty plain JSON objects with integer min/max bounds are public filters."""
+    return (type(value) is dict and bool(value) and value.keys() <= {'min', 'max'}
+            and all(type(bound) is int and minimum <= bound <= maximum for bound in value.values())
+            and ('min' not in value or 'max' not in value or value['min'] <= value['max']))
 
 
 def assert_public_request(payload):
@@ -111,6 +118,8 @@ def assert_public_request(payload):
                      and all(item in ('Official', 'Unofficial', 'Mixed') for item in body['source_types'])))):
             return
         if (url.path == '/api/v2/search/series' and body is not None and keys <= SEARCH_KEYS
+                and ('current_books' not in body or valid_numeric_range(body['current_books'], 0, 2147483647))
+                and ('start_year' not in body or valid_numeric_range(body['start_year'], 1, 9999))
                 and params.keys() <= {'page', 'size', 'sort', 'exact_match'}
                 and re.fullmatch(r'[0-9]+', params.get('page', ''))
                 and re.fullmatch(r'[1-9][0-9]*', params.get('size', ''))
