@@ -42,7 +42,8 @@ export type Detail = Classification & {
     series_staff?: { name: string, role: string }[],
     genres?: { genre_id?: string, genre_name: string, is_spoiler?: boolean }[],
     tags?: { tag_id?: string, tag_name: string, is_spoiler?: boolean, spoiler?: boolean }[],
-    series_alternate_titles?: AlternateTitle[], average_rating?: number | null, total_views?: number | null
+    series_alternate_titles?: AlternateTitle[], average_rating?: number | null, total_views?: number | null,
+    series_links?: { url?: string | null, label?: string | null, kind?: string | null }[] | null
 }
 export type Book = {
     book_id: string, series_id?: string | null, title: string, chapter_no?: string | null, volume_no?: string | null,
