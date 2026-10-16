@@ -137,6 +137,30 @@ export function parseListing(html: string, requestURL: string): Listing {
     }
     return { items, next }
 }
+type DetailTagGroup = { title: string, values: Array<{ id: string, title: string, isNonInteractive: boolean }> }
+function detailTagSections(groups: DetailTagGroup[]): ReturnType<typeof tags.section>[] {
+    return groups.filter((group) => group.title !== 'Genres').flatMap((group, index) => {
+        const owners = Object.entries(FILTERS).filter(([id, filter]) => id !== 'genres' && filter.title === group.title)
+        // A section ID owns the native search field. Do not infer it from a label,
+        // or route ambiguous groups and source metadata that has no browse control.
+        const owner = owners.length === 1 && groups.filter((item) => item.title === group.title).length === 1 ? owners[0] : undefined
+        const items = group.values.map((item, position) => {
+            if (owner) try {
+                const target = url(item.id), entries = [...target.searchParams]
+                const option = owner[1].options.find((option) => option.id && option.id === entries[0]?.[1] && option.title === item.title)
+                if (target.pathname === '/browse/' && entries.length === 1 && entries[0]?.[0] === owner[0] && option) return tags.item({ id: option.id, title: option.title, isNonInteractive: false })
+            } catch { /* Malformed or unsupported metadata remains informational. */ }
+            return tags.item({ id: `metadata-${index + 1}-${position + 1}`, title: item.title, isNonInteractive: true })
+        })
+        // Mana stores ten items per section. Only the owning section can route a
+        // filter; keep overflow visible without inventing extra native fields.
+        return Array.from({ length: Math.ceil(items.length / 10) }, (_, chunk) => tags.section({
+            id: owner && chunk === 0 ? owner[0] : `source-metadata-${index + 1}-${chunk + 1}`,
+            title: chunk === 0 ? group.title : `${group.title} (more ${chunk})`,
+            items: items.slice(chunk * 10, (chunk + 1) * 10).map((item, position) => chunk === 0 && items.filter((other) => other.id === item.id).length === 1 ? item : tags.item({ ...item, id: `metadata-${index + 1}-${chunk * 10 + position + 1}`, isNonInteractive: true }))
+        }))
+    })
+}
 export function parseDetail(html: string, id: string): Detail {
     validId(id)
     const $ = load(html), webUrl = `${DOMAIN}/${id}/`
@@ -175,7 +199,7 @@ export function parseDetail(html: string, id: string): Detail {
         tags: genres,
         additionalInfo: [
             ...(author ? [staff.section({ id: 'author', title: 'Author', hasMore: false, items: [staff.item({ id: author, title: author })] })] : []),
-            ...groups.filter((group) => group.title !== 'Genres').map((group) => tags.section({ id: group.title.toLowerCase(), title: group.title, items: group.values.map((item) => tags.item(item)) })),
+            ...detailTagSections(groups),
             ...(rating === undefined ? [incompleteRatingInfo()] : []),
             tags.section({ id: 'chapter-date-metadata', title: 'Chapter dates', items: [tags.item({ id: 'unavailable-dates', title: 'Bulk chapter dates may be unavailable. Date(0) is a required technical unknown-date sentinel, not an actual publication date.', isNonInteractive: true })] })
         ] }
