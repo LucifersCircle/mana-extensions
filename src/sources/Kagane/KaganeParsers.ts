@@ -1,11 +1,14 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2026 Inkdex */
 /* Rating compatibility adapted from the Kagane source originally © 2026 Inkdex. */
-import { Chapter,
+import { AdditionalInfoType,
+    Chapter,
     Content,
     ContentRating,
     ContentType,
     Highlight,
+    highlights,
+    HighlightsSection,
     links,
     PublicationStatus,
     ReadingMode,
@@ -24,7 +27,10 @@ import { AlternateTitle,
     Series,
     seriesURL,
     Settings,
+    strictUUID,
     UploadSource } from './KaganeModels'
+
+const hasControls = (value: string): boolean => [...value].some((character) => character.charCodeAt(0) < 32 || (character.charCodeAt(0) >= 127 && character.charCodeAt(0) <= 159))
 
 export function classify(value: Classification): Rating | undefined {
     const legacyValue = value.content_rating
@@ -64,7 +70,7 @@ export function allowed(value: Classification, settings: Settings, selected?: re
 export function preferredTitle(primary: string, language?: string | null, alternates: AlternateTitle[] = []): string {
     const isEnglish = (value?: string | null): boolean => typeof value === 'string' && /^(?:en(?:[-_][a-z0-9]{2,8})*|english)$/i.test(value.trim())
     if (isEnglish(language)) return primary.trim()
-    return alternates.find((entry) => isEnglish(entry.label) && entry.title.trim())?.title.trim() || primary.trim()
+    return (Array.isArray(alternates) ? alternates : []).find((entry) => entry && isEnglish(entry.label) && typeof entry.title === 'string' && entry.title.trim())?.title.trim() || primary.trim()
 }
 
 export function displayTitle(title: string, settings: Settings, sources: UploadSource[], sourceId?: string | null, edition?: string | null): string {
@@ -104,23 +110,38 @@ function statusLabel(value: unknown): string | undefined {
     }
 }
 
-/** Only expose provider-published tracker links, without fetching destinations. */
+/** Only expose evidenced provider-published links, without fetching destinations. */
 function trackerLinks(entries: Detail['series_links']) {
     const trackers = [
-        { id: 'anilist', title: 'AniList', pattern: /^https:\/\/anilist\.co\/manga\/([1-9][0-9]*)\/?$/ },
-        { id: 'mal', title: 'MyAnimeList', pattern: /^https:\/\/myanimelist\.net\/manga\/([1-9][0-9]*)(?:\/[A-Za-z0-9_-]+)?\/?$/ },
-        { id: 'kitsu', title: 'Kitsu', pattern: /^https:\/\/kitsu\.app\/manga\/([1-9][0-9]*)\/?$/ },
-        { id: 'mangaupdates', title: 'MangaUpdates', pattern: /^https:\/\/www\.mangaupdates\.com\/series\/([a-z0-9]{7})(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)?\/?$/ }
+        { id: 'anilist', title: 'AniList', kind: 'Tracker', pattern: /^https:\/\/anilist\.co\/manga\/([1-9][0-9]*)\/?$/ },
+        { id: 'mal', title: 'MyAnimeList', kind: 'Tracker', pattern: /^https:\/\/myanimelist\.net\/manga\/([1-9][0-9]*)(?:\/[A-Za-z0-9_-]+)?\/?$/ },
+        { id: 'kitsu', title: 'Kitsu', kind: 'Tracker', pattern: /^https:\/\/kitsu\.app\/manga\/([1-9][0-9]*)\/?$/ },
+        { id: 'mangaupdates', title: 'MangaUpdates', kind: 'Tracker', pattern: /^https:\/\/www\.mangaupdates\.com\/series\/([a-z0-9]{7})(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)?\/?$/ },
+        { id: 'animeplanet', title: 'Anime-Planet', kind: 'Tracker', pattern: /^https:\/\/www\.anime-planet\.com\/manga\/([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/ },
+        { id: 'mangabaka', title: 'MangaBaka', kind: 'Other', pattern: /^https:\/\/mangabaka\.org\/([1-9][0-9]*)\/?$/ },
+        { id: 'mangadex', title: 'MangaDex', kind: 'Other', pattern: /^https:\/\/mangadex\.org\/title\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/?$/ },
+        { id: 'wikipedia-en', title: 'Wikipedia', kind: 'Other', pattern: /^https:\/\/en\.wikipedia\.org\/wiki\/((?:[A-Za-z0-9_().-]|%[0-9a-fA-F]{2})+)$/ },
+        { id: 'wikipedia-ja', title: 'Wikipedia (ja)', kind: 'Other', pattern: /^https:\/\/ja\.wikipedia\.org\/wiki\/((?:[A-Za-z0-9_().-]|%[0-9a-fA-F]{2})+)$/ },
+        { id: 'ann', title: 'Anime News Network', kind: 'Other', pattern: /^https:\/\/www\.animenewsnetwork\.com\/encyclopedia\/manga\.php\?id=([1-9][0-9]*)$/ },
+        { id: 'viz', title: 'VIZ', kind: 'Official', pattern: /^https:\/\/www\.viz\.com\/([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/ },
+        { id: 'youngjump', title: 'Young Jump', kind: 'Other', pattern: /^https:\/\/youngjump\.jp\/manga\/([a-z0-9]+(?:-[a-z0-9]+)*)\/$/ }
     ]
     const seen = new Set<string>()
     return (Array.isArray(entries) ? entries : []).flatMap((entry) => {
-        if (entry?.kind !== 'Tracker' || typeof entry.url !== 'string') return []
+        if (typeof entry?.url !== 'string' || hasControls(entry.url)) return []
         const url = entry.url.trim()
         for (const tracker of trackers) {
+            if (entry.kind !== tracker.kind) continue
             const match = tracker.pattern.exec(url)
             if (!match) continue
+            let identity = match[1] ?? ''
+            if (tracker.id.startsWith('wikipedia-')) {
+                try { identity = decodeURIComponent(identity) } catch { return [] }
+                // Reject encoded delimiters, dot segments and double encodings.
+                if (!identity || hasControls(identity) || /^[.]{1,2}$/.test(identity) || /[ /\\?#%]/.test(identity)) return []
+            }
             // Slugs and a trailing slash do not create another tracker identity.
-            const id = `${tracker.id}:${match[1]}`
+            const id = `${tracker.id}:${identity}`
             if (seen.has(id)) return []
             seen.add(id)
             return [links.item({ id, title: tracker.title, url })]
@@ -142,20 +163,48 @@ export function content(id: string, details: Detail, settings: Settings, sources
     const description = decode((details.description ?? '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n\n').replace(/<[^>]*>/g, '')).trim()
     const source = sources.find((item) => item.source_id === details.source_id)?.title
     const externalLinks = trackerLinks(details.series_links)
+    const primary = preferredTitle(details.title, details.title_language, details.series_alternate_titles)
+    const title = displayTitle(primary, settings, sources, details.source_id, details.edition_info)
+    const additionalTitles = [...new Set([details.title, ...(Array.isArray(details.series_alternate_titles) ? details.series_alternate_titles : []).map((entry) => entry?.title)].filter((value): value is string => typeof value === 'string').map((value) => value.trim()).filter(Boolean))]
+    const associatedNames = additionalTitles.filter((value) => value !== primary && value !== title)
     const summary = [
         typeof details.average_rating === 'number' && Number.isFinite(details.average_rating) && details.average_rating > 0 && details.average_rating <= 100 ? `★ ${(details.average_rating / 10).toFixed(1)}` : '',
         typeof details.total_views === 'number' && Number.isFinite(details.total_views) && details.total_views >= 0 ? `Views: ${details.total_views}` : '',
-        description, source ? `Source: ${source}` : '', details.edition_info ? `Edition: ${details.edition_info}` : '',
+        description, associatedNames.length ? `Associated names:\n${associatedNames.join('\n')}` : '', source ? `Source: ${source}` : '', details.edition_info ? `Edition: ${details.edition_info}` : '',
         uploadStatus ? `Upload status: ${uploadStatus}` : ''
     ].filter(Boolean).join('\n\n')
     return {
-        title: displayTitle(preferredTitle(details.title, details.title_language, details.series_alternate_titles), settings, sources, details.source_id, details.edition_info),
+        title,
         cover: covers[0] ?? '', additionalCovers: covers.slice(1), summary, tags, contentType: type, status,
-        additionalTitles: [...new Set([details.title.trim(), ...(details.series_alternate_titles ?? []).map((entry) => entry.title.trim())].filter(Boolean))],
+        additionalTitles,
         contentRating: manaRating(details), webUrl: seriesURL(id),
         recommendedPanelMode: tags.some((tag) => /^(?:webtoon|long strip)$/i.test(tag.title)) ? ReadingMode.WEBTOON : type === ContentType.MANHWA || type === ContentType.MANHUA || type === ContentType.COMIC ? ReadingMode.PAGED_COMIC : ReadingMode.PAGED_MANGA,
-        additionalInfo: [...(people.length ? [staff.section({ id: 'staff', title: 'Staff', hasMore: false, items: people })] : []), ...(externalLinks.length ? [links.section({ id: 'links', title: 'Links', items: externalLinks })] : []), ...(!classify(details) ? [incompleteRatingInfo()] : [])]
+        additionalInfo: [...(people.length ? [staff.section({ id: 'staff', title: 'Staff', hasMore: false, items: people })] : []), ...Array.from({ length: Math.ceil(externalLinks.length / 10) }, (_, index) => links.section({ id: index ? `links-${index + 1}` : 'links', title: index ? 'More links' : 'Links', items: externalLinks.slice(index * 10, (index + 1) * 10) })), ...(!classify(details) ? [incompleteRatingInfo()] : [])]
     }
+}
+
+/** This endpoint lacks genre/tag metadata, so exclusions prohibit the request. */
+export function editionSection(rows: unknown[], currentId: string, settings: Settings, host?: readonly ContentRating[]): HighlightsSection | undefined {
+    if (settings.excludedGenres.length || settings.excludedTags.length) return undefined
+    const seen = new Set<string>([currentId.toLowerCase()])
+    const items = rows.flatMap((raw) => {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return []
+        const row = raw as Record<string, unknown>
+        const id = strictUUID(row.id), cover = strictUUID(row.cover_image_id), sourceId = strictUUID(row.source_id)
+        const source = row.source && typeof row.source === 'object' && !Array.isArray(row.source) ? row.source as Record<string, unknown> : undefined
+        if (!id || !cover || !sourceId || seen.has(id) || typeof row.title !== 'string' || !row.title.trim() || hasControls(row.title)) return []
+        if (!source || source.id !== row.source_id || !strictUUID(source.id) || typeof source.title !== 'string' || !source.title.trim() || hasControls(source.title) || !['Official', 'Unofficial', 'Mixed'].includes(source.source_type as string)) return []
+        if (!['Manga', 'Manhwa', 'Manhua', 'Comic', 'Other'].includes(row.format as string) || typeof row.is_disturbing !== 'boolean') return []
+        const language = chapterLanguage(row.translated_language)
+        if (language === 'und' || chapterLanguage(row.title_language) === 'und' || (settings.languages.length && !settings.languages.some((value) => chapterLanguage(value) === language))) return []
+        if (row.edition_info != null && (typeof row.edition_info !== 'string' || hasControls(row.edition_info))) return []
+        const classification = row as Classification
+        if (!classify(classification) || !allowed(classification, settings, undefined, host)) return []
+        if (settings.uploadSource !== 'all' && (settings.uploadSource === 'official' ? source.source_type !== 'Official' : source.source_type === 'Official')) return []
+        seen.add(id)
+        return [{ type: AdditionalInfoType.Highlights as const, id, title: displayTitle(row.title, settings, [{ source_id: sourceId, title: source.title, source_type: source.source_type as string }], sourceId, row.edition_info as string | null | undefined), cover: imageURL(cover), webUrl: seriesURL(id), contentRating: manaRating(classification) }]
+    })
+    return items.length ? highlights.section({ id: 'other-editions', title: items.length > 10 ? 'Other Editions (first 10)' : 'Other Editions', hasMore: false, items: items.slice(0, 10) }) : undefined
 }
 
 function date(value?: string | null): Date {

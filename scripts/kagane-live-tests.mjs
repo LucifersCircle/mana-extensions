@@ -465,34 +465,106 @@ export function assertKaganeDetailMetadata({ content, metadata, sources, id }) {
   const source = sources.find((entry) => entry.source_id === metadata.source_id)?.title;
   const score = metadata.average_rating;
   const views = metadata.total_views;
+  const english = value => typeof value === 'string' && /^(?:en(?:[-_][a-z0-9]{2,8})*|english)$/i.test(value.trim());
+  const aliases = Array.isArray(metadata.series_alternate_titles) ? metadata.series_alternate_titles : [];
+  const primary = english(metadata.title_language) ? metadata.title.trim() : aliases.find(entry => entry && english(entry.label) && typeof entry.title === 'string' && entry.title.trim())?.title.trim() || metadata.title.trim();
+  const additionalTitles = [...new Set([metadata.title, ...aliases.map(entry => entry?.title)].filter(value => typeof value === 'string').map(value => value.trim()).filter(Boolean))];
+  assert.deepEqual(Array.from(content.additionalTitles), additionalTitles, 'Native alternate titles must preserve every source script and exact deduplication');
+  const names = additionalTitles.filter(value => value !== primary && value !== content.title);
   assert.equal(content.summary, [
     typeof score === 'number' && Number.isFinite(score) && score > 0 && score <= 100 ? `★ ${(score / 10).toFixed(1)}` : '',
     typeof views === 'number' && Number.isFinite(views) && views >= 0 ? `Views: ${views}` : '',
-    description, source ? `Source: ${source}` : '', metadata.edition_info ? `Edition: ${metadata.edition_info}` : '',
+    description, names.length ? `Associated names:\n${names.join('\n')}` : '', source ? `Source: ${source}` : '', metadata.edition_info ? `Edition: ${metadata.edition_info}` : '',
     upload ? `Upload status: ${upload}` : '',
   ].filter(Boolean).join('\n\n'), 'Detail summary must preserve source text and show only its average score and labeled views');
-  const trackers = new Map([
-    ['anilist.co', ['anilist', 'AniList', /^\/manga\/([1-9][0-9]*)\/?$/]],
-    ['myanimelist.net', ['mal', 'MyAnimeList', /^\/manga\/([1-9][0-9]*)(?:\/[A-Za-z0-9_-]+)?\/?$/]],
-    ['kitsu.app', ['kitsu', 'Kitsu', /^\/manga\/([1-9][0-9]*)\/?$/]],
-    ['www.mangaupdates.com', ['mangaupdates', 'MangaUpdates', /^\/series\/([a-z0-9]{7})(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)?\/?$/]],
+  const rules = new Map([
+    ['anilist.co', ['Tracker', 'anilist', 'AniList', /^\/manga\/([1-9][0-9]*)\/?$/]],
+    ['myanimelist.net', ['Tracker', 'mal', 'MyAnimeList', /^\/manga\/([1-9][0-9]*)(?:\/[A-Za-z0-9_-]+)?\/?$/]],
+    ['kitsu.app', ['Tracker', 'kitsu', 'Kitsu', /^\/manga\/([1-9][0-9]*)\/?$/]],
+    ['www.mangaupdates.com', ['Tracker', 'mangaupdates', 'MangaUpdates', /^\/series\/([a-z0-9]{7})(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)?\/?$/]],
+    ['www.anime-planet.com', ['Tracker', 'animeplanet', 'Anime-Planet', /^\/manga\/([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/]],
+    ['mangabaka.org', ['Other', 'mangabaka', 'MangaBaka', /^\/([1-9][0-9]*)\/?$/]],
+    ['mangadex.org', ['Other', 'mangadex', 'MangaDex', /^\/title\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/?$/]],
+    ['en.wikipedia.org', ['Other', 'wikipedia-en', 'Wikipedia', /^\/wiki\/((?:[A-Za-z0-9_().-]|%[0-9a-fA-F]{2})+)$/]],
+    ['ja.wikipedia.org', ['Other', 'wikipedia-ja', 'Wikipedia (ja)', /^\/wiki\/((?:[A-Za-z0-9_().-]|%[0-9a-fA-F]{2})+)$/]],
+    ['www.animenewsnetwork.com', ['Other', 'ann', 'Anime News Network', /^\/encyclopedia\/manga\.php\?id=([1-9][0-9]*)$/]],
+    ['www.viz.com', ['Official', 'viz', 'VIZ', /^\/([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/]],
+    ['youngjump.jp', ['Other', 'youngjump', 'Young Jump', /^\/manga\/([a-z0-9]+(?:-[a-z0-9]+)*)\/$/]],
   ]);
   const expectedLinks = new Map();
   for (const entry of Array.isArray(metadata.series_links) ? metadata.series_links : []) {
-    if (entry?.kind !== 'Tracker' || typeof entry.url !== 'string') continue;
+    if (typeof entry?.url !== 'string' || [...entry.url].some(c => c.charCodeAt(0) < 32 || (c.charCodeAt(0) >= 127 && c.charCodeAt(0) <= 159))) continue;
     const href = entry.url.trim();
     let url;
     try { url = new URL(href); } catch { continue; }
-    const tracker = trackers.get(url.hostname);
-    if (!tracker || !href.startsWith(`https://${url.hostname}/`) || url.username || url.password || url.port || url.search || url.hash) continue;
-    const match = tracker[2].exec(url.pathname);
-    if (!match || href !== `https://${url.hostname}${url.pathname}`) continue;
-    const key = `${tracker[0]}:${match[1]}`;
-    if (!expectedLinks.has(key)) expectedLinks.set(key, { type: 4, id: key, title: tracker[1], url: href });
+    const rule = rules.get(url.hostname);
+    if (!rule || entry.kind !== rule[0] || !href.startsWith(`https://${url.hostname}/`) || url.username || url.password || url.port || url.hash || (url.search && rule[1] !== 'ann')) continue;
+    const path = url.pathname + url.search;
+    if (href !== `https://${url.hostname}${path}`) continue;
+    const match = rule[3].exec(path);
+    if (!match) continue;
+    let identity = match[1];
+    if (rule[1].startsWith('wikipedia-')) {
+      try { identity = decodeURIComponent(identity); } catch { continue; }
+      if (!identity || /^[.]{1,2}$/.test(identity) || [...identity].some(c => c.charCodeAt(0) <= 32 || (c.charCodeAt(0) >= 127 && c.charCodeAt(0) <= 159)) || /[/\\?#%]/.test(identity)) continue;
+    }
+    const key = `${rule[1]}:${identity}`;
+    if (!expectedLinks.has(key)) expectedLinks.set(key, { type: 4, id: key, title: rule[2], url: href });
   }
   const sections = content.additionalInfo?.filter((section) => section.type === 4) ?? [];
-  assert.equal(sections.length, expectedLinks.size ? 1 : 0, 'Empty or duplicate native links section');
+  assert.equal(sections.length, Math.ceil(expectedLinks.size / 10), 'Native links must respect the SDK ten-item persistence limit');
+  sections.forEach((section, index) => {
+    assert.equal(section.id, index ? `links-${index + 1}` : 'links');
+    assert.equal(section.title, index ? 'More links' : 'Links');
+    assert.equal(section.items.length, Math.min(10, expectedLinks.size - index * 10));
+  });
   assert.deepEqual(Array.from(sections.flatMap((section) => section.items), (item) => ({ ...item })), [...expectedLinks.values()], 'Native links must be safe, deduplicated and source-published');
+}
+
+// Compare only the bulk rows actually consumed by this native detail call.
+export function assertKaganeEditionMetadata({ content, rows, id, settings, allowedContentRatings }) {
+  const sections = content.additionalInfo?.filter(section => section.id === 'other-editions') ?? [];
+  const uuid = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  const allRatings = ['Safe', 'Suggestive', 'Erotica', 'Pornographic'];
+  const ratings = { Safe: [false, 'Safe', 0], FifteenPlus: [false, 'Suggestive', 1], EighteenPlus: [false, 'Erotica', 2] };
+  const language = value => {
+    if (typeof value !== 'string') return '';
+    let code = value.trim().replace(/_/g, '-').toLowerCase();
+    code = ({ 'es-la': 'es-419', 'pt-la': 'pt-br' })[code] ?? code;
+    code = code.replace(/^(ja|ko|zh)-ro$/, '$1-latn').replace(/^(iw|in|ji)(?=-|$)/, value => ({ iw: 'he', in: 'id', ji: 'yi' })[value]);
+    return !/^(?:unk|und|unknown)(?:-|$)/.test(code) && /^[a-z]{2,3}(?:-[a-z]{4})?(?:-(?:[a-z]{2}|[0-9]{3}))?(?:-(?:[a-z0-9]{5,8}|[0-9][a-z0-9]{3}))*$/.test(code) ? code : '';
+  };
+  const controls = value => [...value].some(c => c.charCodeAt(0) < 32 || (c.charCodeAt(0) >= 127 && c.charCodeAt(0) <= 159));
+  const text = value => typeof value === 'string' && value.trim() && !controls(value);
+  const seen = new Set([id.toLowerCase()]);
+  const eligible = (settings.excludedGenres.length || settings.excludedTags.length ? [] : rows).filter(row => {
+    const canonical = uuid(row?.id) ? row.id.toLowerCase() : undefined;
+    if (!canonical || seen.has(canonical) || !uuid(row.cover_image_id) || !uuid(row.source_id) || row.source?.id !== row.source_id || !['Official', 'Unofficial', 'Mixed'].includes(row.source?.source_type)) return false;
+    if (!text(row.title) || !text(row.source.title) || !language(row.translated_language) || !language(row.title_language) || typeof row.is_disturbing !== 'boolean' || !['Manga', 'Manhwa', 'Manhua', 'Comic', 'Other'].includes(row.format) || row.edition_info != null && (typeof row.edition_info !== 'string' || controls(row.edition_info))) return false;
+    const legacy = typeof row.content_rating === 'string' ? allRatings.find(value => value.toLowerCase() === row.content_rating.trim().toLowerCase()) : undefined;
+    const rating = row.is_pornographic === true || legacy === 'Pornographic' ? [true, 'Pornographic', 3] : row.age_rating === undefined && row.is_pornographic === undefined && legacy ? [undefined, legacy, ['Safe', 'Suggestive', 'Erotica'].indexOf(legacy)] : ratings[row.age_rating];
+    if (!rating || rating[1] !== 'Pornographic' && (rating[0] !== row.is_pornographic || row.content_rating != null && legacy !== rating[1]) || !settings.contentRatings.includes(rating[1]) || allowedContentRatings && !allowedContentRatings.includes(rating[2])) return false;
+    if (settings.languages.length && !settings.languages.some(value => language(value) === language(row.translated_language))) return false;
+    if (settings.uploadSource !== 'all' && (settings.uploadSource === 'official' ? row.source.source_type !== 'Official' : row.source.source_type === 'Official')) return false;
+    seen.add(canonical); return true;
+  });
+  assert.equal(sections.length, eligible.length ? 1 : 0, 'Empty or unexpected Other Editions section');
+  if (!sections.length) return;
+  const section = sections[0];
+  assert.equal(content.additionalInfo[0], section, 'Other Editions must be the first native additional-info section');
+  assert.equal(section.type, 2); assert.equal(section.hasMore, false, 'No unsafe context-free expansion');
+  assert.equal(section.title, eligible.length > 10 ? 'Other Editions (first 10)' : 'Other Editions');
+  assert.deepEqual(Array.from(section.items, item => item.id), eligible.slice(0, 10).map(row => row.id.toLowerCase()), 'Edition identity/order/cap must match the same bulk response');
+  for (const [index, item] of section.items.entries()) {
+    const raw = eligible[index];
+    assert.equal(item.cover, `https://kagane.org/api/v2/image/${raw.cover_image_id.toLowerCase()}`);
+    assert.equal(item.webUrl, `https://kagane.org/series/${raw.id.toLowerCase()}`);
+    const legacy = typeof raw.content_rating === 'string' ? allRatings.find(value => value.toLowerCase() === raw.content_rating.trim().toLowerCase()) : undefined;
+    const rating = raw.is_pornographic === true || legacy === 'Pornographic' ? 3 : raw.age_rating === undefined && raw.is_pornographic === undefined ? allRatings.indexOf(legacy) : ratings[raw.age_rating][2];
+    assert.equal(item.contentRating, rating);
+    assert.equal(item.type, 2); assert(item.title.trim());
+    assert(!Object.hasOwn(item, 'subtitle'), 'Pinned SimpleHighlight has no subtitle field');
+  }
 }
 
 // Execute the native bundle against fresh public responses. Observability wrappers
@@ -503,6 +575,16 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   const sample = '019c2084-fa67-791d-8ba5-494744577445';
   const defaultRatings = ['Safe', 'Suggestive'], allRatings = ['Safe', 'Suggestive', 'Erotica', 'Pornographic'];
   const seen = new Map(), details = new Map(), books = new Map(), searches = [];
+  const editionRows = new Map();
+  const originalTrackerSeries = source.api.trackerSeries.bind(source.api);
+  source.api.trackerSeries = async tracker => { const rows = await originalTrackerSeries(tracker); editionRows.set(tracker, rows); return rows; };
+  // Synthetic metadata cases reuse this run's raw editions, never refetch rows.
+  const originalFreshSource = freshSource;
+  freshSource = () => {
+    const target = originalFreshSource();
+    target.api.trackerSeries = async tracker => { assert(editionRows.has(tracker), 'Missing this run’s raw edition-response provenance'); return editionRows.get(tracker); };
+    return target;
+  };
   let uploadSources = [];
   const originalSources = source.api.sources.bind(source.api);
   source.api.sources = async (...args) => { const value = await originalSources(...args); uploadSources = value; return value; };
@@ -585,7 +667,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   }
   let catalog, form, chapterList, index, content, blocked, readerData, safeBody;
   await check('Never-saved source categories follow native policy and explicit source selection persists', async () => {
-    assert.equal(source.info.version, '0.0.1-alpha.11');
+    assert.equal(source.info.version, '0.0.1-alpha.12');
     assert.deepEqual(Array.from((await preference('contentRatings')).value), allRatings);
     const start = requests.length, empty = await source.search({ page: 1, context: { allowedContentRatings: [] } });
     assert.equal(empty.results.length, 0); assert.equal(empty.isLastPage, true); assert.equal(requests.length, start);
@@ -615,9 +697,19 @@ export async function testKagane({ source, check, highlights, searchResult, imag
     const item = catalog.results[0];
     const result = await source.search({ page: 1, query: seen.get(item.id).title }); searchResult(result);
     assert(result.results.some((match) => match.id === item.id));
+    const beforeDetail = requests.length, priorTrackers = new Set(editionRows.keys());
     content = await source.getContent(item.id);
     const metadata = details.get(item.id); assert(metadata);
     assertKaganeDetailMetadata({ content, metadata, sources: uploadSources, id: item.id });
+    const settings = await source.settings();
+    const tracker = typeof metadata.tracker_id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(metadata.tracker_id) ? metadata.tracker_id.toLowerCase() : undefined;
+    const eligible = tracker && !settings.excludedGenres.length && !settings.excludedTags.length;
+    if (eligible) assert(editionRows.has(tracker), 'Missing the actual consumed tracker bulk response');
+    const detailCalls = requests.slice(beforeDetail), bulkCalls = detailCalls.filter(request => /\/api\/v2\/trackers\/[^/]+\/series$/.test(new URL(request.url).pathname));
+    assert(bulkCalls.length <= 1, 'One native detail request added repeated edition bulk calls');
+    if (eligible && !priorTrackers.has(tracker)) assert.equal(bulkCalls.length, 1, 'Uncached native detail must consume exactly one real bulk response');
+    assert(detailCalls.every(request => !new URL(request.url).pathname.startsWith('/api/v2/series/') || new URL(request.url).pathname === `/api/v2/series/${item.id}`), 'Edition enrichment added per-row metadata requests');
+    assertKaganeEditionMetadata({ content, rows: eligible ? editionRows.get(tracker) : [], id: item.id, settings });
     const english = (language) => typeof language === 'string' && /^(?:en(?:[-_][a-z0-9]{2,8})*|english)$/i.test(language.trim());
     const expectedTitle = english(metadata.title_language) ? metadata.title : metadata.series_alternate_titles?.find((alias) => english(alias.label) && alias.title.trim())?.title ?? metadata.title;
     assert.equal(content.title, expectedTitle.trim()); assert(content.summary?.trim());
@@ -1018,4 +1110,5 @@ export async function testKagane({ source, check, highlights, searchResult, imag
     assert(!requests.some((request) => request.url.includes('token=') && !request.url.includes('redacted')));
   });
   source.search = nativeSearch;
+  source.api.trackerSeries = originalTrackerSeries;
 }
