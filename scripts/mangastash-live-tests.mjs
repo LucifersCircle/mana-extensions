@@ -187,7 +187,33 @@ export async function testMangaStash({ check, referenceFetch = globalThis.fetch 
       for (const action of [() => blocked.search({ context }), () => blocked.getContent('ayashimon', context), () => blocked.getSectionsForPage({ id: 'home', context }), () => blocked.resolvePageSection({ id: 'home', context }, 'latest')]) await assert.rejects(action, /Invalid Mana content-rating policy/);
     }
     await assert.rejects(() => blocked.getChapterData('ayashimon', 'other/chapter-25.6'));
+    for (const id of ['-ayashimon', 'Ayashimon', 'ayashimon%2fother', 'ayashimon/../other', 'ayashimon\\other', 'x'.repeat(257)]) {
+      await assert.rejects(() => blocked.getContent(id, all));
+      await assert.rejects(() => blocked.getChapterData(id, `${id}/chapter-25.6`));
+    }
+    assert.equal(await blocked.handleURL('https://foreign.example/ayashimon/'), null);
     assert.equal(attempted, 0);
+    // Canonical slug punctuation is literal data, not text to normalize away.
+    for (const id of ['ayashimon-', 'ayashimon--side']) {
+      const routes = [];
+      const changed = host(async (input) => {
+        const url = String(input); routes.push(url);
+        assert([`${domain}/${id}/`, `${domain}/${id}/chapter-25.6`].includes(url));
+        return replay((_url, html) => html.replaceAll('ayashimon', id))(url.replace(id, 'ayashimon'));
+      });
+      const detail = await changed.source.getContent(id, all);
+      assert.equal(detail.webUrl, `${domain}/${id}/`);
+      assert(detail.chapters.every((chapter) => chapter.chapterId.startsWith(`${id}/`)));
+      assert.equal(detail.cover, content.cover.replace('ayashimon', id));
+      const pages = await changed.source.getChapterData(id, `${id}/chapter-25.6`);
+      assert.deepEqual(Array.from(pages.pages, ({ url }) => url), Array.from(reader.pages, ({ url }) => url.replace('ayashimon', id)));
+      const cold = host(replay(), changed.store).source;
+      assert.equal((await cold.willRequestImage(detail.cover)).url, detail.cover);
+      await assert.rejects(() => cold.willRequestImage(detail.cover.replace(id, 'ayashimon')));
+      await assert.rejects(() => changed.source.getChapterData(id, 'ayashimon/chapter-25.6'));
+      assert.equal((await changed.source.handleURL(`${domain}/${id}/chapter-25.6`)).content.id, id);
+      assert.equal(routes.length, 2, 'Literal slug roundtrip must use only the exact detail and reader paths');
+    }
   });
   await check('Deny-all, Safe-only, omitted and concurrent native contexts stay request-scoped', async () => {
     const target = host(replay()).source;

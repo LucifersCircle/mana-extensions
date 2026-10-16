@@ -22,7 +22,7 @@ export type SourceChapter = Chapter & { locked: boolean }
 export type Detail = { card: Card, content: Content, chapters: SourceChapter[] }
 export const text = (value: string): string => value.replace(/\s+/g, ' ').trim()
 export function validId(id: string): string {
-    if (typeof id !== 'string' || id.length > 256 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)) throw new Error('Invalid MangaStash series identity')
+    if (typeof id !== 'string' || !/^[a-z0-9][a-z0-9-]{0,255}$/.test(id)) throw new Error('Invalid MangaStash series identity')
     return id
 }
 export function url(value: string): URL {
