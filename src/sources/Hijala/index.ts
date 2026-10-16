@@ -87,7 +87,7 @@ const options = (ids: string[]): Option[] => ids.map((id) => ({ id, title: LABEL
 
 export class Target implements ChapterSource, PageLinkResolver, SourcePreferenceProvider, ImageRequestHandler {
     readonly info: SourceInfo = {
-        id: 'Hijala', version: '0.0.1-alpha.3', name: 'Hijala', thumbnail: 'Hijala.png', website: DOMAIN,
+        id: 'Hijala', version: '0.0.1-alpha.4', name: 'Hijala', thumbnail: 'Hijala.png', website: DOMAIN,
         description: 'Hijala public manga catalog, site filters, complete chapters and public reader. Optional NSFW genre exclusion.',
         rating: CatalogRating.MIXED, supportedLanguages: ['en_US', 'es_ES', 'ru_RU'], badges: ['Manga', 'Manhwa', 'Manhua'],
         developers: [{ name: 'Lucifers Circle', website: 'https://pirate.vodka', github: 'https://github.com/LucifersCircle' }]

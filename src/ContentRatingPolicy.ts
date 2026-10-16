@@ -16,6 +16,6 @@ export function ratingAllowed(value: ContentRating | undefined, context?: Source
 
 export function incompleteRatingInfo(): AdditionalInfoSection {
     return tags.section({ id: 'content-rating-metadata', title: 'Content rating metadata', items: [
-        tags.item({ id: 'incomplete-content-rating', title: 'Incomplete metadata — Mature compatibility fallback' })
+        tags.item({ id: 'incomplete-content-rating', title: 'Incomplete metadata — Mature compatibility fallback', isNonInteractive: true })
     ] })
 }
