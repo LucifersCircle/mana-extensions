@@ -17,7 +17,7 @@ export async function testHijala({ source, check, highlights, searchResult, imag
   let form, catalog, content, full, chapters, reader, explicit, originalTitles, largeTitle;
 
   await check('Native metadata and persistent defaults are honest about genre-based safety', async () => {
-    assert.equal(source.info.version, '0.0.1-alpha.3'); assert.equal(source.info.rating, 1);
+    assert.equal(source.info.version, '0.0.1-alpha.4'); assert.equal(source.info.rating, 1);
     for (const path of ['/series', '/series/', '/series/?page=1', '/series-other/title']) assert.equal(isSeriesDetailRequest({ url: `${domain}${path}` }), false);
     for (const path of ['/series/mimosa', '/series/mimosa/chapter-56']) assert.equal(isSeriesDetailRequest({ url: `${domain}${path}` }), true);
     assert.equal((await field('excludeNSFW')).value, false); assert.equal((await field('hidePaid')).value, true);
