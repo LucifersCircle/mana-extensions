@@ -46,6 +46,8 @@ import {
 import { VortexScansParser } from './VortexScansParser'
 import {
     buildVortexContentId,
+    buildVortexSeriesUrl,
+    encodePathComponent,
     normalizeVortexSearchTerm,
     parseVortexContentId
 } from './VortexScansUtils'
@@ -102,7 +104,7 @@ export class Target implements
     ImageRequestHandler {
     readonly info: SourceInfo = {
         id: 'VortexScans',
-        version: '0.0.1-alpha.8',
+        version: '0.0.1-alpha.9',
         name: 'VortexScans',
         description: 'Read manga, manhwa, and manhua from VortexScans.',
         thumbnail: 'VortexScans.png',
@@ -161,20 +163,39 @@ export class Target implements
     }
 
     async getChapterData(
-        _contentId: string,
+        contentId: string,
         chapterId: string,
         chapter?: Chapter
     ): Promise<ChapterData> {
-        try {
-            const response = await this.api.getChapter(chapterId)
-            if (!response.chapter) {
-                throw new Error(`VortexScans returned no data for chapter ${chapterId}`)
-            }
-            return this.parser.parseChapterData(response.chapter)
-        } catch (error) {
-            if (!chapter?.webUrl) throw error
-            return this.parser.parseChapterPage(await this.api.getText(chapter.webUrl))
+        try { decodeURIComponent(contentId) } catch { throw new Error('Invalid VortexScans reader identity') }
+        const { id, slug } = parseVortexContentId(contentId)
+        if ((slug === undefined && contentId !== id) || typeof chapterId !== 'string' || !validVortexId(id) || !validVortexId(chapterId)
+            || (slug !== undefined && !validVortexSlug(slug))) {
+            throw new Error('Invalid VortexScans reader identity')
         }
+        if (chapter && (chapter.chapterId !== chapterId
+            || (chapter.webUrl !== undefined && (!validVortexChapterUrl(chapter.webUrl)
+                || (slug !== undefined && !chapter.webUrl.startsWith(`${buildVortexSeriesUrl(slug)}/`)))))) {
+            throw new Error('VortexScans chapter reference does not match the requested identity')
+        }
+
+        // API identity and access failures are terminal. The previous catch-all
+        // HTML fallback could turn unrelated images or a locked chapter into pages.
+        const response = await this.api.getChapter(chapterId)
+        const data = response?.chapter, owner = data?.mangaPost
+        const seriesSlug = owner?.slug, chapterSlug = data?.slug
+        if (!data || !validVortexId(data.id) || String(data.id) !== chapterId
+            || !validVortexId(data.mangaPostId) || String(data.mangaPostId) !== id
+            || (owner?.id !== undefined && (!validVortexId(owner.id) || String(owner.id) !== id))
+            || !validVortexSlug(seriesSlug) || !validVortexSlug(chapterSlug)
+            || (slug !== undefined && seriesSlug !== slug)) {
+            throw new Error('VortexScans returned mismatched or incomplete reader identity')
+        }
+        const webUrl = `${buildVortexSeriesUrl(seriesSlug)}/${encodePathComponent(chapterSlug)}`
+        if (chapter?.webUrl !== undefined && chapter.webUrl !== webUrl) {
+            throw new Error('VortexScans chapter reference does not match the returned identity')
+        }
+        return this.parser.parseChapterData(data)
     }
 
     async getSearchForm(): Promise<SearchForm> {
@@ -227,6 +248,7 @@ export class Target implements
     async search(request: SearchRequest<VortexFilterProps>): Promise<PagedSearchResult> {
         const page = request.page ?? 1
         if (!Number.isSafeInteger(page) || page < 1 || page > 100) throw new Error('Invalid VortexScans page')
+        validateVortexGenres(request.filters?.genres)
         if (request.context?.allowedContentRatings?.length === 0) return { results: [], isLastPage: true }
         if (request.listId?.startsWith('collection:')) {
             const slug = request.listId.slice('collection:'.length)
@@ -396,12 +418,10 @@ export class Target implements
             seriesStatus: request.filters?.status?.id,
             seriesType: request.filters?.type?.id,
             genreIds: request.filters?.genres?.included
-                ?.filter((genre) => /^\d+$/.test(genre.id))
-                .map((genre) => genre.id)
+                ?.map((genre) => genre.id)
                 .join(',') || undefined,
             excludedGenreIds: request.filters?.genres?.excluded
-                ?.filter((genre) => /^\d+$/.test(genre.id))
-                .map((genre) => genre.id)
+                ?.map((genre) => genre.id)
                 .join(',') || undefined,
             orderBy: request.sort?.id ?? 'lastChapterAddedAt',
             orderDirection: request.sort
@@ -487,5 +507,41 @@ export class Target implements
         })()
         this.pendingPages.set(key, load)
         try { return await load } finally { if (this.pendingPages.get(key) === load) this.pendingPages.delete(key) }
+    }
+}
+
+function validVortexId(value: unknown): boolean {
+    return (typeof value === 'string' || typeof value === 'number')
+        && /^[1-9]\d*$/.test(String(value)) && Number.isSafeInteger(Number(value))
+}
+
+function validVortexSlug(value: unknown): value is string {
+    return typeof value === 'string' && value.length > 0 && value === value.trim()
+        && value !== '.' && value !== '..' && !/[/\\]/.test(value)
+        && !Array.from(value).some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)
+}
+
+function validVortexChapterUrl(value: string): boolean {
+    const match = /^https:\/\/vortexscans\.org\/series\/([^/?#]+)\/([^/?#]+)$/.exec(value)
+    if (!match?.[1] || !match[2]) return false
+    try {
+        const series = decodeURIComponent(match[1]), chapter = decodeURIComponent(match[2])
+        return validVortexSlug(series) && validVortexSlug(chapter)
+            && value === `${buildVortexSeriesUrl(series)}/${encodePathComponent(chapter)}`
+    } catch { return false }
+}
+
+function validateVortexGenres(genres: VortexFilterProps['genres']): void {
+    if (genres === undefined) return
+    if (!genres || typeof genres !== 'object' || Array.isArray(genres)
+        || Object.keys(genres).some((key) => !['included', 'excluded'].includes(key))) {
+        throw new Error('Invalid VortexScans genre selection')
+    }
+    for (const selection of [genres.included, genres.excluded]) {
+        if (selection === undefined) continue
+        if (!Array.isArray(selection) || Array.from(selection).some((genre) =>
+            !genre || typeof genre !== 'object' || Array.isArray(genre) || typeof genre.id !== 'string' || !validVortexId(genre.id))) {
+            throw new Error('Invalid VortexScans genre selection')
+        }
     }
 }

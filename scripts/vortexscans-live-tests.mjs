@@ -295,10 +295,18 @@ export async function testVortexRatings({ source, check, freshSource, requests }
       await assert.rejects(target.resolvePageSection({ id: 'home' }, 'most-popular'), /conflicting canonical identity|configuration changed/); assert.equal(requests.length, before);
     }
   });
+  let readerSeed;
   await check('Native detail to chapters to reader loads complete first and last image bodies with source headers', async () => {
     const contentID = canonicalID(rawPost), detail = await source.getContent(contentID); assert(detail.webUrl);
-    const chapters = await source.getChapters(contentID); assert(chapters.length);
-    const chapter = chapters[0], pages = (await source.getChapterData(contentID, chapter.chapterId, chapter)).pages; assert(pages.length);
+    const originalInventory = source.api.getChapters, originalReader = source.api.getChapter;
+    let inventory, response, chapter, pages;
+    source.api.getChapters = async (...args) => { const result = await originalInventory.apply(source.api, args); inventory = structuredClone(result); return result; };
+    source.api.getChapter = async (...args) => { const result = await originalReader.apply(source.api, args); response = structuredClone(result); return result; };
+    try {
+      const chapters = await source.getChapters(contentID); assert(chapters.length);
+      chapter = chapters[0]; pages = (await source.getChapterData(contentID, chapter.chapterId, chapter)).pages; assert(pages.length);
+      readerSeed = { inventory, response, chapter };
+    } finally { source.api.getChapters = originalInventory; source.api.getChapter = originalReader; }
     for (const page of [pages[0], ...(pages.length > 1 ? [pages.at(-1)] : [])]) {
       const request = await source.willRequestImage(page.url), response = await fetch(request.url, { headers: request.headers, signal: AbortSignal.timeout(30_000), redirect: 'error' });
       assert(response.ok); assert(response.headers.get('content-type')?.startsWith('image/'));
@@ -307,5 +315,170 @@ export async function testVortexRatings({ source, check, freshSource, requests }
       console.log(`VORTEX COMPLETE READER ${chapter.chapterId}: ${bytes.length} bytes ${response.headers.get('content-type')}`);
     }
   });
+  await testVortexReaderIdentity({ check, requests, freshSource, seed: readerSeed });
+  await testVortexGenreValidation({ check, requests, freshSource, post: pool?.find((post) => post.genres?.some((genre) => Number.isSafeInteger(genre.id) && genre.id > 0)) });
+}
 
+// Reuse the native call's public metadata, never fetch a second inventory/reader.
+// HTML outage fallback has no verified current reader capture and stays disabled.
+export async function testVortexReaderIdentity({ check, requests, freshSource, seed }) {
+  const before = requests.length;
+  const reader = seed?.response?.chapter;
+  const setup = (response = seed?.response) => {
+    assert(reader?.id && reader.mangaPostId && reader.mangaPost?.slug, 'Missing native reader identity seed');
+    const target = freshSource(), calls = { api: [], html: [] };
+    target.api.getChapters = async () => structuredClone(seed.inventory);
+    target.api.getChapter = async (id) => { calls.api.push(id); return structuredClone(response); };
+    target.api.getText = async (url) => { calls.html.push(url); throw new Error('HTML fallback must not run'); };
+    return { target, calls };
+  };
+  const contentId = () => `${reader.mangaPostId}:${encodeURIComponent(reader.mangaPost.slug).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)}`;
+  const chapterId = () => String(reader.id);
+  const reference = () => JSON.parse(JSON.stringify(seed.chapter));
+  await check('Native reader preserves canonical, numeric and persisted legacy owner IDs and decimal chapter references', async () => {
+    for (const id of [contentId(), String(reader.mangaPostId), contentId().replace(':', '/'), contentId().replace(':', '|')]) {
+      const { target, calls } = setup();
+      const chapters = await target.getChapters(id);
+      const chapter = chapters.find((item) => item.chapterId === chapterId()); assert(chapter);
+      const restored = JSON.parse(JSON.stringify(chapter));
+      const data = await target.getChapterData(id, chapterId(), restored);
+      assert.equal(data.pages.length, reader.images.length);
+      assert.deepEqual(Array.from(data.pages, (page) => page.url), Array.from(target.parser.parseChapterData(reader).pages, (page) => page.url));
+      assert.deepEqual(calls.api, [chapterId()]); assert.equal(calls.html.length, 0);
+    }
+    const { target, calls } = setup();
+    assert.equal((await target.getChapterData(contentId(), chapterId())).pages.length, reader.images.length);
+    const decimal = seed.inventory.post.chapters.find((item) => !Number.isInteger(Number(item.number)));
+    if (decimal) {
+      // Identity mutation uses an actually issued decimal ID/slug, not number-derived IDs.
+      const response = structuredClone(seed.response);
+      Object.assign(response.chapter, { id: decimal.id, slug: decimal.slug, number: decimal.number });
+      const replay = setup(response), native = (await replay.target.getChapters(contentId())).find((item) => item.chapterId === String(decimal.id));
+      assert(native && native.number === Number(decimal.number));
+      assert.equal((await replay.target.getChapterData(contentId(), native.chapterId, JSON.parse(JSON.stringify(native)))).pages.length, reader.images.length);
+      assert.deepEqual(replay.calls.api, [String(decimal.id)]); assert.equal(replay.calls.html.length, 0);
+    }
+    assert.deepEqual(calls.api, [chapterId()]); assert.equal(requests.length, before);
+  });
+  await check('Wrong or incomplete API chapter and owner identities fail without HTML fallback', async () => {
+    const mutations = [
+      (data) => { data.id += 1; }, (data) => { delete data.id; }, (data) => { data.id = '1e5'; },
+      (data) => { data.mangaPostId += 1; }, (data) => { delete data.mangaPostId; },
+      (data) => { data.mangaPost.id = Number(reader.mangaPostId) + 1; },
+      (data) => { data.mangaPost.slug += '-other'; }, (data) => { delete data.mangaPost; },
+      (data) => { delete data.mangaPost.slug; }, (data) => { data.slug += '-other'; },
+      (data) => { delete data.slug; }, (data) => { data.slug = '../chapter'; },
+    ];
+    for (const mutate of mutations) {
+      const response = structuredClone(seed.response); mutate(response.chapter);
+      const { target, calls } = setup(response);
+      await assert.rejects(target.getChapterData(contentId(), chapterId(), reference()), /identity/);
+      assert.deepEqual(calls.api, [chapterId()]); assert.equal(calls.html.length, 0);
+    }
+    const { target, calls } = setup();
+    await assert.rejects(target.getChapterData(`${Number(reader.mangaPostId) + 1}:other-series`, chapterId()), /identity/);
+    assert.deepEqual(calls.api, [chapterId()]); assert.equal(calls.html.length, 0);
+    assert.equal(requests.length, before);
+  });
+  await check('Malformed native identities and foreign URLs reject before I/O; same-series wrong chapters reject after one API read', async () => {
+    for (const [owner, id, chapter] of [
+      ['invalid', chapterId(), reference()], [`${reader.mangaPostId}:`, chapterId(), reference()],
+      [`${reader.mangaPostId}:%broken`, chapterId(), reference()], [contentId(), 'chapter-1', reference()],
+      [contentId(), '1.5', reference()], [contentId(), '0', reference()],
+      [contentId(), '9007199254740992', reference()], [contentId(), Number(reader.id), reference()],
+      [contentId(), chapterId(), { ...reference(), chapterId: String(reader.id + 1) }],
+      [contentId(), chapterId(), { webUrl: reference().webUrl }],
+      ...[
+        'https://example.com/series/title/chapter-1', 'https://vortexscans.org/',
+        reference().webUrl.replace('/series/', '/series/other/'),
+        reference().webUrl.replace('/series/', '/series%2F'),
+        reference().webUrl + '?x=1', reference().webUrl + '#x',
+        reference().webUrl.replace('https:', 'http:'),
+        reference().webUrl.replace('vortexscans.org', 'user@vortexscans.org'),
+        reference().webUrl.replace('vortexscans.org', 'vortexscans.org:443'),
+      ].map((webUrl) => [contentId(), chapterId(), { ...reference(), webUrl }]),
+    ]) {
+      const { target, calls } = setup();
+      await assert.rejects(target.getChapterData(owner, id, chapter), /identity/);
+      assert.equal(calls.api.length, 0); assert.equal(calls.html.length, 0);
+    }
+    const { target, calls } = setup();
+    await assert.rejects(target.getChapterData(contentId(), chapterId(), { ...reference(), webUrl: reference().webUrl + '-other' }), /identity/);
+    assert.deepEqual(calls.api, [chapterId()]); assert.equal(calls.html.length, 0);
+    assert.equal(requests.length, before);
+  });
+  await check('Authoritative locks, empty pages and API outages remain errors, never unrelated HTML pages', async () => {
+    for (const flags of [{ isLocked: true }, { isAccessible: false }, { isLockedByCoins: true },
+      { isPermanentlyLocked: true }, { isPermanentlyLocked: 1 }, { isShortLinkLocked: true }]) {
+      const { target, calls } = setup({ chapter: { ...structuredClone(reader), ...flags } });
+      await assert.rejects(target.getChapterData(contentId(), chapterId(), reference()), /locked|inaccessible/);
+      assert.deepEqual(calls.api, [chapterId()]); assert.equal(calls.html.length, 0);
+    }
+    for (const response of [{}, { chapter: null }, { chapter: { ...structuredClone(reader), images: [] } }]) {
+      const { target, calls } = setup(response);
+      await assert.rejects(target.getChapterData(contentId(), chapterId(), reference()), /identity|pages/);
+      assert.deepEqual(calls.api, [chapterId()]); assert.equal(calls.html.length, 0);
+    }
+    for (const warm of [false, true]) {
+      const { target, calls } = setup();
+      if (warm) await target.getChapters(contentId());
+      target.api.getChapter = async (id) => { calls.api.push(id); throw new Error('Retained API outage'); };
+      for (const id of [contentId(), String(reader.mangaPostId)]) {
+        await assert.rejects(target.getChapterData(id, chapterId(), reference()), /Retained API outage/);
+      }
+      assert.deepEqual(calls.api, [chapterId(), chapterId()]); assert.equal(calls.html.length, 0);
+    }
+    assert.equal(requests.length, before);
+  });
+}
+
+export async function testVortexGenreValidation({ check, requests, freshSource, post }) {
+  await check('Malformed saved include and exclude genres fail before I/O without broadening search', async () => {
+    const before = requests.length;
+    const invalidOptions = [null, false, 1, '1', {}, { id: 1 }, { id: '' }, { id: 'not-a-genre' },
+      { id: '1,2' }, { id: '-1' }, { id: '0' }, { id: '01' }, { id: '1.5' },
+      { id: '1e2' }, { id: '9007199254740992' }, { id: ' 1' }, { id: '1 ' }];
+    const invalid = [null, false, [], '1', { includedIds: ['1'] },
+      ...['included', 'excluded'].flatMap((field) => [
+        ...[null, '1', {}, false, 1].map((value) => ({ [field]: value })),
+        ...invalidOptions.map((value) => ({ [field]: [value] })),
+        { [field]: [{ id: '1', title: 'Action' }, { id: 'stale', title: 'Stale' }] },
+        { [field]: new Array(1) },
+      ]),
+    ];
+    for (const genres of invalid) {
+      const target = freshSource(); let calls = 0;
+      target.api.query = async () => { calls += 1; return { posts: [], totalCount: 0 }; };
+      target.api.getGenres = async () => { calls += 1; return []; };
+      target.api.getText = async () => { calls += 1; throw new Error('Unexpected discovery request'); };
+      for (const extra of [{}, { context: { allowedContentRatings: [] } }, { listId: 'latest' }]) {
+        await assert.rejects(target.search({ page: 1, filters: { genres }, ...extra }), /genre selection/);
+        assert.equal(calls, 0);
+      }
+    }
+    assert.equal(requests.length, before);
+  });
+  await check('Valid native genre IDs retain exact payload, sort, query and rating context without taxonomy requests', async () => {
+    assert(post, 'Missing current public catalog seed');
+    const before = requests.length, nativeGenres = (post.genres ?? []).filter((item) => Number.isSafeInteger(item.id) && item.id > 0);
+    const option = nativeGenres[0]; assert(option, 'Need a source-issued numeric genre from the captured catalog');
+    const genre = { id: String(option.id), title: option.name }, target = freshSource(), calls = [];
+    target.api.query = async (parameters) => { calls.push({ ...parameters }); return { posts: [structuredClone(post)], totalCount: 1 }; };
+    target.api.getGenres = async () => { throw new Error('Unexpected taxonomy request'); };
+    const context = { allowedContentRatings: [0, 1, 2, 3] };
+    for (const genres of [undefined, {}, { included: [] }, { excluded: [] }, { included: [genre] },
+      { excluded: [genre] }, { included: [genre], excluded: [genre] },
+      { included: [genre, genre], excluded: nativeGenres.slice(0, 2).map((item) => ({ id: String(item.id), title: item.name })) }]) {
+      const result = await target.search({ page: 1, query: 'native title', filters: { genres }, sort: { id: 'postTitle', ascending: true }, context });
+      assert(result.results.length && result.results.every((item) => item.context === context));
+      const parameters = calls.at(-1);
+      assert.equal(parameters.genreIds, genres?.included?.map((item) => item.id).join(',') || undefined);
+      assert.equal(parameters.excludedGenreIds, genres?.excluded?.map((item) => item.id).join(',') || undefined);
+      assert.equal(parameters.searchTerm, 'native title'); assert.equal(parameters.orderBy, 'postTitle');
+      assert.equal(parameters.orderDirection, 'asc'); assert.equal(parameters.page, 1); assert.equal(parameters.perPage, 48);
+    }
+    const start = calls.length;
+    assert.equal((await target.search({ page: 1, filters: { genres: { included: [genre] } }, context: { allowedContentRatings: [] } })).results.length, 0);
+    assert.equal(calls.length, start); assert.equal(requests.length, before);
+  });
 }

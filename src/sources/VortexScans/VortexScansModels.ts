@@ -94,6 +94,11 @@ export interface VortexPageImage {
 export interface VortexChapterData {
     id?: number
     slug?: string
+    mangaPostId?: number
+    mangaPost?: {
+        id?: number
+        slug?: string | null
+    } | null
     images?: VortexPageImage[] | null
     isAccessible?: boolean | null
     isLocked?: boolean | null
