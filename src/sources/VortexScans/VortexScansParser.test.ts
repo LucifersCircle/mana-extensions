@@ -103,7 +103,7 @@ describe('VortexScans metadata parsing', () => {
         expect(results[0]).toMatchObject({
             id: '663:the-demon-king%27s-friend',
             title: 'The Demon King\'s Friend',
-            subtitle: '7 Chapters',
+            subtitle: 'Ch. 7',
             contentRating: ContentRating.SAFE
         })
     })
