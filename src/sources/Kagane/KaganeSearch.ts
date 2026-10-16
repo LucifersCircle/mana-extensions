@@ -9,6 +9,8 @@ import { Filters,
     Settings,
     TagEntry } from './KaganeModels'
 import { manaRating } from './KaganeParsers'
+import { assertRatingPolicy,
+    ratingAllowed } from '../../ContentRatingPolicy'
 import { resolveTypedTags,
     TAG_GROUPS,
     tagFilterId,
@@ -107,8 +109,9 @@ export function matchesTagGroups(ids: readonly string[] | undefined, groups: str
 }
 
 export function selectedRatings(request: SearchRequest<Filters>, settings: Settings): Rating[] {
+    assertRatingPolicy(request.context)
     const selected = selectedOptions(request.filters, 'content_rating')
-    return RATINGS.filter((rating) => settings.contentRatings.includes(rating) && (!selected.length || selected.includes(rating)) && (request.context?.allowedContentRatings === undefined || request.context.allowedContentRatings.includes(manaRating({ content_rating: rating }))))
+    return RATINGS.filter((rating) => settings.contentRatings.includes(rating) && (!selected.length || selected.includes(rating)) && ratingAllowed(manaRating({ content_rating: rating }), request.context))
 }
 export function searchBody(request: SearchRequest<Filters>, settings: Settings, tags: TagEntry[]): Record<string, unknown> {
     const ranges = readNumericRanges(request.filters)
@@ -124,9 +127,9 @@ export function searchBody(request: SearchRequest<Filters>, settings: Settings, 
     }
     if (!ratings.includes('Pornographic')) body.is_pornographic = false
     else if (ratings.length === 1) body.is_pornographic = true
-    // Unknown source ratings need a broad query to reach their native Mature fallback.
+    // Unknown source ratings need a broad query to reach their native Suggestive fallback.
     // A deliberate source-rating filter still requires actual matching site metadata.
-    if (ratings.includes('Erotica') && settings.contentRatings.length === RATINGS.length && !selectedOptions(request.filters, 'content_rating').length) {
+    if (ratings.includes('Suggestive') && settings.contentRatings.length === RATINGS.length && !selectedOptions(request.filters, 'content_rating').length) {
         delete body.content_rating
         delete body.age_rating
         delete body.is_pornographic

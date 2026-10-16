@@ -225,7 +225,6 @@ function validVortexGenres(post: VortexPost): VortexGenre[] {
 }
 
 export function getVortexContentRating(post: VortexPost): ContentRating | undefined {
-    const valid = validVortexGenres(post)
     const genres = new Set([...(Array.isArray(post.genres) ? post.genres : []),
         ...(Array.isArray(post.ratingGenres) ? post.ratingGenres : [])]
         .filter((genre) => !!genre && typeof genre.name === 'string' && !!genre.name.trim())
@@ -237,8 +236,8 @@ export function getVortexContentRating(post: VortexPost): ContentRating | undefi
         return ContentRating.MATURE
     }
     if (genres.has('ecchi') || genres.has('suggestive')) return ContentRating.SUGGESTIVE
-    // Relationship/demographic tags alone are not sexual content ratings.
-    return Array.isArray(post.genres) && valid.length > 0 && valid.length === post.genres.length ? ContentRating.SAFE : undefined
+    // Ordinary, relationship and demographic tags do not establish an age rating.
+    return undefined
 }
 
 function isVortexChapterDataLocked(chapter: VortexChapterData): boolean {

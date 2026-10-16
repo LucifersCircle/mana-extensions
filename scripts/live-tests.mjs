@@ -100,12 +100,29 @@ for (const name of names) {
   let source, catalog, content, detailPost, chapters, pages, sections, form, context;
   const requests = [];
   await check('Built Mana bundle and source metadata', () => {
-    assert(manifest.sources.some((entry) => entry.id === name), 'Source missing from built manifest');
+    const entries = manifest.sources.filter((entry) => entry.id === name);
+    assert.equal(entries.length, 1, 'Source must have one unique built manifest entry');
     context = vm.createContext(createManaRuntime({ fetchImpl: testTransport.fetch, logger: (request) => { requests.push(request); console.log(`[http] ${request.status ?? 'ERROR'} ${request.url} (${request.durationMs}ms)${request.error ? `: ${request.error}` : ''}`); } }));
     vm.runInContext(readFileSync(`dist/sources/${name}.mana`, 'utf8'), context, { timeout: 10_000 });
     source = new context.Target();
     assert.equal(source.info.id, name);
-    nonempty(source.info.version, 'Version'); url(source.info.website);
+    nonempty(source.info.version, 'Version');
+    assert.equal(source.info.version, entries[0].version, 'Bundle version differs from built manifest');
+    url(source.info.website);
+  });
+  await check('Malformed native rating contexts fail closed before provider I/O', async () => {
+    let attempted = 0;
+    const closed = vm.createContext(createManaRuntime({ logger: () => {}, fetchImpl: async () => { attempted++; throw new Error('Unexpected request from malformed native policy'); } }));
+    vm.runInContext(readFileSync(`dist/sources/${name}.mana`, 'utf8'), closed, { timeout: 10_000 });
+    const target = new closed.Target();
+    for (const allowedContentRatings of [null, '1', 1, {}, { includes: () => true }, [1, '3'], [1, 99], [1, NaN]]) {
+      const invalid = { allowedContentRatings };
+      for (const run of [() => target.search({ page: 1, context: invalid }), () => target.getContent('unread', invalid),
+        () => target.getSectionsForPage({ id: 'home', context: invalid }), () => target.resolvePageSection({ id: 'home', context: invalid }, 'latest')]) {
+        await assert.rejects(run, /Invalid Mana content-rating policy/);
+      }
+    }
+    assert.equal(attempted, 0);
   });
   if (name !== 'VortexScans') {
     if (name === 'Kagane') {

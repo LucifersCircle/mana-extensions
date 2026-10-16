@@ -24,7 +24,8 @@ import {
     SourceContext,
     SourceInfo
 } from '@mana-app/types'
-import { nativeRating,
+import { assertRatingPolicy,
+    nativeRating,
     ratingAllowed } from '../../ContentRatingPolicy'
 import { VortexScansApi } from './VortexScansApi'
 import {
@@ -104,7 +105,7 @@ export class Target implements
     ImageRequestHandler {
     readonly info: SourceInfo = {
         id: 'VortexScans',
-        version: '0.0.1-alpha.11',
+        version: '0.0.1-alpha.12',
         name: 'VortexScans',
         description: 'Read manga, manhwa, and manhua from VortexScans.',
         thumbnail: 'VortexScans.png',
@@ -136,6 +137,7 @@ export class Target implements
     private decodedHome?: { html: string, value: VortexHomeData }
 
     async getContent(contentId: string, context?: SourceContext): Promise<Content> {
+        assertRatingPolicy(context)
         if (context?.allowedContentRatings?.length === 0) throw new Error('This title is excluded by Mana content-rating policy')
         const { id } = parseVortexContentId(contentId)
         const response = await this.api.getPost(id)
@@ -246,6 +248,7 @@ export class Target implements
     }
 
     async search(request: SearchRequest<VortexFilterProps>): Promise<PagedSearchResult> {
+        assertRatingPolicy(request.context)
         const page = request.page ?? 1
         if (!Number.isSafeInteger(page) || page < 1 || page > 100) throw new Error('Invalid VortexScans page')
         validateVortexGenres(request.filters?.genres)
@@ -281,6 +284,7 @@ export class Target implements
     }
 
     async getSectionsForPage(link: PageLink): Promise<PageSection[]> {
+        assertRatingPolicy(link.context)
         if (link.id !== 'home') {
             throw new Error(`Unknown VortexScans page: ${link.id}`)
         }
@@ -299,6 +303,7 @@ export class Target implements
         link: PageLink,
         sectionId: string
     ): Promise<ResolvedPageSection> {
+        assertRatingPolicy(link.context)
         if (link.id !== 'home') {
             throw new Error(`Unknown VortexScans page: ${link.id}`)
         }

@@ -720,7 +720,6 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   }
   let catalog, form, chapterList, index, content, blocked, readerData, safeBody;
   await check('Never-saved source categories follow native policy and explicit source selection persists', async () => {
-    assert.equal(source.info.version, '0.0.1-alpha.16');
     assert.deepEqual(Array.from((await preference('contentRatings')).value), allRatings);
     const start = requests.length, empty = await source.search({ page: 1, context: { allowedContentRatings: [] } });
     assert.equal(empty.results.length, 0); assert.equal(empty.isLastPage, true); assert.equal(requests.length, start);
@@ -1124,14 +1123,26 @@ export async function testKagane({ source, check, highlights, searchResult, imag
       for (const fn of [() => target.getContent(sample), () => target.getChapters(sample), () => target.getChapterData(sample, chapterList[0].chapterId)]) await assert.rejects(fn(), /excluded|classification|rating|NSFW/i);
     }
   });
-  await check('Incomplete rating metadata uses native Mature fallback without overriding known explicit evidence', async () => {
+  await check('Incomplete rating metadata uses native Suggestive fallback without overriding known explicit evidence', async () => {
     const raw = details.get(sample); assert(raw); await preference('contentRatings', allRatings);
     try {
       const target = freshSource(); target.api.series = async () => ({ ...raw, age_rating: undefined, is_pornographic: undefined, content_rating: undefined });
-      const result = await target.getContent(sample, { allowedContentRatings: [2] }); assert.equal(result.contentRating, 2);
-      assert(result.additionalInfo.some((section) => section.id === 'content-rating-metadata' && /Incomplete/.test(section.items[0].title)));
-      await assert.rejects(target.getContent(sample, { allowedContentRatings: [0, 1, 3] }), /excluded/);
-      assert.equal((await target.getContent(sample)).contentRating, 2, 'Omitted native policy is not Safe-only');
+      const result = await target.getContent(sample, { allowedContentRatings: [1] }); assert.equal(result.contentRating, 1);
+      assert(result.additionalInfo.some((section) => section.id === 'content-rating-metadata' && /No verified source age rating.*Suggestive compatibility fallback/.test(section.items[0].title)));
+      await assert.rejects(target.getContent(sample, { allowedContentRatings: [0, 2, 3] }), /excluded/);
+      assert.equal((await target.getContent(sample)).contentRating, 1, 'Omitted native policy is not Safe-only');
+      const listing = [...seen.values()].find((item) => item.series_id && item.title && item.cover_image_id); assert(listing);
+      const unknown = { ...listing, age_rating: undefined, is_pornographic: undefined, content_rating: undefined };
+      const broad = freshSource(), bodies = [];
+      broad.api.search = async (body) => { bodies.push(body); return { content: [unknown], last: true }; };
+      const visible = await broad.search({ page: 1, context: { allowedContentRatings: [1] } });
+      assert.deepEqual(Array.from(visible.results, (item) => item.id), [unknown.series_id]);
+      assert.equal(visible.results[0].contentRating, 1);
+      assert(!('content_rating' in bodies[0]) && !('age_rating' in bodies[0]) && !('is_pornographic' in bodies[0]), 'Host-only Suggestive must query unknown metadata then enforce policy locally');
+      assert.equal((await broad.search({ page: 1, context: { allowedContentRatings: [2] } })).results.length, 0);
+      const filtered = await broad.search({ page: 1, context: { allowedContentRatings: [1] }, filters: { content_rating: [{ id: 'Suggestive', title: 'Suggestive' }] } });
+      assert.equal(filtered.results.length, 0, 'A deliberate source rating filter requires actual matching provider metadata');
+      assert.deepEqual(Array.from(bodies.at(-1).content_rating), ['Suggestive']);
       for (const [age, pornographic, expected] of [['Safe', false, 0], ['FifteenPlus', false, 1], ['EighteenPlus', false, 2], ['EighteenPlus', true, 3]]) {
         const rated = freshSource(); rated.api.series = async () => ({ ...raw, content_rating: undefined, age_rating: age, is_pornographic: pornographic });
         assert.equal((await rated.getContent(sample, { allowedContentRatings: [expected] })).contentRating, expected);

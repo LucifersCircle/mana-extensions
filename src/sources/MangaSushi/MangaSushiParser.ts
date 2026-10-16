@@ -22,7 +22,8 @@ const ADULT_WARNING = '.adult-content, .manga-adult, .adult-warning, [data-adult
 function itemRating(genres: Option[], warning: boolean): ContentRating | undefined {
     if (warning || genres.some((genre) => EXPLICIT_GENRES.has(genre.id.toLowerCase()))) return ContentRating.EXPLICIT
     if (genres.some((genre) => BLOCKED_GENRES.has(genre.id.toLowerCase()))) return ContentRating.MATURE
-    return genres.length ? ContentRating.SAFE : undefined
+    // Ordinary genre labels do not establish a source age rating.
+    return undefined
 }
 export type QueryValue = string | number | boolean | null | QueryValue[] | { [key: string]: QueryValue }
 export interface Listing {
@@ -59,6 +60,13 @@ export function seriesURL(id: string): string {
     return `${DOMAIN}/manga/${encodeURIComponent(id)}/`
 }
 
+export function checkImageURL(value: string): void {
+    const url = new URL(value)
+    if (url.protocol !== 'https:' || url.origin !== DOMAIN || url.username || url.password || url.hash
+        || !url.pathname.startsWith('/wp-content/uploads/') || url.href !== value
+        || /[\\\s]|%(?:2f|5c|00|25)|(?:^|\/)\.\.?\//i.test(url.pathname)
+        || /\/dflazy\.|loading\.gif/i.test(url.pathname)) throw new Error('Unsupported MangaSushi image URL')
+}
 export function imageURL($: ReturnType<typeof load>, element: cheerio.Element | undefined): string {
     if (!element) throw new Error('MangaSushi image is missing')
     const image = $(element)
@@ -66,7 +74,8 @@ export function imageURL($: ReturnType<typeof load>, element: cheerio.Element | 
         const value = image.attr(key)?.trim()
         if (!value || /^(?:data:|javascript:)/i.test(value) || /dflazy|loading\.gif/i.test(value)) continue
         const url = new URL(value, DOMAIN)
-        if (url.protocol === 'https:' || url.protocol === 'http:') return url.href
+        checkImageURL(url.href)
+        return url.href
     }
     throw new Error('MangaSushi did not provide a usable image URL')
 }
@@ -94,7 +103,7 @@ function coverURL($: ReturnType<typeof load>, element: cheerio.Element | undefin
                 const size = url.pathname.match(derivative)
                 const candidateWidth = Number(match[2])
                 const candidateHeight = Number(size?.[2])
-                if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.hash
+                if (url.protocol !== 'https:' || url.username || url.password || url.hash
                     || url.origin !== base.origin || url.search !== base.search || url.pathname.replace(derivative, '$3') !== asset
                     || !Number.isSafeInteger(candidateWidth) || candidateWidth <= width) continue
                 if (size && (Number(size[1]) !== candidateWidth || !Number.isSafeInteger(candidateHeight)

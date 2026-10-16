@@ -32,7 +32,8 @@ import {
     UIToggle
 } from '@mana-app/types'
 import { load } from 'cheerio'
-import { nativeRating,
+import { assertRatingPolicy,
+    nativeRating,
     ratingAllowed } from '../../ContentRatingPolicy'
 import { ManhwaNexApi } from './ManhwaNexApi'
 import {
@@ -67,7 +68,7 @@ class ExcludedContentError extends Error {}
 
 export class Target implements ContentSource, PageLinkResolver, ImageRequestHandler, SourcePreferenceProvider {
     readonly info: SourceInfo = {
-        id: 'ManhwaNex', version: '0.0.1-alpha.7', name: 'ManhwaNex',
+        id: 'ManhwaNex', version: '0.0.1-alpha.8', name: 'ManhwaNex',
         description: 'ManhwaNex with native discovery, search filters and Mana content-rating policy.',
         thumbnail: 'ManhwaNex.png', rating: CatalogRating.MIXED, website: DOMAIN,
         badges: ['Manhwa', 'Manhua', 'Manga'], supportedLanguages: ['en_US'],
@@ -89,7 +90,7 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
 
     async getPreferenceMenu(): Promise<Form> {
         return { sections: [UIListSection({ header: 'Content safety',
-            footer: 'Off unless explicitly saved. Mana’s supplied content-rating policy controls search, discovery and details. This optional extra source exclusion requires verified non-adult metadata and applies to chapters and image requests too. Missing rating metadata uses a Mature compatibility fallback, not a site-reported rating. Site labels do not guarantee image content or all-ages suitability.',
+            footer: 'Off unless explicitly saved. Mana’s supplied content-rating policy controls search, discovery and details. This optional extra source exclusion requires verified non-adult metadata and applies to chapters and image requests too. Titles without a source age rating use a Suggestive compatibility fallback, not a site-reported rating. Site labels do not guarantee image content or all-ages suitability.',
             children: [UIToggle({ id: 'excludeNSFW', title: 'Exclude NSFW content', value: await this.excludeNSFW(), didChange: async (value) => {
                 this.revision += 1
                 await ObjectStore.set(SETTING, value)
@@ -122,8 +123,9 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
     }
 
     async search(request: SearchRequest<Filters>): Promise<PagedSearchResult> {
+        assertRatingPolicy(request.context)
         return this.withSettings(async (exclude) => {
-            if ((request.context?.allowedContentRatings !== undefined && !request.context.allowedContentRatings.some((rating) => rating === ContentRating.MATURE || rating === ContentRating.EXPLICIT))
+            if ((request.context?.allowedContentRatings !== undefined && !request.context.allowedContentRatings.some((rating) => rating === ContentRating.SUGGESTIVE || rating === ContentRating.EXPLICIT))
                 || (exclude && request.filters?.adult?.id === '1')) return { results: [], isLastPage: true }
             const page = request.page ?? 1
             if (!Number.isInteger(page) || page < 1 || page > 100) throw new Error('Invalid ManhwaNex page')
@@ -145,20 +147,26 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
     }
 
     async getSectionsForPage(link: PageLink): Promise<PageSection[]> {
+        assertRatingPolicy(link.context)
         this.checkHome(link)
         const home = await this.withSettings((exclude) => this.home(exclude))
-        return [{ id: 'popular', title: 'Popular Series', style: SectionStyle.SimpleSingleRow },
+        // Hide only a whole finite row that repeats the same response's Latest prefix.
+        // The stable Popular callback remains available for previously saved sections.
+        const repeatsLatest = home.popular.length > 0 && home.popular.every((item, index) => item.id === home.latest.items[index]?.id)
+        return [...(repeatsLatest ? [] : [{ id: 'popular', title: 'Popular Series', style: SectionStyle.SimpleSingleRow }]),
             { id: 'latest', title: 'Latest Updates', style: SectionStyle.SimpleSingleRow },
             ...home.categories.map(({ id, title }) => ({ id, title, style: SectionStyle.SimpleSingleRow }))]
     }
 
     async resolvePageSection(link: PageLink, sectionId: string): Promise<ResolvedPageSection> {
+        assertRatingPolicy(link.context)
         this.checkHome(link)
         const result = await this.search({ page: 1, listId: sectionId, context: link.context })
         return { items: result.results, viewMoreLink: !result.isLastPage ? { request: { page: 1, listId: sectionId, context: link.context } } : undefined }
     }
 
     async getContent(contentId: string, context?: SourceContext): Promise<Content> {
+        assertRatingPolicy(context)
         return this.withSettings(async (exclude) => {
             if (context?.allowedContentRatings?.length === 0) throw new ExcludedContentError('This title is excluded by Mana’s content-rating policy')
             const result = await this.content(contentId, exclude)

@@ -5,7 +5,6 @@ import { CatalogRating,
     ChapterData,
     ChapterSource,
     Content,
-    ContentRating,
     DeepLinkContext,
     Form,
     Highlight,
@@ -35,7 +34,8 @@ import { CatalogRating,
     UIListSection,
     UIMultiPicker,
     UIToggle } from '@mana-app/types'
-import { ratingAllowed } from '../../ContentRatingPolicy'
+import { assertRatingPolicy,
+    ratingAllowed } from '../../ContentRatingPolicy'
 import { HijalaApi } from './HijalaApi'
 import { API,
     Catalog,
@@ -87,7 +87,7 @@ const options = (ids: string[]): Option[] => ids.map((id) => ({ id, title: LABEL
 
 export class Target implements ChapterSource, PageLinkResolver, SourcePreferenceProvider, ImageRequestHandler {
     readonly info: SourceInfo = {
-        id: 'Hijala', version: '0.0.1-alpha.4', name: 'Hijala', thumbnail: 'Hijala.png', website: DOMAIN,
+        id: 'Hijala', version: '0.0.1-alpha.5', name: 'Hijala', thumbnail: 'Hijala.png', website: DOMAIN,
         description: 'Hijala public manga catalog, site filters, complete chapters and public reader. Optional NSFW genre exclusion.',
         rating: CatalogRating.MIXED, supportedLanguages: ['en_US', 'es_ES', 'ru_RU'], badges: ['Manga', 'Manhwa', 'Manhua'],
         developers: [{ name: 'Lucifers Circle', website: 'https://pirate.vodka', github: 'https://github.com/LucifersCircle' }]
@@ -157,7 +157,7 @@ export class Target implements ChapterSource, PageLinkResolver, SourcePreference
     async getPreferenceMenu(): Promise<Form> {
         const saved = await this.preferences(), taxonomy = genreOptions(await this.text(`${DOMAIN}/series/`))
         return { sections: [UIListSection({ header: 'Content safety',
-            footer: 'Native Mana rating policy controls visibility when supplied. Source NSFW exclusion is optional and defaults off; only a deliberate new source choice applies it. Uses verified genre labels (including Mature, Ecchi, Adult and Smut), not a four-category site rating. Incomplete genres use a Mature compatibility rating with a details note. Labels may be incomplete; this does not guarantee image content. Applies to discovery, search, details, chapters and reading. Paid/login chapters always remain on the website.',
+            footer: 'Native Mana rating policy controls visibility when supplied. Source NSFW exclusion is optional and defaults off; only a deliberate new source choice applies it. Uses verified genre labels (including Mature, Ecchi, Adult and Smut), not a four-category site rating. Titles without a source age rating use a Suggestive compatibility fallback with a details note. Labels may be incomplete; this does not guarantee image content. Applies to discovery, search, details, chapters and reading. Paid/login chapters always remain on the website.',
             children: [UIToggle({ id: 'excludeNSFW', title: 'Exclude NSFW content', value: saved.excludeNSFW, didChange: (value) => this.set('excludeNSFW', value) }),
                 UIToggle({ id: 'hidePaid', title: 'Hide paid chapters', value: saved.hidePaid, didChange: (value) => this.set('hidePaid', value) })] }),
         UIListSection({ header: 'Catalog and discovery', children: [
@@ -200,7 +200,7 @@ export class Target implements ChapterSource, PageLinkResolver, SourcePreference
         return !post.isNovel && !!post.seriesType && saved.types.includes(post.seriesType)
             && (!saved.excludedGenres.length || completeGenres(post))
             && !genres(post).some((genre) => saved.excludedGenres.includes(String(genre.id)))
-            && (!saved.excludeNSFW || value === ContentRating.SAFE)
+            && (!saved.excludeNSFW || (completeGenres(post) && !genres(post).some((genre) => blockedGenre(genre.name))))
             && ratingAllowed(value, context)
     }
     private queryURL(request: SearchRequest<Filters>, saved: Preferences, excluded: string[]): string | undefined {
@@ -221,6 +221,7 @@ export class Target implements ChapterSource, PageLinkResolver, SourcePreference
         return `${API}/api/query?${params.toString()}`
     }
     async search(request: SearchRequest<Filters>): Promise<PagedSearchResult> {
+        assertRatingPolicy(request.context)
         return this.withPreferences((saved) => this.searchPage(request, saved))
     }
     private async searchPage(request: SearchRequest<Filters>, saved: Preferences): Promise<PagedSearchResult> {
@@ -379,6 +380,7 @@ export class Target implements ChapterSource, PageLinkResolver, SourcePreference
         throw new Error('Hijala bulk metadata exceeded its bounded catalog traversal')
     }
     async getSectionsForPage(link: PageLink): Promise<PageSection[]> {
+        assertRatingPolicy(link.context)
         if (link.id !== 'home') throw new Error('Unknown Hijala page')
         return this.withPreferences(async (saved) => {
             const enabled = this.releaseFilters(await this.home())
@@ -386,6 +388,7 @@ export class Target implements ChapterSource, PageLinkResolver, SourcePreference
         })
     }
     async resolvePageSection(link: PageLink, sectionId: string): Promise<ResolvedPageSection> {
+        assertRatingPolicy(link.context)
         if (link.id !== 'home' || !(await this.getSectionsForPage(link)).some((item) => item.id === sectionId)) throw new Error('Unknown Hijala section')
         if (link.context?.allowedContentRatings?.length === 0) return { items: [] }
         return this.withPreferences(async (saved) => {
@@ -436,6 +439,7 @@ export class Target implements ChapterSource, PageLinkResolver, SourcePreference
         return result
     }
     async getContent(contentId: string, context?: SourceContext): Promise<Content> {
+        assertRatingPolicy(context)
         if (context?.allowedContentRatings?.length === 0) throw new Error('This title is excluded by Mana content-rating policy')
         return this.withPreferences(async (saved) => content(await this.allowedDetail(contentId, saved, context), contentId, saved.hidePaid))
     }
