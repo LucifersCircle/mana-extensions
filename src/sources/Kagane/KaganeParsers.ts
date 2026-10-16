@@ -12,7 +12,8 @@ import { AdditionalInfoType,
     links,
     PublicationStatus,
     ReadingMode,
-    staff } from '@mana-app/types'
+    staff,
+    tags as nativeTags } from '@mana-app/types'
 import { decode } from 'html-entities'
 import { chapterLanguage } from './KaganeLanguage'
 import { incompleteRatingInfo } from '../../ContentRatingPolicy'
@@ -28,7 +29,11 @@ import { AlternateTitle,
     seriesURL,
     Settings,
     strictUUID,
+    TagEntry,
     UploadSource } from './KaganeModels'
+import { groupTags,
+    tagFilterId,
+    tagIdsOf } from './tag-groups'
 
 const hasControls = (value: string): boolean => [...value].some((character) => character.charCodeAt(0) < 32 || (character.charCodeAt(0) >= 127 && character.charCodeAt(0) <= 159))
 
@@ -150,15 +155,40 @@ function trackerLinks(entries: Detail['series_links']) {
     })
 }
 
-export function content(id: string, details: Detail, settings: Settings, sources: UploadSource[]): Content {
+export function visibleDetailTags(details: Detail, settings: Settings): NonNullable<Detail['tags']> {
+    return (details.tags ?? []).filter((tag) => settings.showSpoilers || !(tag.is_spoiler || tag.spoiler))
+}
+
+export function content(id: string, details: Detail, settings: Settings, sources: UploadSource[], taxonomy: TagEntry[]): Content {
     const type = ({ Manga: ContentType.MANGA, Manhwa: ContentType.MANHWA, Manhua: ContentType.MANHUA, Comic: ContentType.COMIC } as Record<string, ContentType>)[details.format ?? '']
     const status = ({ Ongoing: PublicationStatus.ONGOING, Completed: PublicationStatus.COMPLETED, Hiatus: PublicationStatus.HIATUS, Cancelled: PublicationStatus.CANCELLED } as Record<string, PublicationStatus>)[statusLabel(details.publication_status) ?? '']
     const uploadStatus = statusLabel(details.upload_status)
     const covers = [...(details.series_covers ?? [])].sort((left, right) => Number(right.is_main) - Number(left.is_main)).map((cover) => imageURL(cover.image_id)).filter(Boolean)
-    const tags = [
-        ...(details.genres ?? []).filter((genre) => settings.showSpoilers || !genre.is_spoiler).map((genre) => ({ id: genre.genre_id ?? genre.genre_name, title: genre.genre_name })),
-        ...(details.tags ?? []).filter((tag) => settings.showSpoilers || !(tag.is_spoiler || tag.spoiler)).map((tag) => ({ id: tag.tag_id ?? tag.tag_name, title: tag.tag_name }))
-    ]
+    // Mana's main chips belong to the genres filter, not the narrative-tag namespace.
+    const visibleGenres = (details.genres ?? []).filter((genre) => settings.showSpoilers || !genre.is_spoiler)
+    const tags = visibleGenres.flatMap((genre) => {
+        const id = strictUUID(genre.genre_id)
+        return id ? [{ id, title: genre.genre_name }] : []
+    })
+    const visibleTags = visibleDetailTags(details, settings)
+    const visibleIds = new Set(visibleTags.map((tag) => tag.tag_id))
+    const representedIds = new Set<string>()
+    const extraTags: string[] = []
+    const unmatchedGenres = visibleGenres.filter((genre) => !strictUUID(genre.genre_id))
+    if (unmatchedGenres.length) extraTags.push(`Other source genres (not tappable here):\n${unmatchedGenres.map((genre) => genre.genre_name).join(', ')}`)
+    // Use the full taxonomy, exactly as getSearchForm does. Grouping only this
+    // title's tags would lose alternate IDs and could change the option title.
+    const tagSections = groupTags(taxonomy.map((tag) => ({ id: tag.id, title: tag.tag_name }))).flatMap(({ group, options }) => {
+        const present = options.filter((option) => tagIdsOf(option.id).some((id) => visibleIds.has(id)))
+        if (!present.length) return []
+        present.forEach((option) => tagIdsOf(option.id).forEach((id) => representedIds.add(id)))
+        // The pinned SDK persists ten items per section. Keep overflow readable
+        // instead of inventing section IDs that the search form does not own.
+        if (present.length > 10) extraTags.push(`Additional ${group.title} tags (use search filters):\n${present.slice(10).map((option) => option.title).join(', ')}`)
+        return [nativeTags.section({ id: tagFilterId(group.id), title: group.title, items: present.slice(0, 10).map((option) => nativeTags.item(option)) })]
+    })
+    const unmatched = visibleTags.filter((tag) => !tag.tag_id || !representedIds.has(tag.tag_id))
+    if (unmatched.length) extraTags.push(`Other source tags (not tappable here):\n${unmatched.map((tag) => tag.tag_name).join(', ')}`)
     const people = (details.series_staff ?? []).map((person) => staff.item({ id: `${person.role}:${person.name}`, title: person.name, subtitle: person.role }))
     const description = decode((details.description ?? '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n\n').replace(/<[^>]*>/g, '')).trim()
     const source = sources.find((item) => item.source_id === details.source_id)?.title
@@ -171,15 +201,15 @@ export function content(id: string, details: Detail, settings: Settings, sources
         typeof details.average_rating === 'number' && Number.isFinite(details.average_rating) && details.average_rating > 0 && details.average_rating <= 100 ? `★ ${(details.average_rating / 10).toFixed(1)}` : '',
         typeof details.total_views === 'number' && Number.isFinite(details.total_views) && details.total_views >= 0 ? `Views: ${details.total_views}` : '',
         description, associatedNames.length ? `Associated names:\n${associatedNames.join('\n')}` : '', source ? `Source: ${source}` : '', details.edition_info ? `Edition: ${details.edition_info}` : '',
-        uploadStatus ? `Upload status: ${uploadStatus}` : ''
+        uploadStatus ? `Upload status: ${uploadStatus}` : '', ...extraTags
     ].filter(Boolean).join('\n\n')
     return {
         title,
         cover: covers[0] ?? '', additionalCovers: covers.slice(1), summary, tags, contentType: type, status,
         additionalTitles,
         contentRating: manaRating(details), webUrl: seriesURL(id),
-        recommendedPanelMode: tags.some((tag) => /^(?:webtoon|long strip)$/i.test(tag.title)) ? ReadingMode.WEBTOON : type === ContentType.MANHWA || type === ContentType.MANHUA || type === ContentType.COMIC ? ReadingMode.PAGED_COMIC : ReadingMode.PAGED_MANGA,
-        additionalInfo: [...(people.length ? [staff.section({ id: 'staff', title: 'Staff', hasMore: false, items: people })] : []), ...Array.from({ length: Math.ceil(externalLinks.length / 10) }, (_, index) => links.section({ id: index ? `links-${index + 1}` : 'links', title: index ? 'More links' : 'Links', items: externalLinks.slice(index * 10, (index + 1) * 10) })), ...(!classify(details) ? [incompleteRatingInfo()] : [])]
+        recommendedPanelMode: [...visibleGenres.map((genre) => genre.genre_name), ...visibleTags.map((tag) => tag.tag_name)].some((title) => /^(?:webtoon|long strip)$/i.test(title)) ? ReadingMode.WEBTOON : type === ContentType.MANHWA || type === ContentType.MANHUA || type === ContentType.COMIC ? ReadingMode.PAGED_COMIC : ReadingMode.PAGED_MANGA,
+        additionalInfo: [...tagSections, ...(people.length ? [staff.section({ id: 'staff', title: 'Staff', hasMore: false, items: people })] : []), ...Array.from({ length: Math.ceil(externalLinks.length / 10) }, (_, index) => links.section({ id: index ? `links-${index + 1}` : 'links', title: index ? 'More links' : 'Links', items: externalLinks.slice(index * 10, (index + 1) * 10) })), ...(!classify(details) ? [incompleteRatingInfo()] : [])]
     }
 }
 

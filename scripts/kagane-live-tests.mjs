@@ -139,12 +139,17 @@ export async function assertKaganeChapterLanguages({ freshSource, id, detail, bo
 export async function assertKaganeTagFilters({ freshSource, tags, response, option, groupId }) {
   const tag = tags.find((entry) => entry.id === option.id.split('+')[0]);
   assert(tag && response?.content?.length, 'Need actual Kagane taxonomy/search seeds');
-  const target = freshSource(), bodies = [];
-  target.api.tags = async () => tags;
-  target.api.search = async (body) => { bodies.push(JSON.parse(JSON.stringify(body))); return { ...response, last: true }; };
+  const bodies = [];
+  const replay = () => {
+    const target = freshSource();
+    target.api.tags = async () => tags;
+    target.api.search = async (body) => { bodies.push(JSON.parse(JSON.stringify(body))); return { ...response, last: true }; };
+    return target;
+  };
+  const target = replay();
   const saved = (await target.settings()).excludedTags;
   await target.save('excludedTags', []);
-  const search = (filters, listId) => target.search({ query: response.content[0].title, filters, ...(listId ? { listId } : {}) });
+  const search = (filters, listId, source = target) => source.search({ query: response.content[0].title, filters, ...(listId ? { listId } : {}) });
   try {
     for (const filters of [
       { tag_query: '__kagane_unknown_filter__' }, { tag_query: '-__kagane_unknown_filter__' },
@@ -168,9 +173,19 @@ export async function assertKaganeTagFilters({ freshSource, tags, response, opti
       [{ [groupId]: { included: [option], excluded: [] } }, option.id.split('+'), undefined],
       [{ [groupId]: { included: [], excluded: [option] } }, [], option.id.split('+')],
     ]) {
-      await search(filters);
+      // A singleton typed/native choice shares a cache key. Observe each cold
+      // request independently, then prove warm reuse instead of reading old wire data.
+      const source = replay(), before = bodies.length;
+      const cold = await search(filters, undefined, source);
+      assert.equal(bodies.length, before + 1);
       assert.deepEqual(bodies.at(-1).tags.values, values);
       assert.deepEqual(bodies.at(-1).tags.exclude, exclude);
+      assert.equal(bodies.at(-1).genres, undefined, 'Narrative tag selection leaked into the genre namespace');
+      const equivalent = option.id !== tag.id ? filters : filters.tag_query !== undefined
+        ? { [groupId]: { included: values.length ? [option] : [], excluded: exclude?.length ? [option] : [] } }
+        : { tag_query: exclude?.length ? `-${tag.id}` : tag.id };
+      assert.deepEqual(await search(equivalent, undefined, source), cold, 'Warm equivalent tag request changed native results');
+      assert.equal(bodies.length, before + 1, 'Warm equivalent tag request repeated the API call');
     }
     for (const filters of [undefined, {}, { tag_query: ' , , ' }, { [groupId]: { included: [], excluded: [] } }]) {
       await search(filters);
@@ -457,7 +472,32 @@ export async function assertKaganeListingScoreBoundaries({ freshSource, response
 }
 
 // Check only the response consumed by native details, never another title fetch.
-export function assertKaganeDetailMetadata({ content, metadata, sources, id }) {
+// The native form is the authority for each interactive chip's exact owner and
+// compound option identity. Unknown/overflow labels must remain readable.
+export function assertKaganeDetailTags({ content, metadata, settings, form }) {
+  const fields = form.sections.flatMap(section => section.children ?? []);
+  const genres = Array.from(metadata.genres ?? []).filter(tag => settings.showSpoilers || !tag.is_spoiler);
+  const genreId = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value) ? value.toLowerCase() : undefined;
+  assert.deepEqual(Array.from(content.tags, tag => ({ ...tag })), genres.filter(tag => genreId(tag.genre_id)).map(tag => ({ id: genreId(tag.genre_id), title: tag.genre_name })));
+  for (const tag of content.tags) assert(fields.find(field => field.id === 'genres').options.some(option => option.id === tag.id && option.title === tag.title), 'Main detail chip has no exact genre owner');
+  const visible = (metadata.tags ?? []).filter(tag => settings.showSpoilers || !(tag.is_spoiler || tag.spoiler));
+  const ids = new Set(visible.map(tag => tag.tag_id)), represented = new Set(), expected = [], summary = [];
+  const unmatchedGenres = genres.filter(tag => !genreId(tag.genre_id));
+  if (unmatchedGenres.length) summary.push(`Other source genres (not tappable here):\n${unmatchedGenres.map(tag => tag.genre_name).join(', ')}`);
+  for (const field of fields.filter(field => field.id?.startsWith('tags:'))) {
+    const present = field.options.filter(option => option.id.split('+').some(id => ids.has(id)));
+    if (!present.length) continue;
+    present.forEach(option => option.id.split('+').forEach(id => represented.add(id)));
+    expected.push({ type: 5, id: field.id, title: field.title, items: present.slice(0, 10).map(option => ({ ...option, type: 5 })) });
+    if (present.length > 10) summary.push(`Additional ${field.title} tags (use search filters):\n${present.slice(10).map(option => option.title).join(', ')}`);
+  }
+  assert.deepEqual(JSON.parse(JSON.stringify(content.additionalInfo.filter(section => section.type === 5))), JSON.parse(JSON.stringify(expected)), 'Detail tag groups must match native search owners, labels, IDs and persistence limit');
+  const unmatched = visible.filter(tag => !tag.tag_id || !represented.has(tag.tag_id));
+  if (unmatched.length) summary.push(`Other source tags (not tappable here):\n${unmatched.map(tag => tag.tag_name).join(', ')}`);
+  return summary;
+}
+
+export function assertKaganeDetailMetadata({ content, metadata, sources, id, tagSummary = [] }) {
   assert.equal(metadata.series_id, id, 'Detail response changed canonical series identity');
   const labels = new Map([['ongoing', 'Ongoing'], ['completed', 'Completed'], ['hiatus', 'Hiatus'], ['abandoned', 'Cancelled']]);
   const upload = typeof metadata.upload_status === 'string' ? labels.get(metadata.upload_status.trim().toLowerCase()) : undefined;
@@ -475,7 +515,7 @@ export function assertKaganeDetailMetadata({ content, metadata, sources, id }) {
     typeof score === 'number' && Number.isFinite(score) && score > 0 && score <= 100 ? `★ ${(score / 10).toFixed(1)}` : '',
     typeof views === 'number' && Number.isFinite(views) && views >= 0 ? `Views: ${views}` : '',
     description, names.length ? `Associated names:\n${names.join('\n')}` : '', source ? `Source: ${source}` : '', metadata.edition_info ? `Edition: ${metadata.edition_info}` : '',
-    upload ? `Upload status: ${upload}` : '',
+    upload ? `Upload status: ${upload}` : '', ...tagSummary,
   ].filter(Boolean).join('\n\n'), 'Detail summary must preserve source text and show only its average score and labeled views');
   const rules = new Map([
     ['anilist.co', ['Tracker', 'anilist', 'AniList', /^\/manga\/([1-9][0-9]*)\/?$/]],
@@ -667,7 +707,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   }
   let catalog, form, chapterList, index, content, blocked, readerData, safeBody;
   await check('Never-saved source categories follow native policy and explicit source selection persists', async () => {
-    assert.equal(source.info.version, '0.0.1-alpha.12');
+    assert.equal(source.info.version, '0.0.1-alpha.13');
     assert.deepEqual(Array.from((await preference('contentRatings')).value), allRatings);
     const start = requests.length, empty = await source.search({ page: 1, context: { allowedContentRatings: [] } });
     assert.equal(empty.results.length, 0); assert.equal(empty.isLastPage, true); assert.equal(requests.length, start);
@@ -700,8 +740,9 @@ export async function testKagane({ source, check, highlights, searchResult, imag
     const beforeDetail = requests.length, priorTrackers = new Set(editionRows.keys());
     content = await source.getContent(item.id);
     const metadata = details.get(item.id); assert(metadata);
-    assertKaganeDetailMetadata({ content, metadata, sources: uploadSources, id: item.id });
     const settings = await source.settings();
+    const tagSummary = assertKaganeDetailTags({ content, metadata, settings, form: await source.getSearchForm() });
+    assertKaganeDetailMetadata({ content, metadata, sources: uploadSources, id: item.id, tagSummary });
     const tracker = typeof metadata.tracker_id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(metadata.tracker_id) ? metadata.tracker_id.toLowerCase() : undefined;
     const eligible = tracker && !settings.excludedGenres.length && !settings.excludedTags.length;
     if (eligible) assert(editionRows.has(tracker), 'Missing the actual consumed tracker bulk response');
@@ -808,9 +849,13 @@ export async function testKagane({ source, check, highlights, searchResult, imag
     assert(searches.at(-1).args[0].tags.exclude.some((id) => tag.id.split('+').includes(id)));
   });
   await check('Unknown malformed and stale tags fail before search; valid native payloads remain exact', async () => {
-    const group = fields(form).find((field) => field.id?.startsWith('tags:') && field.options.some((option) => option.id.includes('+')));
+    const group = fields(form).find(field => field.id?.startsWith('tags:') && field.options.some(option => option.id.includes('+')));
     assert(group, 'Need an actual legacy composite tag option');
-    await assertKaganeTagFilters({ freshSource, tags: await source.api.tags(), response: searches[0].response, option: group.options.find((option) => option.id.includes('+')), groupId: group.id });
+    const args = { freshSource, tags: await source.api.tags(), response: searches[0].response };
+    await assertKaganeTagFilters({ ...args, option: group.options.find(option => option.id.includes('+')), groupId: group.id });
+    // The rotating live title may legitimately have no narrative tags or aliases.
+    const detailGroup = content.additionalInfo.find(section => section.type === 5 && section.items.length);
+    if (detailGroup) await assertKaganeTagFilters({ ...args, option: detailGroup.items[0], groupId: detailGroup.id });
   });
   await check('Native numeric ranges serialize strictly before taxonomy and preserve policies, discovery and cached continuation', async () => {
     const sample = seen.get(catalog.results[0].id);
