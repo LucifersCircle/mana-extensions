@@ -95,6 +95,8 @@ for (const name of names) {
       console.error(`FAIL ${name}: ${label}\n${redactText(error.stack ?? error)}`);
     }
   }
+  let suiteError;
+  try {
   let source, catalog, content, detailPost, chapters, pages, sections, form, context;
   const requests = [];
   await check('Built Mana bundle and source metadata', () => {
@@ -115,8 +117,6 @@ for (const name of names) {
     } else if (name === 'ManhwaNex') {
       await testManhwaNex({ source, check, nativeStore: context.ObjectStore, requests, freshSource: () => new context.Target() });
     } else await check('Supported source-specific live contract', () => assert.fail(`No live contract implemented for ${name}`));
-    report[name] = { tests, summary: { total: tests.length, passed: tests.filter((test) => test.status === 'pass').length,
-      failed: tests.filter((test) => test.status === 'fail').length, duration: performance.now() - started } };
     continue;
   }
   await check('Catalog search returns usable highlights', async () => {
@@ -342,11 +342,18 @@ for (const name of names) {
   });
   await testVortexSynopsis({ check, requests, post: detailPost, freshSource: () => new context.Target() });
   await testVortexRatings({ source, check, requests, freshSource: () => new context.Target() });
-  report[name] = {
-    tests,
-    summary: { total: tests.length, passed: tests.filter((test) => test.status === 'pass').length,
-      failed: tests.filter((test) => test.status === 'fail').length, duration: performance.now() - started },
-  };
+  } catch (error) {
+    // Keep executed checks, but never present an aborted suite as a complete report.
+    suiteError = `Source suite aborted before completion; remaining checks were not run.\n${redactText(error?.stack ?? String(error))}`;
+    console.error(`FAIL ${name}: ${suiteError}`);
+  } finally {
+    report[name] = {
+      tests,
+      summary: { total: tests.length, passed: tests.filter((test) => test.status === 'pass').length,
+        failed: tests.filter((test) => test.status === 'fail').length, duration: performance.now() - started },
+      ...(suiteError ? { error: suiteError } : {}),
+    };
+  }
 }
 } finally {
   try { await testTransport.close(); }
