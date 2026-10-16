@@ -724,16 +724,26 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
     try { content = await source.getContent(sample); } finally { source.api.text = original; }
     assert(detailHTML, 'Missing the detail response consumed by native getContent');
     const reference = load(detailHTML);
-    const aggregate = reference('.tab-summary .vote-details[typeof="AggregateRating"]')
-    const score = Number(aggregate.find('[property="ratingValue"]').text().trim()), votes = Number(aggregate.find('[property="ratingCount"]').text().trim());
-    assert.equal(aggregate.find('[property="bestRating"]').text().trim(), '5');
-    assert(Number.isFinite(score) && score > 0 && score <= 5 && Number.isSafeInteger(votes) && votes > 0, 'The consumed detail must provide a positive source score and votes');
+    const normalize = (value) => value.replace(/\s+/g, ' ').trim();
+    const aggregate = reference('.tab-summary .vote-details[typeof="AggregateRating"]');
+    const ratingField = (property) => { const nodes = aggregate.find(`[property="${property}"]`); return nodes.length === 1 ? normalize(nodes.text()) : ''; };
+    const scoreText = ratingField('ratingValue'), votesText = ratingField('ratingCount');
+    const score = Number(scoreText), votes = Number(votesText);
+    const rated = aggregate.length === 1 && ratingField('bestRating') === '5' && /^\d+(?:\.\d+)?$/.test(scoreText)
+      && /^[1-9]\d*$/.test(votesText) && Number.isFinite(score) && score > 0 && score <= 5 && Number.isSafeInteger(votes);
     const publication = content.additionalInfo.find((section) => section.id === 'publication');
-    assert(publication && publication.items.length <= 10 && publication.items.every((item) => item.isNonInteractive === true));
-    assert.equal(publication.items.find((item) => item.id === 'source-score')?.title, `★ ${score}/5 (${votes} ${votes === 1 ? 'vote' : 'votes'})`);
-    const field = (name) => reference('.tab-summary .post-content_item').filter((_, node) => reference(node).find('.summary-heading').text().trim().toLowerCase() === name).first().find('.summary-content').text().trim();
-    assert.equal(content.contentType, { Manga: 0, Manhua: 1, Manhwa: 2 }[field('type')]);
-    for (const [name, label] of [['type', 'Type'], ['release', 'Release']]) assert(publication.items.some((item) => item.title === `${label}: ${field(name)}`));
+    assert(!publication || (publication.items.length <= 10 && publication.items.every((item) => item.isNonInteractive === true)));
+    const publicationItems = publication?.items ?? [];
+    const actualScore = Array.from(publicationItems.filter((item) => item.id === 'source-score'), (item) => ({ id: item.id, title: item.title }));
+    assert.deepEqual(actualScore, rated ? [{ id: 'source-score', title: `★ ${score}/5 (${votes} ${votes === 1 ? 'vote' : 'votes'})` }] : [], 'Score must match valid consumed evidence, including honest omission');
+    const field = (name) => normalize(reference('.tab-summary .post-content_item').filter((_, node) => normalize(reference(node).find('.summary-heading').text()).toLowerCase() === name).first().find('.summary-content').text());
+    const type = field('type');
+    assert.equal(content.contentType, type === 'Manga' ? 0 : type === 'Manhua' ? 1 : type === 'Manhwa' ? 2 : undefined);
+    for (const [name, label] of [['type', 'Type'], ['release', 'Release']]) {
+      const value = field(name);
+      const actual = Array.from(publicationItems.filter((item) => item.id.startsWith(`${name}:`)), (item) => ({ id: item.id, title: item.title }));
+      assert.deepEqual(actual, value ? [{ id: `${name}:${value}`, title: `${label}: ${value}` }] : [], `${label} must match the normalized consumed detail field, including honest omission`);
+    }
     assert.equal(content.title, 'Welcome to the Cheap Restaurant of Outcasts!');
     assert(content.summary?.trim()); assert(content.additionalTitles?.length);
     chapters = await source.getChapters(sample);
