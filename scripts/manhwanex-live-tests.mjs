@@ -65,6 +65,76 @@ function imageDimensions(bytes) {
   return [bytes.readUInt16LE(26) & 0x3fff, bytes.readUInt16LE(28) & 0x3fff];
 }
 
+function advertisedCover(image) {
+  let current;
+  for (const key of ['data-src', 'data-lazy-src', 'src']) {
+    const value = image.attr(key)?.trim();
+    if (!value || /^(?:data:|javascript:)|dflazy|loading\.gif/i.test(value)) continue;
+    const url = new URL(value, domain);
+    if (url.protocol === 'https:' && !url.username && !url.password && !url.hash && !url.port) { current = url; break; }
+  }
+  assert(current, 'Native card has no usable image');
+  const suffix = /-(\d+)x(\d+)(\.[a-z0-9]+)$/i;
+  const size = current.pathname.match(suffix);
+  const entries = ['data-srcset', 'srcset'].flatMap((key) => (image.attr(key) ?? '').split(','))
+    .map((entry) => entry.trim().match(/^(\S+)\s+([1-9]\d*)w$/)).filter(Boolean);
+  // An unsuffixed source original must remain intact, regardless of display size.
+  if (!size) return { url: current.href, width: Number(entries.find((entry) => {
+    try { return new URL(entry[1], domain).href === current.href; } catch { return false; }
+  })?.[2]) || undefined };
+  const width = Number(size[1]), height = Number(size[2]);
+  const candidates = [{ url: current.href, width, height }];
+  for (const entry of entries) {
+    let candidate;
+    try { candidate = new URL(entry[1], domain); } catch { continue; }
+    const dimensions = candidate.pathname.match(suffix), advertisedWidth = Number(entry[2]);
+    if (candidate.protocol !== 'https:' || candidate.username || candidate.password || candidate.hash
+        || candidate.origin !== current.origin || candidate.search !== current.search
+        || candidate.pathname.replace(suffix, '$3') !== current.pathname.replace(suffix, '$3')
+        || advertisedWidth <= width || advertisedWidth > 10000
+        || (dimensions && (Number(dimensions[1]) !== advertisedWidth
+          || Math.abs((advertisedWidth / Number(dimensions[2])) / (width / height) - 1) > 0.05))) continue;
+    candidates.push({ url: candidate.href, width: advertisedWidth, height: dimensions ? Number(dimensions[2]) : undefined });
+  }
+  return candidates.sort((a, b) => b.width - a.width)[0];
+}
+
+export async function testManhwaNexHomeCovers({ source, home, homeHTML, freshSource, requests }) {
+  assert(typeof homeHTML === 'string' && homeHTML.length, 'Missing exact native discovery response');
+  const $ = load(homeHTML), popular = home.popular.items[0], latest = home.latest.items[0];
+  assert(popular && latest, 'Native home rows have no cover samples');
+  for (const [section, selector, item] of [['popular', '.widget-manga-popular-slider .slider__item', popular], ['latest', '.page-item-detail', latest]]) {
+    const card = $(selector).filter((_, node) => canonicalID($(node).find('.post-title a').first().attr('href')) === item.id);
+    assert.equal(card.length, 1, 'Cover provenance must be one exact native section card');
+    const image = card.find('img').first(), expected = advertisedCover(image);
+    assert.equal(item.cover, expected.url, 'Cover is not the largest valid image advertised by this exact card');
+    const dimensions = imageDimensions(await imageBytes(source, item.cover));
+    assert(dimensions.every((value) => Number.isInteger(value) && value > 0), 'Invalid intrinsic cover dimensions');
+    if (expected.width !== undefined) assert.equal(dimensions[0], expected.width, 'Actual image width differs from its native advertisement');
+    if (expected.height !== undefined) assert.equal(dimensions[1], expected.height, 'Actual image height differs from its advertised derivative');
+    console.log(`COVER ${section} ${dimensions.join('x')} ${expected.url}`);
+
+    // Response-derived negative controls never request fabricated URLs or details.
+    const current = advertisedCover(image.clone().removeAttr('srcset').removeAttr('data-srcset')).url;
+    const larger = expected.url !== current ? expected.url : undefined;
+    const invalid = larger ? [larger.replace('https://', 'https://user:pass@'), `${larger}?unrelated=1`, `${larger}#unrelated`,
+      larger.replace(new URL(larger).origin, 'https://example.com'), larger.replace(/[^/]+$/, 'unrelated.webp')] : [];
+    for (const replacement of [undefined, ...invalid]) {
+      const page = load(homeHTML), target = page(selector).filter((_, node) => canonicalID(page(node).find('.post-title a').first().attr('href')) === item.id).find('img').first();
+      target.removeAttr('srcset').removeAttr('data-srcset');
+      if (replacement) target.attr('srcset', `${replacement} ${expected.width}w`);
+      const cold = freshSource(), before = requests.length;
+      let reads = 0;
+      cold.api.text = async (url, method = 'GET') => {
+        assert.equal(url, `${domain}/`); assert.equal(method, 'GET'); reads += 1; return page.html();
+      };
+      const parsed = await cold.home(false), items = section === 'popular' ? parsed.popular : parsed.latest.items;
+      assert.equal(items.find((entry) => entry.id === item.id)?.cover, current, 'Invalid or missing source advertisement must not promote or guess a cover');
+      assert.equal(reads, 1); assert.equal(requests.length, before, 'Response-derived cover control added provider requests');
+    }
+  }
+}
+
 export async function testManhwaNexNativeRatings({ source, check, requests, freshSource, nativeStore }) {
   const setting = async (target, value) => {
     const field = (await target.getPreferenceMenu()).sections[0].children[0];
@@ -172,13 +242,20 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
     if (value !== undefined) await field.didChange(value);
     return field;
   };
-  let sections, home, catalog, content, chapters, form;
+  let sections, home, homeHTML, catalog, content, chapters, form;
   const detailResponses = new Map();
   const sample = 'logging-10000-years-into-the-future';
   await check('Explicitly saved source exclusion uses two cold requests and zero warm requests', async () => {
     assert.equal((await preference()).value, true);
     const before = requests.length;
-    sections = await source.getSectionsForPage({ id: 'home' });
+    const original = source.api.text.bind(source.api);
+    source.api.text = async (...args) => {
+      const value = await original(...args);
+      if (args[0] === `${domain}/` && (args[1] ?? 'GET') === 'GET') homeHTML = value;
+      return value;
+    };
+    try { sections = await source.getSectionsForPage({ id: 'home' }); }
+    finally { source.api.text = original; }
     assert.deepEqual(Array.from(sections, (section) => section.title), ['Popular Series', 'Latest Updates', 'Action', 'Romance', 'Fantasy', 'Martial Arts', 'Adventure', 'Ghost', 'Cultivation', 'System']);
     assert.equal(requests.length - before, 1, 'Section descriptors eagerly fetched category cards or metadata');
     home = {};
@@ -202,10 +279,7 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
     assert(!next.results.some((item) => home.latest.items.some((prior) => prior.id === item.id)));
   });
   await check('Largest source-advertised covers have real intrinsic image dimensions', async () => {
-    const popular = home.popular.items[0], latest = home.latest.items.find((item) => item.id === popular.id);
-    assert(latest);
-    assert.deepEqual(imageDimensions(await imageBytes(source, popular.cover)), [193, 278]);
-    assert.deepEqual(imageDimensions(await imageBytes(source, latest.cover)), [350, 476]);
+    await testManhwaNexHomeCovers({ source, home, homeHTML, freshSource, requests });
   });
   await check('Native safe search returns exact source page and next-page identities', async () => {
     catalog = await source.search({ page: 1 });
