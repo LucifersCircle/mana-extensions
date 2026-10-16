@@ -30,7 +30,7 @@ export type Classification = { content_rating?: string | null, age_rating?: stri
 export type AlternateTitle = { title: string, label?: string | null }
 export type Series = Classification & {
     series_id: string, title: string, title_language?: string | null, source_id?: string | null, edition_info?: string | null,
-    cover_image_id?: string | null, current_books?: number, start_year?: number | null,
+    cover_image_id?: string | null, current_books?: number, start_year?: number | null, rating?: number | null,
     format?: string | null, publication_status?: string | null, upload_status?: string | null,
     translated_language?: string | null, genres?: string[], tags?: string[],
     latest_chapters?: { title?: string | null, chapter_no?: string | null, volume_no?: string | null, created_at?: string | null, available_at?: string | null }[]
