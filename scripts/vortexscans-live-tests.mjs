@@ -91,6 +91,7 @@ export async function testVortexRatings({ source, check, freshSource, requests }
     const before = requests.length, nativeAll = await target.search({ page: 1, context: { allowedContentRatings: [0, 1, 2, 3] } });
     assert.deepEqual(ids(nativeAll.results), ids(first.results)); assert.equal(requests.length, before, 'Native policy reused unfiltered physical metadata');
   });
+  await testVortexChapterLabels({ check, requests, freshSource, posts: pool });
   await check('Known source genres retain native classes and incomplete metadata uses Mature details fallback', async () => {
     assert(pool?.length >= 5);
     const names = ['Action', 'Ecchi', 'Mature', 'Hentai'];
@@ -480,5 +481,32 @@ export async function testVortexGenreValidation({ check, requests, freshSource, 
     const start = calls.length;
     assert.equal((await target.search({ page: 1, filters: { genres: { included: [genre] } }, context: { allowedContentRatings: [] } })).results.length, 0);
     assert.equal(calls.length, start); assert.equal(requests.length, before);
+  });
+}
+
+// Same-response metadata only: a chapter number is never a count, and absent
+// metadata is not an invented zero. Replays reuse the existing native interceptor.
+export async function testVortexChapterLabels({ check, requests, freshSource, posts }) {
+  await check('Native search distinguishes explicit chapter count from latest number and preserves home labels', async () => {
+    assert(posts?.length); const before = requests.length;
+    const seed = posts.find((post) => post.chapters?.length); assert(seed); const latest = seed.chapters[0];
+    for (const [count, number, expected, homeExpected] of [
+      [90, 132, '90 Chapters', 'Ch. 132'], [6, 5, '6 Chapters', 'Ch. 5'],
+      [undefined, 1.5, 'Ch. 1.5', 'Ch. 1.5'], [0, undefined, '0 Chapters', '0 Chapters'],
+      [undefined, undefined, undefined, undefined], [undefined, 0, 'Ch. 0', 'Ch. 0'],
+    ]) {
+      const post = { ...structuredClone(seed), _count: count === undefined ? undefined : { chapters: count },
+        chapters: number === undefined ? [] : [{ ...latest, number }] };
+      const target = freshSource(); target.api.query = async () => ({ posts: [post], totalCount: 1 });
+      const result = await target.search({ page: 1 });
+      assert.equal(result.results.length, 1); assert.equal(result.results[0].subtitle, expected);
+      target.home = async () => ({ featured: [post], today: [post], popular: [post], latest: [post], perPage: 36 });
+      assert.equal((await target.resolvePageSection({ id: 'home' }, 'latest')).items[0].subtitle, homeExpected);
+    }
+    const sample = posts.slice(0, 48), target = freshSource();
+    target.api.query = async () => ({ posts: sample, totalCount: sample.length });
+    const result = await target.search({ page: 1 });
+    assert.deepEqual(Array.from(result.results, (item) => item.id.split(':')[0]), sample.map((post) => String(post.id)));
+    assert.equal(requests.length, before, 'Metadata replay unexpectedly requested the provider');
   });
 }

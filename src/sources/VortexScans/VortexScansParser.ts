@@ -38,10 +38,11 @@ export class VortexScansParser {
                 && post.seriesType?.toUpperCase() !== 'NOVEL'
             )
             .map((post) => {
-                const latestChapter = post.chapters?.[0]
-                const chapterValue = latestChapter?.number
-                    ?? post._count?.chapters
-                    ?? 0
+                const latestNumber = post.chapters?.[0]?.number
+                const count = post._count?.chapters
+                const latestLabel = latestNumber != null ? `Ch. ${latestNumber}` : undefined
+                const countLabel = typeof count === 'number' && Number.isSafeInteger(count) && count >= 0
+                    ? `${count} Chapters` : undefined
 
                 return {
                     id: buildVortexContentId(post.id, post.slug),
@@ -49,9 +50,7 @@ export class VortexScansParser {
                     cover: post.featuredImage || VORTEX_FALLBACK_IMAGE,
                     contentRating: nativeRating(getVortexContentRating(post)),
                     webUrl: buildVortexSeriesUrl(post.slug),
-                    subtitle: home && latestChapter
-                        ? `Ch. ${chapterValue}`
-                        : `${chapterValue} Chapters`
+                    subtitle: home ? latestLabel ?? countLabel : countLabel ?? latestLabel
                 }
             })
     }
