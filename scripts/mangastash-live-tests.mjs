@@ -32,8 +32,8 @@ export async function testMangaStash({ check, referenceFetch = globalThis.fetch 
   const findToggle = async (target) => (await target.getPreferenceMenu()).sections[0].children.find((item) => item.id === 'onlySafe');
   let catalog, content, chapters, reader, home;
   await check('MangaStash native initialization and exact browse controls', async () => {
-    assert.equal(source.info.id, 'MangaStash'); assert.equal(source.info.version, '0.0.1-alpha.3');
-    assert.match(source.info.description, /technical unknown/);
+    assert.equal(source.info.id, 'MangaStash'); assert.equal(source.info.version, '0.0.1-alpha.4');
+    assert.match(source.info.description, /chapter dates are unavailable/);
     assert.equal((await findToggle(source)).value, false);
     const form = await source.getSearchForm();
     assert.deepEqual(Array.from(form.sections[0].children, (item) => item.id), ['status', 'genres', 'theme', 'mood', 'format', 'demographic', 'language', 'rating']);
@@ -161,7 +161,27 @@ export async function testMangaStash({ check, referenceFetch = globalThis.fetch 
       const date = $(rows[index]).find('time').attr('datetime') || $(rows[index]).attr('data-date');
       assert.equal(chapter.date.getTime(), date ? new Date(date).getTime() : 0);
     }
-    assert.match(JSON.stringify(content.additionalInfo), /not an actual publication date/);
+    const dateNote = (result) => result.additionalInfo.filter((section) => section.id === 'chapter-date-metadata');
+    const missingDates = rows.some((row) => !($(row).find('time[datetime]').attr('datetime') || $(row).attr('data-date')));
+    assert.equal(dateNote(content).length, missingDates ? 1 : 0);
+    if (missingDates) assert.equal(dateNote(content)[0].items[0].title, 'The site does not provide dates for some chapters. Their displayed upload ages are not reliable.');
+    // Small same-response mutations distinguish missing readable dates from
+    // complete dates or missing dates belonging only to an omitted locked row.
+    for (const variant of ['complete', 'one missing', 'locked missing']) {
+      const date = '2020-02-03T04:05:06.000Z';
+      const target = host(replay((_url, html) => {
+        const $date = load(html), allRows = $date('#chapter-list > .chapter-row');
+        allRows.find('time[datetime]').remove(); allRows.attr('data-date', date);
+        const selected = allRows.eq(rawRows.indexOf(rows[0]));
+        if (variant !== 'complete') selected.removeAttr('data-date');
+        if (variant === 'locked missing') selected.attr('data-locked', 'true');
+        return $date.html();
+      })).source;
+      const result = await target.getContent('ayashimon', all);
+      assert.equal(dateNote(result).length, variant === 'one missing' ? 1 : 0);
+      assert(result.chapters.every((chapter) => chapter.date.getTime() === new Date(date).getTime() || (variant === 'one missing' && chapter.date.getTime() === 0)));
+    }
+    assert.equal(requests.length, beforeTagRoutes, 'Date-note checks must not add provider requests');
     const count = requests.length;
     assert.deepEqual(plain(await source.getChapters('ayashimon')), plain(chapters));
     assert.equal(requests.length, count, 'Complete cached chapter inventory must avoid extra requests');
