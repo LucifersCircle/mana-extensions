@@ -344,6 +344,75 @@ export async function assertKaganeNumericRanges({ freshSource, response, tags, s
   assert.equal(paged.calls.length, before, 'Changing a bound corrupted the original continuation cache');
 }
 
+// Scores come only from the exact bulk row that produced this native item.
+export function assertKaganeListingScores({ items, rows }) {
+  for (const item of items) {
+    const raw = rows.find((row) => row.series_id === item.id);
+    assert(raw, `Listing score has no consumed series_id row: ${item.id}`);
+    const score = raw.rating;
+    const expected = typeof score === 'number' && Number.isFinite(score) && score > 0 && score <= 100 ? (score / 10).toFixed(1) : undefined;
+    const badge = [raw.format, expected ? `★ ${expected}` : undefined].filter(Boolean).join(' · ');
+    assert.deepEqual(item.badge ? { ...item.badge } : undefined, badge ? { text: badge } : undefined, `Native badge differs from its exact bulk row: ${item.id}`);
+    const latest = raw.latest_chapters?.[0];
+    const subtitle = latest?.chapter_no ? `Ch. ${latest.chapter_no}` : latest?.volume_no ? `Vol. ${latest.volume_no}` : latest?.title?.trim();
+    assert.equal(item.subtitle, subtitle || (typeof raw.current_books === 'number' ? `${raw.current_books} Chapters` : undefined), 'Score changed the latest-chapter subtitle');
+    assert.deepEqual(Array.from(item.info ?? [], ({ key, value }) => ({ key, value })), [
+      ...(raw.publication_status ? [{ key: 'Status', value: raw.publication_status }] : []),
+      ...(raw.start_year ? [{ key: 'Year', value: String(raw.start_year) }] : []),
+    ], `Native listing info differs from its exact bulk row: ${item.id}`);
+  }
+}
+
+// Change only rating and the absent-type boundary on this run's actual rows.
+// Native search/Discover stay closed; actual reader/image gates stay below.
+export async function assertKaganeListingScoreBoundaries({ freshSource, response }) {
+  assert(response?.content?.length, 'Need actual bulk rows for listing score boundaries');
+  const missing = Symbol('missing');
+  const cases = [
+    [missing, undefined], [undefined, undefined], [null, undefined], [0, undefined], [-1, undefined],
+    [100.01, undefined], [NaN, undefined], [Infinity, undefined], [-Infinity, undefined],
+    ['85', undefined], ['', undefined], [true, undefined], [false, undefined], [[], undefined], [{}, undefined],
+    [Number.MIN_VALUE, '0.0'], [0.1, '0.0'], [1, '0.1'], [85, '8.5'],
+    [84.907, '8.5'], [92.525, '9.3'], [99.99, '10.0'], [100, '10.0'],
+    [85, '8.5', missing], [0, undefined, missing], [85, '8.5', null], [85, '8.5', ''],
+  ];
+  const stripScore = (items) => JSON.parse(JSON.stringify(Array.from(items, ({ badge, ...item }) => item)));
+  const baseline = new Map();
+  for (const [value, expected, format] of cases) {
+    const rows = response.content.map((row) => {
+      const result = { ...row, rating: value };
+      if (value === missing) delete result.rating;
+      if (format === missing) delete result.format;
+      else if (format !== undefined) result.format = format;
+      return result;
+    });
+    const target = freshSource(), calls = [];
+    target.api.client.request = async () => assert.fail('Listing score boundaries must not request provider data');
+    for (const method of ['series', 'books', 'challenge', 'sources', 'genres', 'tags']) target.api[method] = async () => assert.fail(`Listing score requested ${method}`);
+    target.api.search = async (...args) => { calls.push(args); return { ...response, content: rows, last: true }; };
+    const paths = [
+      ['search', async () => (await target.search({ page: 1, query: response.content[0].title })).results],
+      ...Array.from(await target.getSectionsForPage({ id: 'home' }), ({ id }) => [id, async () => (await target.resolvePageSection({ id: 'home' }, id)).items]),
+    ];
+    for (const [id, run] of paths) {
+      const items = await run(); assert(items.length, `No visible actual rows in ${id} boundary replay`);
+      assertKaganeListingScores({ items, rows });
+      for (const item of items) {
+        const raw = rows.find((row) => row.series_id === item.id); assert(raw);
+        const text = [raw.format, expected ? `★ ${expected}` : undefined].filter(Boolean).join(' · ');
+        assert.deepEqual(item.badge ? { ...item.badge } : undefined, text ? { text } : undefined);
+      }
+      const unchanged = stripScore(items);
+      if (value === missing) baseline.set(id, unchanged);
+      else assert.deepEqual(unchanged, baseline.get(id), `Rating changed unrelated native ${id} metadata, IDs, order or content policy`);
+      const before = calls.length;
+      assert.deepEqual(stripScore(await run()), unchanged);
+      assert.equal(calls.length, before, 'Repeated listing did not reuse native cache');
+    }
+    assert.equal(calls.length, paths.length, 'Listing score added bulk or per-card requests');
+  }
+}
+
 // Execute the native bundle against fresh public responses. Observability wrappers
 // record the data it actually consumed, never replace it with a parallel source.
 export async function testKagane({ source, check, highlights, searchResult, image, requests, freshSource, referenceFetch = globalThis.fetch }) {
@@ -352,12 +421,26 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   const sample = '019c2084-fa67-791d-8ba5-494744577445';
   const defaultRatings = ['Safe', 'Suggestive'], allRatings = ['Safe', 'Suggestive', 'Erotica', 'Pornographic'];
   const seen = new Map(), details = new Map(), books = new Map(), searches = [];
+  const listingRows = new WeakMap();
   const originalSearch = source.api.search.bind(source.api);
   source.api.search = async (...args) => {
     const response = await originalSearch(...args);
     searches.push({ args, response });
     for (const item of response.content) seen.set(item.series_id, item);
     return response;
+  };
+  // Cached highlights are shallow-cloned, retaining their info-array identity.
+  // Keep the exact producing row even when a later response rotates its score.
+  const nativeSearch = source.search;
+  source.search = async (...args) => {
+    const before = searches.length, result = await nativeSearch.apply(source, args);
+    const rows = searches.length > before ? searches.at(-1).response.content : [];
+    for (const item of result.results) {
+      const raw = rows.find((row) => row.series_id === item.id) ?? listingRows.get(item.info);
+      assert(raw, `Missing native listing response provenance: ${item.id}`);
+      listingRows.set(item.info, raw);
+    }
+    return result;
   };
   for (const [method, store] of [['series', details], ['books', books]]) {
     const original = source.api[method].bind(source.api);
@@ -417,7 +500,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   }
   let catalog, form, chapterList, index, content, blocked, readerData, safeBody;
   await check('Never-saved source categories follow native policy and explicit source selection persists', async () => {
-    assert.equal(source.info.version, '0.0.1-alpha.8');
+    assert.equal(source.info.version, '0.0.1-alpha.9');
     assert.deepEqual(Array.from((await preference('contentRatings')).value), allRatings);
     const start = requests.length, empty = await source.search({ page: 1, context: { allowedContentRatings: [] } });
     assert.equal(empty.results.length, 0); assert.equal(empty.isLastPage, true); assert.equal(requests.length, start);
@@ -429,6 +512,8 @@ export async function testKagane({ source, check, highlights, searchResult, imag
     assert.deepEqual(Array.from((await preference('contentRatings', undefined, freshSource())).value), defaultRatings);
     catalog = await source.search({ page: 1 }); searchResult(catalog);
     for (const item of catalog.results) assert(isSafe(seen.get(item.id)), `Unsafe or unknown listing: ${item.id}`);
+    assertKaganeListingScores({ items: catalog.results, rows: catalog.results.map((item) => listingRows.get(item.info)) });
+    await assertKaganeListingScoreBoundaries({ freshSource, response: searches.at(-1).response });
     const sent = searches.at(-1).args[0]; safeBody = sent;
     assert.equal(sent.is_pornographic, false); assert(sent.age_rating.includes('Safe'));
   });
@@ -643,6 +728,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
       assert.deepEqual(Array.from(result.items, (item) => item.id), expected);
       if (!raw.last) assert.equal(result.viewMoreLink?.request?.listId, section.id);
       for (const item of result.items) assert(isSafe(seen.get(item.id)));
+      assertKaganeListingScores({ items: result.items, rows: result.items.map((item) => listingRows.get(item.info)) });
     }
   });
   await check('A real 200-plus chapter list matches every live index ID exactly', async () => {
@@ -844,4 +930,5 @@ export async function testKagane({ source, check, highlights, searchResult, imag
     for (const path of ['/genres/list', '/tags/list', '/sources/list']) assert.equal(requests.filter((request) => new URL(request.url).pathname === `/api/v2${path}`).length, 1, `Public taxonomy was redundantly fetched: ${path}`);
     assert(!requests.some((request) => request.url.includes('token=') && !request.url.includes('redacted')));
   });
+  source.search = nativeSearch;
 }

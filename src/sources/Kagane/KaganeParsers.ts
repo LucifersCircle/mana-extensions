@@ -77,13 +77,15 @@ export function displayTitle(title: string, settings: Settings, sources: UploadS
 
 export function highlight(series: Series, settings: Settings, sources: UploadSource[]): Highlight {
     const latest = series.latest_chapters?.[0]
+    const score = typeof series.rating === 'number' && Number.isFinite(series.rating) && series.rating > 0 && series.rating <= 100 ? (series.rating / 10).toFixed(1) : undefined
+    const badge = [series.format, score ? `★ ${score}` : undefined].filter(Boolean).join(' · ')
     const subtitle = latest?.chapter_no ? `Ch. ${latest.chapter_no}` : latest?.volume_no ? `Vol. ${latest.volume_no}` : latest?.title?.trim()
     return {
         id: series.series_id,
         title: displayTitle(preferredTitle(series.title, series.title_language), settings, sources, series.source_id, series.edition_info),
         cover: imageURL(series.cover_image_id), webUrl: seriesURL(series.series_id), contentRating: manaRating(series),
         subtitle: subtitle || (typeof series.current_books === 'number' ? `${series.current_books} Chapters` : undefined),
-        badge: series.format ? { text: series.format } : undefined,
+        badge: badge ? { text: badge } : undefined,
         info: [
             ...(series.publication_status ? [{ key: 'Status', value: series.publication_status }] : []),
             ...(series.start_year ? [{ key: 'Year', value: String(series.start_year) }] : [])
