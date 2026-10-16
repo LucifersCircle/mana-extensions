@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { decode } from 'html-entities';
 import { assertPublicKaganeRequest, assertReadOnlyKaganePost, createManaRuntime, redactURL, redactText } from './mana-runtime.mjs';
 import { createManaTestTransport } from './mana-test-browser.mjs';
 
@@ -413,6 +414,45 @@ export async function assertKaganeListingScoreBoundaries({ freshSource, response
   }
 }
 
+// Check only the response consumed by native details, never another title fetch.
+export function assertKaganeDetailMetadata({ content, metadata, sources, id }) {
+  assert.equal(metadata.series_id, id, 'Detail response changed canonical series identity');
+  const labels = new Map([['ongoing', 'Ongoing'], ['completed', 'Completed'], ['hiatus', 'Hiatus'], ['abandoned', 'Cancelled']]);
+  const upload = typeof metadata.upload_status === 'string' ? labels.get(metadata.upload_status.trim().toLowerCase()) : undefined;
+  const description = decode((metadata.description ?? '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n\n').replace(/<[^>]*>/g, '')).trim();
+  const source = sources.find((entry) => entry.source_id === metadata.source_id)?.title;
+  const score = metadata.average_rating;
+  const views = metadata.total_views;
+  assert.equal(content.summary, [
+    typeof score === 'number' && Number.isFinite(score) && score > 0 && score <= 100 ? `★ ${(score / 10).toFixed(1)}` : '',
+    typeof views === 'number' && Number.isFinite(views) && views >= 0 ? `Views: ${views}` : '',
+    description, source ? `Source: ${source}` : '', metadata.edition_info ? `Edition: ${metadata.edition_info}` : '',
+    upload ? `Upload status: ${upload}` : '',
+  ].filter(Boolean).join('\n\n'), 'Detail summary must preserve source text and show only its average score and labeled views');
+  const trackers = new Map([
+    ['anilist.co', ['anilist', 'AniList', /^\/manga\/([1-9][0-9]*)\/?$/]],
+    ['myanimelist.net', ['mal', 'MyAnimeList', /^\/manga\/([1-9][0-9]*)(?:\/[A-Za-z0-9_-]+)?\/?$/]],
+    ['kitsu.app', ['kitsu', 'Kitsu', /^\/manga\/([1-9][0-9]*)\/?$/]],
+    ['www.mangaupdates.com', ['mangaupdates', 'MangaUpdates', /^\/series\/([a-z0-9]{7})(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)?\/?$/]],
+  ]);
+  const expectedLinks = new Map();
+  for (const entry of Array.isArray(metadata.series_links) ? metadata.series_links : []) {
+    if (entry?.kind !== 'Tracker' || typeof entry.url !== 'string') continue;
+    const href = entry.url.trim();
+    let url;
+    try { url = new URL(href); } catch { continue; }
+    const tracker = trackers.get(url.hostname);
+    if (!tracker || !href.startsWith(`https://${url.hostname}/`) || url.username || url.password || url.port || url.search || url.hash) continue;
+    const match = tracker[2].exec(url.pathname);
+    if (!match || href !== `https://${url.hostname}${url.pathname}`) continue;
+    const key = `${tracker[0]}:${match[1]}`;
+    if (!expectedLinks.has(key)) expectedLinks.set(key, { type: 4, id: key, title: tracker[1], url: href });
+  }
+  const sections = content.additionalInfo?.filter((section) => section.type === 4) ?? [];
+  assert.equal(sections.length, expectedLinks.size ? 1 : 0, 'Empty or duplicate native links section');
+  assert.deepEqual(Array.from(sections.flatMap((section) => section.items), (item) => ({ ...item })), [...expectedLinks.values()], 'Native links must be safe, deduplicated and source-published');
+}
+
 // Execute the native bundle against fresh public responses. Observability wrappers
 // record the data it actually consumed, never replace it with a parallel source.
 export async function testKagane({ source, check, highlights, searchResult, image, requests, freshSource, referenceFetch = globalThis.fetch }) {
@@ -421,6 +461,9 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   const sample = '019c2084-fa67-791d-8ba5-494744577445';
   const defaultRatings = ['Safe', 'Suggestive'], allRatings = ['Safe', 'Suggestive', 'Erotica', 'Pornographic'];
   const seen = new Map(), details = new Map(), books = new Map(), searches = [];
+  let uploadSources = [];
+  const originalSources = source.api.sources.bind(source.api);
+  source.api.sources = async (...args) => { const value = await originalSources(...args); uploadSources = value; return value; };
   const listingRows = new WeakMap();
   const originalSearch = source.api.search.bind(source.api);
   source.api.search = async (...args) => {
@@ -500,7 +543,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   }
   let catalog, form, chapterList, index, content, blocked, readerData, safeBody;
   await check('Never-saved source categories follow native policy and explicit source selection persists', async () => {
-    assert.equal(source.info.version, '0.0.1-alpha.9');
+    assert.equal(source.info.version, '0.0.1-alpha.10');
     assert.deepEqual(Array.from((await preference('contentRatings')).value), allRatings);
     const start = requests.length, empty = await source.search({ page: 1, context: { allowedContentRatings: [] } });
     assert.equal(empty.results.length, 0); assert.equal(empty.isLastPage, true); assert.equal(requests.length, start);
@@ -532,6 +575,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
     assert(result.results.some((match) => match.id === item.id));
     content = await source.getContent(item.id);
     const metadata = details.get(item.id); assert(metadata);
+    assertKaganeDetailMetadata({ content, metadata, sources: uploadSources, id: item.id });
     const english = (language) => typeof language === 'string' && /^(?:en(?:[-_][a-z0-9]{2,8})*|english)$/i.test(language.trim());
     const expectedTitle = english(metadata.title_language) ? metadata.title : metadata.series_alternate_titles?.find((alias) => english(alias.label) && alias.title.trim())?.title ?? metadata.title;
     assert.equal(content.title, expectedTitle.trim()); assert(content.summary?.trim());

@@ -6,6 +6,7 @@ import { Chapter,
     ContentRating,
     ContentType,
     Highlight,
+    links,
     PublicationStatus,
     ReadingMode,
     staff } from '@mana-app/types'
@@ -103,6 +104,31 @@ function statusLabel(value: unknown): string | undefined {
     }
 }
 
+/** Only expose provider-published tracker links, without fetching destinations. */
+function trackerLinks(entries: Detail['series_links']) {
+    const trackers = [
+        { id: 'anilist', title: 'AniList', pattern: /^https:\/\/anilist\.co\/manga\/([1-9][0-9]*)\/?$/ },
+        { id: 'mal', title: 'MyAnimeList', pattern: /^https:\/\/myanimelist\.net\/manga\/([1-9][0-9]*)(?:\/[A-Za-z0-9_-]+)?\/?$/ },
+        { id: 'kitsu', title: 'Kitsu', pattern: /^https:\/\/kitsu\.app\/manga\/([1-9][0-9]*)\/?$/ },
+        { id: 'mangaupdates', title: 'MangaUpdates', pattern: /^https:\/\/www\.mangaupdates\.com\/series\/([a-z0-9]{7})(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)?\/?$/ }
+    ]
+    const seen = new Set<string>()
+    return (Array.isArray(entries) ? entries : []).flatMap((entry) => {
+        if (entry?.kind !== 'Tracker' || typeof entry.url !== 'string') return []
+        const url = entry.url.trim()
+        for (const tracker of trackers) {
+            const match = tracker.pattern.exec(url)
+            if (!match) continue
+            // Slugs and a trailing slash do not create another tracker identity.
+            const id = `${tracker.id}:${match[1]}`
+            if (seen.has(id)) return []
+            seen.add(id)
+            return [links.item({ id, title: tracker.title, url })]
+        }
+        return []
+    })
+}
+
 export function content(id: string, details: Detail, settings: Settings, sources: UploadSource[]): Content {
     const type = ({ Manga: ContentType.MANGA, Manhwa: ContentType.MANHWA, Manhua: ContentType.MANHUA, Comic: ContentType.COMIC } as Record<string, ContentType>)[details.format ?? '']
     const status = ({ Ongoing: PublicationStatus.ONGOING, Completed: PublicationStatus.COMPLETED, Hiatus: PublicationStatus.HIATUS, Cancelled: PublicationStatus.CANCELLED } as Record<string, PublicationStatus>)[statusLabel(details.publication_status) ?? '']
@@ -115,8 +141,10 @@ export function content(id: string, details: Detail, settings: Settings, sources
     const people = (details.series_staff ?? []).map((person) => staff.item({ id: `${person.role}:${person.name}`, title: person.name, subtitle: person.role }))
     const description = decode((details.description ?? '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n\n').replace(/<[^>]*>/g, '')).trim()
     const source = sources.find((item) => item.source_id === details.source_id)?.title
+    const externalLinks = trackerLinks(details.series_links)
     const summary = [
-        typeof details.average_rating === 'number' && details.average_rating > 0 ? `Rating: ${(details.average_rating / 10).toFixed(1)}/10` : '',
+        typeof details.average_rating === 'number' && Number.isFinite(details.average_rating) && details.average_rating > 0 && details.average_rating <= 100 ? `★ ${(details.average_rating / 10).toFixed(1)}` : '',
+        typeof details.total_views === 'number' && Number.isFinite(details.total_views) && details.total_views >= 0 ? `Views: ${details.total_views}` : '',
         description, source ? `Source: ${source}` : '', details.edition_info ? `Edition: ${details.edition_info}` : '',
         uploadStatus ? `Upload status: ${uploadStatus}` : ''
     ].filter(Boolean).join('\n\n')
@@ -126,7 +154,7 @@ export function content(id: string, details: Detail, settings: Settings, sources
         additionalTitles: [...new Set([details.title.trim(), ...(details.series_alternate_titles ?? []).map((entry) => entry.title.trim())].filter(Boolean))],
         contentRating: manaRating(details), webUrl: seriesURL(id),
         recommendedPanelMode: tags.some((tag) => /^(?:webtoon|long strip)$/i.test(tag.title)) ? ReadingMode.WEBTOON : type === ContentType.MANHWA || type === ContentType.MANHUA || type === ContentType.COMIC ? ReadingMode.PAGED_COMIC : ReadingMode.PAGED_MANGA,
-        additionalInfo: [...(people.length ? [staff.section({ id: 'staff', title: 'Staff', hasMore: false, items: people })] : []), ...(!classify(details) ? [incompleteRatingInfo()] : [])]
+        additionalInfo: [...(people.length ? [staff.section({ id: 'staff', title: 'Staff', hasMore: false, items: people })] : []), ...(externalLinks.length ? [links.section({ id: 'links', title: 'Links', items: externalLinks })] : []), ...(!classify(details) ? [incompleteRatingInfo()] : [])]
     }
 }
 
