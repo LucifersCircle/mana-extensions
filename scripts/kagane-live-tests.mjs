@@ -506,7 +506,7 @@ export function assertKaganeDetailMetadata({ content, metadata, sources, id }) {
     let identity = match[1];
     if (rule[1].startsWith('wikipedia-')) {
       try { identity = decodeURIComponent(identity); } catch { continue; }
-      if (!identity || /^[.]{1,2}$/.test(identity) || [...identity].some(c => c.charCodeAt(0) <= 32 || (c.charCodeAt(0) >= 127 && c.charCodeAt(0) <= 159)) || /[/\\?#%]/.test(identity)) continue;
+      if (!identity || /^[.]{1,2}$/.test(identity) || [...identity].some(c => c.charCodeAt(0) <= 32 || (c.charCodeAt(0) >= 127 && c.charCodeAt(0) <= 159)) || !/^[\p{Letter}\p{Mark}\p{Number}_().-]+$/u.test(identity)) continue;
     }
     const key = `${rule[1]}:${identity}`;
     if (!expectedLinks.has(key)) expectedLinks.set(key, { type: 4, id: key, title: rule[2], url: href });
@@ -554,7 +554,7 @@ export function assertKaganeEditionMetadata({ content, rows, id, settings, allow
   assert.equal(content.additionalInfo[0], section, 'Other Editions must be the first native additional-info section');
   assert.equal(section.type, 2); assert.equal(section.hasMore, false, 'No unsafe context-free expansion');
   assert.equal(section.title, eligible.length > 10 ? 'Other Editions (first 10)' : 'Other Editions');
-  assert.deepEqual(Array.from(section.items, item => item.id), eligible.slice(0, 10).map(row => row.id.toLowerCase()), 'Edition identity/order/cap must match the same bulk response');
+  assert.deepEqual(Array.from(section.items, item => item.id), Array.from(eligible.slice(0, 10), row => row.id.toLowerCase()), 'Edition identity/order/cap must match the same bulk response');
   for (const [index, item] of section.items.entries()) {
     const raw = eligible[index];
     assert.equal(item.cover, `https://kagane.org/api/v2/image/${raw.cover_image_id.toLowerCase()}`);

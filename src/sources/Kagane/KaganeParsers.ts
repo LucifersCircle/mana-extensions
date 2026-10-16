@@ -138,7 +138,7 @@ function trackerLinks(entries: Detail['series_links']) {
             if (tracker.id.startsWith('wikipedia-')) {
                 try { identity = decodeURIComponent(identity) } catch { return [] }
                 // Reject encoded delimiters, dot segments and double encodings.
-                if (!identity || hasControls(identity) || /^[.]{1,2}$/.test(identity) || /[ /\\?#%]/.test(identity)) return []
+                if (!identity || hasControls(identity) || /^[.]{1,2}$/.test(identity) || !/^[\p{L}\p{M}\p{N}_().-]+$/u.test(identity)) return []
             }
             // Slugs and a trailing slash do not create another tracker identity.
             const id = `${tracker.id}:${identity}`
