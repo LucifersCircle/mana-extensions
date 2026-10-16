@@ -56,7 +56,8 @@ import { allowed,
     content,
     editionSection,
     highlight,
-    readerExpiry } from './KaganeParsers'
+    readerExpiry,
+    visibleDetailTags } from './KaganeParsers'
 import { hasHidden,
     hostRatingKey,
     includedTagGroups,
@@ -74,7 +75,7 @@ type SearchPage = { result: PagedSearchResult, next: number, seenIDs: string[] }
 
 export class Target implements ContentSource, PageLinkResolver, ImageRequestHandler, SourcePreferenceProvider {
     readonly info: SourceInfo = {
-        id: 'Kagane', version: '0.0.1-alpha.12', name: 'Kagane',
+        id: 'Kagane', version: '0.0.1-alpha.13', name: 'Kagane',
         description: 'Kagane with current API support, grouped tags and global four-category content settings.',
         thumbnail: 'Kagane.png', rating: CatalogRating.MIXED, website: DOMAIN,
         badges: ['Manga', 'Manhwa', 'Manhua', 'Comic'],
@@ -275,11 +276,12 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
         return this.withSettings(async (settings) => {
             const details = await this.requireAllowed(contentId, settings, context)
             const tracker = strictUUID(details.tracker_id)
-            const [sources, rows] = await Promise.all([
+            const [sources, rows, tags] = await Promise.all([
                 this.api.sources(),
-                tracker && !settings.excludedGenres.length && !settings.excludedTags.length ? this.api.trackerSeries(tracker) : Promise.resolve([])
+                tracker && !settings.excludedGenres.length && !settings.excludedTags.length ? this.api.trackerSeries(tracker) : Promise.resolve([]),
+                visibleDetailTags(details, settings).length ? this.api.tags() : Promise.resolve([])
             ])
-            const result = content(contentId, details, settings, sources)
+            const result = content(contentId, details, settings, sources, tags)
             const editions = editionSection(rows, contentId, settings, context?.allowedContentRatings)
             if (editions) result.additionalInfo = [editions, ...(result.additionalInfo ?? [])]
             return result
