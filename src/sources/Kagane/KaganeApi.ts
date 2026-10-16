@@ -11,6 +11,7 @@ import { API,
     Genre,
     ManifestPage,
     SearchResponse,
+    strictUUID,
     TagEntry,
     UploadSource,
     validId } from './KaganeModels'
@@ -115,6 +116,17 @@ export class KaganeApi {
             const result = await this.json<Detail>(`/series/${id}`)
             if (!result || typeof result.title !== 'string' || !result.title.trim() || (result.series_id !== undefined && result.series_id !== id)) throw new Error('Kagane returned invalid series details')
             return result
+        })
+    }
+
+    trackerSeries(id: string): Promise<unknown[]> {
+        const tracker = strictUUID(id)
+        if (!tracker) throw new Error('Invalid Kagane tracker ID')
+        // Cache only raw bulk rows. The current caller must reapply every policy.
+        return this.cached(`tracker-series:${tracker}`, 30_000, async () => {
+            const result = await this.json<{ book_series: unknown[] }>(`/trackers/${tracker}/series`)
+            if (!result || !Array.isArray(result.book_series)) throw new Error('Kagane edition list is invalid')
+            return result.book_series
         })
     }
 

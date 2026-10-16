@@ -52,6 +52,27 @@ accept('existing public reader manifest', search({}, `${origin}/api/v2/books/id?
 accept('existing uploader taxonomy', search({ source_types: null }, `${origin}/api/v2/sources/list`))
 accept('existing public GET', { method: 'GET', url: `${origin}/api/v2/series/id/books?limit=200&before=cursor` })
 
+// The sole new read-only route must pass both independent transport guards.
+const tracker = '2a849c5f-2cc7-5d67-8be0-4a883e63565c'
+const editions = `${origin}/api/v2/trackers/${tracker}/series`
+accept('exact bulk edition GET', { method: 'GET', url: editions })
+accept('valid uppercase UUID bulk read', { method: 'GET', url: editions.replace(tracker, tracker.toUpperCase()) })
+for (const url of [
+    editions + '/', editions + '?', editions + '?x=1', editions + '?id=1&id=2', editions + '#', editions + '#x',
+    editions.replace('/series', '/relationships'), editions + '/account', editions + '/purchase', editions + '/delete',
+    editions.replace(tracker, 'bad'), editions.replace(tracker, tracker.replaceAll('-', '')),
+    editions.replace(tracker, '00000000-0000-0000-0000-000000000000'), editions.replace(tracker, tracker.replace('-5d67-', '-9d67-')),
+    editions.replace(tracker, tracker.replace('-8be0-', '-7be0-')), editions.replace(tracker, `%32${tracker.slice(1)}`),
+    editions.replace('/trackers/', '/trackers/../trackers/'), editions.replace('/trackers/', '/trackers%2F'),
+    editions.replace('/series', '/%73eries'), editions.replace('https:', 'http:'),
+    editions.replace('kagane.org', 'kagane.org:443'), editions.replace('kagane.org', 'kagane.org:8443'),
+    editions.replace('kagane.org', 'user:password@kagane.org'), editions.replace('kagane.org', 'evil.kagane.org'),
+    editions.replace('kagane.org', 'kagane.org.evil.test'), editions.replace('kagane.org', 'kagane.org.'),
+    editions.replace('kagane.org', 'kagane.org\\@evil.test'), '\n' + editions, editions + '\n',
+]) reject(`bulk edition route rejects ${JSON.stringify(url)}`, { method: 'GET', url })
+for (const method of ['POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']) reject(`bulk edition rejects ${method}`, { method, url: editions })
+for (const body of ['', {}, 'null']) reject('bulk edition rejects body', { method: 'GET', url: editions, body })
+
 test('Mana guard accepts only the exact range schemas on existing read-only routes', () => {
     for (const { name, request, allowed } of fixtures) {
         if (allowed) assert.doesNotThrow(() => assertPublicKaganeRequest(request), name)

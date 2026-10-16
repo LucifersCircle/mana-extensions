@@ -85,6 +85,9 @@ def assert_public_request(payload):
         raise ValueError('Duplicate query keys')
     method, body = payload.get('method'), payload.get('body')
     if method == 'GET' and body is None:
+        # Match the exact raw bulk-read URL, not a normalized path or tracker prefix.
+        if re.fullmatch(r'https://kagane\.org/api/v2/trackers/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}/series', payload.get('url', '')):
+            return
         if not url.query and url.path in ('/', '/api/v2/genres/list', '/api/v2/tags/list'):
             return
         if not url.query and re.fullmatch(r'/api/v2/image/' + ID, url.path):

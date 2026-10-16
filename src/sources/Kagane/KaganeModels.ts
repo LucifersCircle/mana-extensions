@@ -43,7 +43,7 @@ export type Detail = Classification & {
     series_staff?: { name: string, role: string }[],
     genres?: { genre_id?: string, genre_name: string, is_spoiler?: boolean }[],
     tags?: { tag_id?: string, tag_name: string, is_spoiler?: boolean, spoiler?: boolean }[],
-    series_alternate_titles?: AlternateTitle[], average_rating?: number | null, total_views?: number | null,
+    tracker_id?: string | null, series_alternate_titles?: AlternateTitle[], average_rating?: number | null, total_views?: number | null,
     series_links?: { url?: string | null, label?: string | null, kind?: string | null }[] | null
 }
 export type Book = {
@@ -55,6 +55,10 @@ export type SearchResponse = { content: Series[], last: boolean, total_elements?
 export type Genre = { id: string, genre_name: string }
 export type TagEntry = { id: string, tag_name: string }
 export type UploadSource = { source_id: string, source_type: string, title: string }
+export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+export function strictUUID(value: unknown): string | undefined {
+    return typeof value === 'string' && UUID_PATTERN.test(value) ? value.toLowerCase() : undefined
+}
 export type ManifestPage = { page_no: number, page_id: string, ext?: string | null }
 export type Challenge = { access_token: string, expires_at?: number | string, expires_in?: number, cache_url?: string | null, manifest?: { pages?: ManifestPage[] } | null }
 export type Settings = {
