@@ -247,15 +247,15 @@ export function parseContent(html: string, id: string, bulk?: Series): { content
         ...metadata.artists.map((name) => staff.item({ id: `artist:${name}`, title: name, subtitle: 'Artist' }))]
     const type = $('.tab-summary .post-content_item').filter((_, node) => text($(node).find('.summary-heading').text()) === 'Type').find('.summary-content').text().trim()
     const typeMap: Record<string, ContentType> = { Manga: ContentType.MANGA, Manhwa: ContentType.MANHWA, Manhua: ContentType.MANHUA }
-    const sourceTags = taxonomy($, $('.tab-summary .tags-content a'), 'tag').map((tag) => tags.item(tag))
+    const sourceTags = taxonomy($, $('.tab-summary .tags-content a'), 'tag').map((tag) => tags.item({ ...tag, isNonInteractive: true }))
     const sourceTagSections: Array<ReturnType<typeof tags.section>> = []
     for (let offset = 0; offset < sourceTags.length; offset += 10) {
         const group = offset / 10 + 1
         sourceTagSections.push(tags.section({ id: group === 1 ? 'source-tags' : `source-tags-${group}`,
             title: group === 1 ? 'Source tags' : `Source tags (${group})`, items: sourceTags.slice(offset, offset + 10) }))
     }
-    const details = [metadata.statusText ? tags.item({ id: `status:${metadata.statusText}`, title: `Status: ${metadata.statusText}` }) : undefined, metadata.release ? tags.item({ id: `release:${metadata.release}`, title: `Release: ${metadata.release}` }) : undefined,
-        type ? tags.item({ id: `type:${type}`, title: `Type: ${type}` }) : undefined].filter((item): item is ReturnType<typeof tags.item> => Boolean(item))
+    const details = [metadata.statusText ? tags.item({ id: `status:${metadata.statusText}`, title: `Status: ${metadata.statusText}`, isNonInteractive: true }) : undefined, metadata.release ? tags.item({ id: `release:${metadata.release}`, title: `Release: ${metadata.release}`, isNonInteractive: true }) : undefined,
+        type ? tags.item({ id: `type:${type}`, title: `Type: ${type}`, isNonInteractive: true }) : undefined].filter((item): item is ReturnType<typeof tags.item> => Boolean(item))
     return { metadata, content: { title, cover: metadata.cover, webUrl: metadata.webUrl,
         summary: summary.text().replace(/[ \t]+/g, ' ').replace(/\n\s*\n/g, '\n\n').trim(),
         additionalTitles: metadata.alternatives, tags: metadata.genres, status: metadata.status,
