@@ -55,7 +55,8 @@ export function rating(post: Post): ContentRating | undefined {
     if (tags.some((tag) => explicitGenre.test(tag.name.trim()))) return ContentRating.EXPLICIT
     if (tags.some((tag) => matureGenre.test(tag.name.trim()))) return ContentRating.MATURE
     if (tags.some((tag) => suggestiveGenre.test(tag.name.trim()))) return ContentRating.SUGGESTIVE
-    return completeGenres(post) ? ContentRating.SAFE : undefined
+    // Ordinary genre labels do not establish a source age rating.
+    return undefined
 }
 export const blockedGenre = (name: string): boolean => explicitGenre.test(name.trim()) || matureGenre.test(name.trim()) || suggestiveGenre.test(name.trim())
 export function imageURL(value: string): string {

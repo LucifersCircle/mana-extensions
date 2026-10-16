@@ -82,7 +82,7 @@ describe('VortexScans metadata parsing', () => {
         expect(content).toMatchObject({
             title: 'The Demon King\'s Friend',
             cover: post.featuredImage,
-            contentRating: ContentRating.SAFE,
+            contentRating: ContentRating.SUGGESTIVE,
             status: PublicationStatus.ONGOING,
             contentType: ContentType.MANHWA,
             recommendedPanelMode: ReadingMode.WEBTOON,
@@ -104,7 +104,7 @@ describe('VortexScans metadata parsing', () => {
             id: '663:the-demon-king%27s-friend',
             title: 'The Demon King\'s Friend',
             subtitle: 'Ch. 7',
-            contentRating: ContentRating.SAFE
+            contentRating: ContentRating.SUGGESTIVE
         })
     })
 
@@ -116,9 +116,9 @@ describe('VortexScans metadata parsing', () => {
             ...post,
             genres: [{ id: 49, name: 'Ecchi' }]
         }).contentRating).toBe(ContentRating.SUGGESTIVE)
-        expect(parser.parseContent({ ...post, genres: [{ id: 49, name: 'Harem' }] }).contentRating).toBe(ContentRating.SAFE)
+        expect(parser.parseContent({ ...post, genres: [{ id: 49, name: 'Harem' }] }).contentRating).toBe(ContentRating.SUGGESTIVE)
         const unrated = parser.parseContent({ ...post, genres: [] })
-        expect(unrated.contentRating).toBe(ContentRating.MATURE)
+        expect(unrated.contentRating).toBe(ContentRating.SUGGESTIVE)
         expect(unrated.additionalInfo?.some((section) => section.id === 'content-rating-metadata')).toBe(true)
     })
 })

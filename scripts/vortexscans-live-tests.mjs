@@ -92,25 +92,25 @@ export async function testVortexRatings({ source, check, freshSource, requests }
     assert.deepEqual(ids(nativeAll.results), ids(first.results)); assert.equal(requests.length, before, 'Native policy reused unfiltered physical metadata');
   });
   await testVortexChapterLabels({ check, requests, freshSource, posts: pool });
-  await check('Known source genres retain native classes and incomplete metadata uses Mature details fallback', async () => {
+  await check('Known source genres retain native classes and unclassified metadata uses Suggestive details fallback', async () => {
     assert(pool?.length >= 5);
     const names = ['Action', 'Ecchi', 'Mature', 'Hentai'];
     const posts = pool.slice(0, 5).map((post, index) => ({ ...post, genres: index < 4 ? [{ id: 1, name: names[index] }] : undefined }));
     for (const allowed of [0, 1, 2, 3]) {
       const target = freshSource(); target.api.query = async () => ({ posts, totalCount: posts.length });
       const result = await target.search({ page: 1, context: { allowedContentRatings: [allowed] } });
-      assert.deepEqual(ids(result.results), posts.filter((_post, index) => (index < 4 ? index : 2) === allowed).map((post) => canonicalID(post)));
+      assert.deepEqual(ids(result.results), posts.filter((_post, index) => ([1, 1, 2, 3, 1][index]) === allowed).map((post) => canonicalID(post)));
       assert(result.results.every((item) => item.contentRating === allowed));
     }
     const target = freshSource(); target.api.getPost = async () => ({ post: { ...rawPost, genres: undefined } });
-    const id = canonicalID(rawPost), content = await target.getContent(id, { allowedContentRatings: [2] });
-    assert.equal(content.contentRating, 2); assert(content.additionalInfo.some((section) => section.id === 'content-rating-metadata'));
-    await assert.rejects(target.getContent(id, { allowedContentRatings: [0, 1, 3] }), /excluded/);
-    assert.equal((await target.getContent(id)).contentRating, 2);
+    const id = canonicalID(rawPost), content = await target.getContent(id, { allowedContentRatings: [1] });
+    assert.equal(content.contentRating, 1); assert(content.additionalInfo.some((section) => section.id === 'content-rating-metadata'));
+    await assert.rejects(target.getContent(id, { allowedContentRatings: [0, 2, 3] }), /excluded/);
+    assert.equal((await target.getContent(id)).contentRating, 1);
     const demographic = freshSource(); demographic.api.getPost = async () => ({ post: { ...rawPost, genres: [{ id: 1, name: 'Harem' }, { id: 2, name: 'BL' }] } });
-    assert.equal((await demographic.getContent(id, { allowedContentRatings: [0] })).contentRating, 0, 'Relationships/demographics do not invent sexualization');
+    assert.equal((await demographic.getContent(id, { allowedContentRatings: [1] })).contentRating, 1, 'Relationships/demographics do not establish source age ratings');
     const malformed = freshSource(); malformed.api.getPost = async () => ({ post: { ...rawPost, genres: { unrelated: true }, ratingGenres: { unrelated: true } } });
-    assert.equal((await malformed.getContent(id, { allowedContentRatings: [2] })).contentRating, 2, 'Non-array unknown metadata remains native Mature fallback');
+    assert.equal((await malformed.getContent(id, { allowedContentRatings: [1] })).contentRating, 1, 'Non-array unknown metadata remains native Suggestive fallback');
   });
   await check('Native concatenated pages survive partial overlap duplicate-only and rating-excluded physical pages', async () => {
     const posts = pool.slice(0, 70); assert(posts.length > 48);
@@ -131,8 +131,8 @@ export async function testVortexRatings({ source, check, freshSource, requests }
     await incomplete.search({ page: 1 }); await assert.rejects(incomplete.search({ page: 2 }), /incomplete catalog page/);
     const repeated = freshSource(), repeatedCalls = []; repeated.api.query = async ({ page }) => { repeatedCalls.push(page); return { posts: posts.slice(0, 48), totalCount: posts.length }; };
     await repeated.search({ page: 1 }); await assert.rejects(repeated.search({ page: 2 }), /ten repeated catalog pages/); assert.deepEqual(repeatedCalls, Array.from({ length: 11 }, (_value, index) => index + 1));
-    const skipped = freshSource(); skipped.api.query = async ({ page }) => ({ posts: (page <= 2 ? posts.slice(0, 48) : posts.slice(40)).map((post) => ({ ...post, genres: page <= 2 ? undefined : [{ id: 1, name: 'Action' }] })), totalCount: posts.length });
-    const visible = await skipped.search({ page: 1, context: { allowedContentRatings: [0] } }); assert(visible.results.length); assert(visible.results.every((item) => item.contentRating === 0));
+    const skipped = freshSource(); skipped.api.query = async ({ page }) => ({ posts: (page <= 2 ? posts.slice(0, 48) : posts.slice(40)).map((post) => ({ ...post, genres: page <= 2 ? [{ id: 1, name: 'Mature' }] : [{ id: 1, name: 'Action' }] })), totalCount: posts.length });
+    const visible = await skipped.search({ page: 1, context: { allowedContentRatings: [1] } }); assert(visible.results.length); assert(visible.results.every((item) => item.contentRating === 1));
     // IDs already seen on excluded pages stay raw duplicates, not newly emitted.
     assert.deepEqual(ids(visible.results), posts.slice(48).map((post) => canonicalID(post)));
   });
@@ -219,29 +219,31 @@ export async function testVortexRatings({ source, check, freshSource, requests }
   });
   await check('Home36 continuation survives duplicate-only excluded-only overlap terminal pages and request-scoped policy', async () => {
     assert(pool.length >= 70); const posts = pool.slice(0, 70), target = freshSource(), calls = [];
-    target.home = async () => ({ ...homeData, latest: posts.slice(0, 36).map((post) => ({ ...post, genres: undefined })) });
+    target.home = async () => ({ ...homeData, latest: posts.slice(0, 36).map((post) => ({ ...post, genres: [{ id: 1, name: 'Mature' }] })) });
     target.api.getTaggedPosts = async (_tag, page, count) => { calls.push(page); assert.equal(count, 36); return { posts: (page === 2 ? posts.slice(0, 36) : page === 3 ? posts.slice(28, 64) : posts.slice(64)).map((post) => ({ ...post, genres: [{ id: 1, name: 'Action' }] })) }; };
     const a = await target.search({ page: 1, listId: 'latest' }), b = await target.search({ page: 2, listId: 'latest' }), c = await target.search({ page: 3, listId: 'latest' });
     sameIDs([...a.results, ...b.results, ...c.results], posts); assert.equal(c.isLastPage, true); assert.deepEqual(calls, [2, 3, 4]);
-    const safe = await target.search({ page: 1, listId: 'latest', context: { allowedContentRatings: [0] } }); sameIDs(safe.results, posts.slice(36, 64));
-    const safeNext = await target.search({ page: 2, listId: 'latest', context: { allowedContentRatings: [0] } }); sameIDs(safeNext.results, posts.slice(64)); assert.equal(safeNext.isLastPage, true);
+    const safe = await target.search({ page: 1, listId: 'latest', context: { allowedContentRatings: [1] } }); sameIDs(safe.results, posts.slice(36, 64));
+    const safeNext = await target.search({ page: 2, listId: 'latest', context: { allowedContentRatings: [1] } }); sameIDs(safeNext.results, posts.slice(64)); assert.equal(safeNext.isLastPage, true);
     const mature = await target.search({ page: 1, listId: 'latest', context: { allowedContentRatings: [2] } }); sameIDs(mature.results, posts.slice(0, 36));
     assert.equal((await target.search({ page: 2, listId: 'latest', context: { allowedContentRatings: [2] } })).isLastPage, true);
   });
-  await check('Same-response genre enrichment requires exact numeric ID and slug and retains positive warnings and Mature unknown fallback', async () => {
+  await check('Same-response genre enrichment requires exact numeric ID and slug and retains positive warnings and Suggestive unknown fallback', async () => {
     const post = homeData.featured[0], other = homeData.featured[1], sparse = { ...post, genres: [{ color: '' }] };
     const run = async (latest, genres = sparse.genres) => {
       const target = freshSource(); target.api.getText = async () => transformedHTML(fieldsFor({ featured: [{ ...sparse, genres }, { ...other, genres: undefined }], today: [], latest, popular: [sparse] }));
       return target.resolvePageSection({ id: 'home' }, 'featured');
     };
     const complete = { ...post, genres: [{ id: 1, name: 'Action' }] };
-    assert.equal((await run([complete])).items[0].contentRating, 0, 'Exact same-response canonical source genres');
-    assert.equal((await run([{ ...complete, id: post.id + 10000 }])).items[0].contentRating, 2, 'Same title and slug with a foreign numeric ID cannot enrich');
-    assert.equal((await run([{ ...complete, slug: `${post.slug}-foreign` }])).items[0].contentRating, 2, 'Same numeric ID and title with a foreign slug cannot enrich');
-    const warning = await run([complete], [{ id: 1, name: 'Hentai' }, { color: '' }]); assert.equal(warning.items[0].contentRating, 3); assert.equal(warning.items[1].contentRating, 2);
+    assert.equal((await run([complete])).items[0].contentRating, 1, 'Ordinary source genres do not invent an age rating');
+    const ratedComplete = { ...complete, genres: [{ id: 1, name: 'Mature' }] };
+    assert.equal((await run([ratedComplete])).items[0].contentRating, 2, 'Exact same-response canonical source rating label');
+    assert.equal((await run([{ ...ratedComplete, id: post.id + 10000 }])).items[0].contentRating, 1, 'Same title and slug with a foreign numeric ID cannot enrich');
+    assert.equal((await run([{ ...ratedComplete, slug: `${post.slug}-foreign` }])).items[0].contentRating, 1, 'Same numeric ID and title with a foreign slug cannot enrich');
+    const warning = await run([complete], [{ id: 1, name: 'Hentai' }, { color: '' }]); assert.equal(warning.items[0].contentRating, 3); assert.equal(warning.items[1].contentRating, 1);
     const positive = freshSource(); positive.api.getText = async () => transformedHTML(fieldsFor({ featured: [{ ...post, genres: [{ id: 1, name: 'Hentai' }] }], latest: [complete], today: [sparse], popular: [sparse] }));
     assert.equal((await positive.resolvePageSection({ id: 'home' }, 'most-popular')).items[0].contentRating, 3, 'A later safe duplicate cannot erase same-response positive warnings');
-    for (const [name, expected] of [['Hentai', 3], ['Action', 2]]) {
+    for (const [name, expected] of [['Hentai', 3], ['Action', 1]]) {
       const incomplete = freshSource(); incomplete.api.getText = async () => transformedHTML(fieldsFor({ featured: [{ ...post, genres: [{ id: 1, name }, { color: '' }] }], latest: [], today: [], popular: [sparse] }));
       assert.equal((await incomplete.resolvePageSection({ id: 'home' }, 'most-popular')).items[0].contentRating, expected, 'Partial warnings propagate without claiming partial ordinary metadata is Safe');
     }
@@ -266,7 +268,7 @@ export async function testVortexRatings({ source, check, freshSource, requests }
     const otherRow = freshSource(); otherRow.api.getText = async () => transformedHTML({ ...ratingFields, todayPosts: { data: { posts: [] } } }) + popularDOM;
     assert.equal((await otherRow.resolvePageSection({ id: 'home' }, 'popular-today')).items[0].contentRating, 3, 'Exact other home records preserve warnings when today metadata is omitted');
     const noIdentity = freshSource(); noIdentity.api.getText = async () => `<script>window.ids=[{id:${today.id},slug:${JSON.stringify(today.slug)}}]</script>` + transformedHTML(fieldsFor({ featured: [], latest: [], today: [], popular: [] })) + popularDOM;
-    await assert.rejects(noIdentity.resolvePageSection({ id: 'home' }, 'popular-today'), /missing verified canonical rating metadata/, 'Unverified DOM identity must error rather than become Mature');
+    await assert.rejects(noIdentity.resolvePageSection({ id: 'home' }, 'popular-today'), /missing verified canonical rating metadata/, 'Unverified DOM identity must error rather than become a compatibility fallback');
 
 
   });

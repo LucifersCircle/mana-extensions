@@ -16,7 +16,8 @@ import { AdditionalInfoType,
     tags as nativeTags } from '@mana-app/types'
 import { decode } from 'html-entities'
 import { chapterLanguage } from './KaganeLanguage'
-import { incompleteRatingInfo } from '../../ContentRatingPolicy'
+import { incompleteRatingInfo,
+    ratingAllowed } from '../../ContentRatingPolicy'
 import { AlternateTitle,
     Book,
     chapterURL,
@@ -58,15 +59,15 @@ export function manaRating(value: Classification): ContentRating {
         case 'Suggestive': return ContentRating.SUGGESTIVE
         case 'Erotica': return ContentRating.MATURE
         case 'Pornographic': return ContentRating.EXPLICIT
-        default: return ContentRating.MATURE
+        default: return ContentRating.SUGGESTIVE
     }
 }
 
 export function allowed(value: Classification, settings: Settings, selected?: readonly string[], host?: readonly ContentRating[]): boolean {
     const rating = classify(value)
     if (rating ? !settings.contentRatings.includes(rating) : settings.contentRatings.length !== RATINGS.length) return false
-    if (selected?.length && !selected.includes(rating ?? 'Erotica')) return false
-    return host === undefined || host.includes(manaRating(value))
+    if (selected?.length && !selected.includes(rating ?? 'Suggestive')) return false
+    return ratingAllowed(manaRating(value), { allowedContentRatings: host })
 }
 
 /** Prefer English only when the provider explicitly labels the title as English.

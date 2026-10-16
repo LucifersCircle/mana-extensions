@@ -34,6 +34,10 @@ for (const [aborted, partial] of [['Kagane', false], ['ManhwaNex', true]]) {
         put(`src/sources/${name}/index.ts`, '');
         put(`dist/sources/${name}.mana`, `globalThis.Target = class {
           info = { id: ${JSON.stringify(name)}, version: 'test', website: 'https://example.invalid' };
+          async search() { throw new Error('Invalid Mana content-rating policy'); }
+          async getContent() { throw new Error('Invalid Mana content-rating policy'); }
+          async getSectionsForPage() { throw new Error('Invalid Mana content-rating policy'); }
+          async resolvePageSection() { throw new Error('Invalid Mana content-rating policy'); }
         };`);
         if (name === 'VortexScans') continue;
         const body = name === aborted ? `${partial ? `
@@ -66,26 +70,27 @@ for (const [aborted, partial] of [['Kagane', false], ['ManhwaNex', true]]) {
       assert.match(reportIssues(report, names)[aborted], /remaining checks were not run/);
       assert.deepEqual(report[aborted].tests.map(({ name, status }) => ({ name, status })), [
         { name: 'Built Mana bundle and source metadata', status: 'pass' },
+        { name: 'Malformed native rating contexts fail closed before provider I/O', status: 'pass' },
         ...(partial ? [{ name: 'executed pass', status: 'pass' }, { name: 'executed failure', status: 'fail' }] : []),
       ]);
-      assert.equal(report[aborted].summary.total, partial ? 3 : 1);
-      assert.equal(report[aborted].summary.passed, partial ? 2 : 1);
+      assert.equal(report[aborted].summary.total, partial ? 4 : 2);
+      assert.equal(report[aborted].summary.passed, partial ? 3 : 2);
       assert.equal(report[aborted].summary.failed, partial ? 1 : 0);
-      assert.equal(report.Hijala.summary.passed, 2, 'earlier completed source must survive');
+      assert.equal(report.Hijala.summary.passed, 3, 'earlier completed source must survive');
       assert.equal(report.VortexScans.error, undefined, 'later source must reach its own completion');
       assert.equal(report.VortexScans.tests.at(-1).name, 'later ratings contract');
-      assert.equal(report.VortexScans.summary.total, 18);
+      assert.equal(report.VortexScans.summary.total, 19);
       assert.equal(report.VortexScans.summary.failed, 15);
       assert.deepEqual(failedSources(report, names), [aborted, 'VortexScans']);
       assert.equal(invoke('test-status.mjs', 'capture').status, 1);
       const snapshot = json('bundles/live-status/snapshot.json');
       assert.equal(snapshot.sources[aborted].status, 'error');
-      assert.equal(snapshot.sources[aborted].total, partial ? 3 : 1);
+      assert.equal(snapshot.sources[aborted].total, partial ? 4 : 2);
       assert.equal(snapshot.sources[aborted].failed, partial ? 1 : 0);
       assert.equal(snapshot.sources.Hijala.status, 'pass');
       assert.equal(snapshot.sources.VortexScans.status, 'fail');
       assert.deepEqual(snapshot.sourceCounts, { available: names.length, selected: names.length,
-        completed: names.length - 1, passed: partial ? 11 : 10, failed: partial ? 16 : 15, total: partial ? 27 : 25 });
+        completed: names.length - 1, passed: partial ? 16 : 15, failed: partial ? 16 : 15, total: partial ? 32 : 30 });
       assert.match(readFileSync(join(dir, 'summary.md'), 'utf8'), /remaining checks were not run/);
       assert.ok(!snapshot.sources[aborted].tests.some(({ name }) => name === 'unrun after abort'));
       // A changed-source run remains non-publishable even when it reports its abort truthfully.

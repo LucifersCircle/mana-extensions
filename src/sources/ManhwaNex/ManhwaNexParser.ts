@@ -165,7 +165,7 @@ function fields($: ReturnType<typeof load>, root: cheerio.Cheerio, detail: boole
         explicit,
         classified: genres.length > 0 && genres.every((genre) => VERIFIED_GENRES.has(genre.id)),
         // Source non-adult labels do not establish all-ages suitability.
-        contentRating: explicit ? ContentRating.EXPLICIT : genres.length ? ContentRating.MATURE : undefined
+        contentRating: explicit ? ContentRating.EXPLICIT : undefined
     }
 }
 

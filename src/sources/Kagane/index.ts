@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
+import { assertRatingPolicy } from '../../ContentRatingPolicy'
 import {
     CatalogRating,
     Chapter,
@@ -75,7 +76,7 @@ type SearchPage = { result: PagedSearchResult, next: number, seenIDs: string[] }
 
 export class Target implements ContentSource, PageLinkResolver, ImageRequestHandler, SourcePreferenceProvider {
     readonly info: SourceInfo = {
-        id: 'Kagane', version: '0.0.1-alpha.16', name: 'Kagane',
+        id: 'Kagane', version: '0.0.1-alpha.17', name: 'Kagane',
         description: 'Kagane with current API support, grouped tags and global four-category content settings.',
         thumbnail: 'Kagane.png', rating: CatalogRating.MIXED, website: DOMAIN,
         badges: ['Manga', 'Manhwa', 'Manhua', 'Comic'],
@@ -138,7 +139,7 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
         const settings = await this.settings()
         const [genres, tags] = await Promise.all([this.api.genres().catch(() => []), this.api.tags().catch(() => [])])
         return { sections: [
-            UIListSection({ header: 'Content safety', footer: 'Native Mana rating policy controls visibility when supplied. All source categories are available by default; an explicitly saved source selection remains an additional filter. Selecting none hides all titles. Incomplete rating metadata uses a Mature compatibility fallback with a details note. Applied locally to browsing, searches, details, chapters and reading because API filters can be ignored. Other Editions cannot be shown while hidden genres or tags are active because provider edition metadata lacks them. Site labels are not a guarantee of image content.', children: [
+            UIListSection({ header: 'Content safety', footer: 'Native Mana rating policy controls visibility when supplied. All source categories are available by default; an explicitly saved source selection remains an additional filter. Selecting none hides all titles. Unclassified rating metadata uses a Suggestive compatibility fallback with a details note. Applied locally to browsing, searches, details, chapters and reading because API filters can be ignored. Other Editions cannot be shown while hidden genres or tags are active because provider edition metadata lacks them. Site labels are not a guarantee of image content.', children: [
                 UIMultiPicker({ id: 'contentRatings', title: 'Content categories to show', options: options(RATINGS), value: settings.contentRatings, didChange: (value) => this.save('contentRatings', value) }),
                 UIMultiPicker({ id: 'excludedGenres', title: 'Hidden genres', options: genres.map((genre) => ({ id: genre.id, title: genre.genre_name })), value: settings.excludedGenres, didChange: (value) => this.save('excludedGenres', value) })
             ] }),
@@ -188,6 +189,7 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
     async getSortOptions(): Promise<SortOption[]> { return SORTS }
 
     async search(request: SearchRequest<Filters>): Promise<PagedSearchResult> {
+        assertRatingPolicy(request.context)
         return this.withSettings(async (settings) => {
             const page = request.page ?? 1
             if (!Number.isSafeInteger(page) || page < 1 || page > 1000) throw new Error('Invalid Kagane page')
@@ -273,6 +275,7 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
     }
 
     async getContent(contentId: string, context?: SourceContext): Promise<Content> {
+        assertRatingPolicy(context)
         return this.withSettings(async (settings) => {
             const details = await this.requireAllowed(contentId, settings, context)
             const tracker = strictUUID(details.tracker_id)
@@ -317,11 +320,13 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
     }
 
     async getSectionsForPage(link: PageLink): Promise<PageSection[]> {
+        assertRatingPolicy(link.context)
         this.home(link)
         return SECTIONS.map(({ id, title, style }) => ({ id, title, style }))
     }
 
     async resolvePageSection(link: PageLink, sectionId: string): Promise<ResolvedPageSection> {
+        assertRatingPolicy(link.context)
         this.home(link)
         const request = { page: 1, listId: sectionId, context: link.context }
         const result = await this.search(request)

@@ -107,6 +107,20 @@ for (const name of names) {
     assert.equal(source.info.id, name);
     nonempty(source.info.version, 'Version'); url(source.info.website);
   });
+  await check('Malformed native rating contexts fail closed before provider I/O', async () => {
+    let attempted = 0;
+    const closed = vm.createContext(createManaRuntime({ logger: () => {}, fetchImpl: async () => { attempted++; throw new Error('Unexpected request from malformed native policy'); } }));
+    vm.runInContext(readFileSync(`dist/sources/${name}.mana`, 'utf8'), closed, { timeout: 10_000 });
+    const target = new closed.Target();
+    for (const allowedContentRatings of [null, '1', 1, {}, { includes: () => true }, [1, '3'], [1, 99], [1, NaN]]) {
+      const invalid = { allowedContentRatings };
+      for (const run of [() => target.search({ page: 1, context: invalid }), () => target.getContent('unread', invalid),
+        () => target.getSectionsForPage({ id: 'home', context: invalid }), () => target.resolvePageSection({ id: 'home', context: invalid }, 'latest')]) {
+        await assert.rejects(run, /Invalid Mana content-rating policy/);
+      }
+    }
+    assert.equal(attempted, 0);
+  });
   if (name !== 'VortexScans') {
     if (name === 'Kagane') {
       await testKagane({ source, check, referenceFetch: testTransport.fetch, highlights, searchResult, image, requests, freshSource: () => new context.Target() });

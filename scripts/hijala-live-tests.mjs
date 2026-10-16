@@ -22,7 +22,7 @@ export async function testHijala({ source, check, highlights, searchResult, imag
     for (const path of ['/series/mimosa', '/series/mimosa/chapter-56']) assert.equal(isSeriesDetailRequest({ url: `${domain}${path}` }), true);
     assert.equal((await field('excludeNSFW')).value, false); assert.equal((await field('hidePaid')).value, true);
     const footer = (await source.getPreferenceMenu()).sections[0].footer;
-    assert.match(footer, /Mature compatibility/); assert.match(footer, /not a four-category/);
+    assert.match(footer, /Suggestive compatibility/); assert.match(footer, /not a four-category/);
     assert(nativeStore, 'Missing actual native host store for migration test');
     await nativeStore.set('Hijala.preferences', { excludeNSFW: true, hidePaid: false, types: ['MANGA'], sections: ['latest'], excludedGenres: ['4'] });
     const migrated = freshSource(), saved = await migrated.preferences(); assert.equal(saved.excludeNSFW, false); assert.equal(saved.hidePaid, false); assert.deepEqual(Array.from(saved.types), ['MANGA']); assert.deepEqual(Array.from(saved.excludedGenres), ['4']);
@@ -50,7 +50,7 @@ export async function testHijala({ source, check, highlights, searchResult, imag
   });
   await check('Catalog is bulk-classified with no per-title detail requests', async () => {
     const start = requests.length; catalog = await source.search({ page: 1 }); searchResult(catalog);
-    assert(catalog.results.every((item) => item.contentRating === 0));
+    assert(catalog.results.every((item) => item.contentRating === 1));
     assert(!requests.slice(start).some(isSeriesDetailRequest));
     assert(requests.some((item) => new URL(item.url).searchParams.get('excludedGenreIds')?.split(',').includes('27')));
   });
@@ -253,7 +253,7 @@ export async function testHijala({ source, check, highlights, searchResult, imag
     const otherRead = other.search({ page: 1 }).then((result) => { otherSettled = true; return result; });
     try {
       await new Promise((resolve) => setTimeout(resolve, 25)); assert.equal(settled, false, 'Old permissive result escaped while safety save was queued'); assert.equal(otherSettled, false, 'Another Target leaked a cached result while safety save was queued');
-      release(); await write; const result = await read; assert(result.results.every((item) => item.contentRating === 0)); assert((await otherRead).results.every((item) => item.contentRating === 0));
+      release(); await write; const result = await read; assert(result.results.every((item) => item.contentRating === 1)); assert((await otherRead).results.every((item) => item.contentRating === 1));
     } finally { release(); await write; target.preferences = original; await setting('excludeNSFW', true, target); }
   });
   await check('Unknown genre metadata fails closed using a fresh live catalog response', async () => {
@@ -264,7 +264,7 @@ export async function testHijala({ source, check, highlights, searchResult, imag
     const target = transformed((text, url) => url === `${domain}/series/mimosa` ? replaceRequired(text, 'name:"Action"', 'name:""') : text);
     await setting('excludeNSFW', false, target);
     try {
-      const details = await target.getContent('mimosa'); assert(details.tags.some((tag) => tag.id === '3')); assert.equal(details.contentRating, 2); assert(details.additionalInfo.some((section) => section.id === 'content-rating-metadata'));
+      const details = await target.getContent('mimosa'); assert(details.tags.some((tag) => tag.id === '3')); assert.equal(details.contentRating, 1); assert(details.additionalInfo.some((section) => section.id === 'content-rating-metadata'));
       await setting('excludedGenres', ['27'], target);
       await assert.rejects(target.getContent('mimosa'), /excluded/);
       const catalogTarget = transformed((text, url) => { if (!url.includes('/api/query?')) return text; const data = JSON.parse(text); data.posts.forEach((post) => { post.genres = [...(post.genres ?? []), { id: 999999, name: '' }]; }); return JSON.stringify(data); });
@@ -275,18 +275,18 @@ export async function testHijala({ source, check, highlights, searchResult, imag
     await setting('excludeNSFW', false);
     try {
       const target = transformed((text, url) => url === `${domain}/series/mimosa` ? replaceRequired(text, 'name:"Action"', 'name:""') : text);
-      const mature = await target.getContent('mimosa', { allowedContentRatings: [2] }); assert.equal(mature.contentRating, 2);
-      assert(mature.additionalInfo.some((section) => section.id === 'content-rating-metadata'));
-      await assert.rejects(target.getContent('mimosa', { allowedContentRatings: [0, 1, 3] }), /excluded/);
-      assert.equal((await target.getContent('mimosa')).contentRating, 2, 'No supplied policy must not imply Safe-only');
+      const suggestive = await target.getContent('mimosa', { allowedContentRatings: [1] }); assert.equal(suggestive.contentRating, 1);
+      assert(suggestive.additionalInfo.some((section) => section.id === 'content-rating-metadata'));
+      await assert.rejects(target.getContent('mimosa', { allowedContentRatings: [0, 2, 3] }), /excluded/);
+      assert.equal((await target.getContent('mimosa')).contentRating, 1, 'No supplied policy must not imply Safe-only');
       const emptyStart = requests.length; await assert.rejects(target.getContent('mimosa', { allowedContentRatings: [] }), /excluded/); assert.equal(requests.length, emptyStart);
       const fallback = transformed((text, url) => { if (!url.includes('/api/query?')) return text; const data = JSON.parse(text); data.posts.forEach((post) => { delete post.genres; }); return JSON.stringify(data); });
-      const first = await fallback.search({ page: 1, context: { allowedContentRatings: [2] } }); assert(first.results.length); assert(first.results.every((item) => item.contentRating === 2));
+      const first = await fallback.search({ page: 1, context: { allowedContentRatings: [1] } }); assert(first.results.length); assert(first.results.every((item) => item.contentRating === 1));
       const excluded = await fallback.search({ page: 1, context: { allowedContentRatings: [0] } }); assert.equal(excluded.results.length, 0); assert.equal(excluded.isLastPage, true);
-      assert.deepEqual(ids((await fallback.search({ page: 1, context: { allowedContentRatings: [2] } })).results), ids(first.results));
+      assert.deepEqual(ids((await fallback.search({ page: 1, context: { allowedContentRatings: [1] } })).results), ids(first.results));
       const link = await source.resolvePageSection({ id: 'home', context: { allowedContentRatings: [0, 1, 2, 3] } }, 'new'); assert(link.viewMoreLink); assert.deepEqual(Array.from(link.viewMoreLink.request.context.allowedContentRatings), [0, 1, 2, 3]);
       await setting('excludeNSFW', true); assert((await nativeStore.get('Hijala.preferences')).ratingPreferenceVersion === 1);
-      await assert.rejects(target.getContent('mimosa', { allowedContentRatings: [2] }), /excluded/);
+      await assert.rejects(target.getContent('mimosa', { allowedContentRatings: [1] }), /excluded/);
     } finally { await setting('excludeNSFW', true); }
   });
   await check('Filtered-empty first page advances native continuation from the consumed API page', async () => {
@@ -484,7 +484,7 @@ export async function testHijalaPagination({ source, check, freshSource, publicD
     assert(mature.length, 'Need actual source-labeled mature data for rating isolation');
     const safe = pool.slice(0, 40), mixed = [...safe, ...mature]; const { target } = scenario((page) => normal(mixed, page));
     await preference(target, 'excludeNSFW', false);
-    try { await collect(target, { context: { allowedContentRatings: [0] } }, safe); await collect(target, { context: { allowedContentRatings: [2] } }, mature); await collect(target, { context: { allowedContentRatings: [0] } }, safe); }
+    try { await collect(target, { context: { allowedContentRatings: [1] } }, safe); await collect(target, { context: { allowedContentRatings: [2] } }, mature); await collect(target, { context: { allowedContentRatings: [1] } }, safe); }
     finally { await preference(target, 'excludeNSFW', true); }
   });
   await check('Changed total fails explicitly and page1 can reset the failed snapshot', async () => {

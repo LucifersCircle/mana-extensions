@@ -152,27 +152,27 @@ export async function testManhwaNexNativeRatings({ source, check, requests, fres
     baseline = await source.search({ page: 1 });
     assert(baseline.results.length);
     assert(requests.slice(start).every((request) => new URL(request.url).searchParams.get('adult') !== '0'));
-    assert(baseline.results.every((item) => [2, 3].includes(item.contentRating)));
+    assert(baseline.results.every((item) => [1, 3].includes(item.contentRating)));
     if (nativeStore) assert.equal(await nativeStore.get('ManhwaNex.excludeNSFW'), null, 'Reading an unset preference must not save a default');
     const warm = requests.length;
     const all = await source.search({ page: 1, context: context([0, 1, 2, 3]) });
     assert.deepEqual(ids(all.results), ids(baseline.results));
-    const mature = await source.search({ page: 1, context: context([2]) });
-    assert(mature.results.every((item) => item.contentRating === 2));
-    for (const ratings of [[], [0], [1]]) {
+    const suggestive = await source.search({ page: 1, context: context([1]) });
+    assert(suggestive.results.every((item) => item.contentRating === 1));
+    for (const ratings of [[], [0], [2]]) {
       const none = await source.search({ page: 1, context: context(ratings) });
       assert.equal(none.results.length, 0); assert.equal(none.isLastPage, true);
     }
     assert.deepEqual(ids((await source.search({ page: 1 })).results), ids(baseline.results));
-    const narrowContext = context([2]), broadContext = context([0, 1, 2, 3]);
+    const narrowContext = context([1]), broadContext = context([0, 1, 2, 3]);
     const concurrent = await Promise.all([source.search({ page: 1, context: narrowContext }), source.search({ page: 1, context: broadContext })]);
-    assert(concurrent[0].results.every((item) => item.contentRating === 2 && item.context === narrowContext));
+    assert(concurrent[0].results.every((item) => item.contentRating === 1 && item.context === narrowContext));
     assert(concurrent[1].results.every((item) => item.context === broadContext));
     assert.deepEqual(ids(concurrent[1].results), ids(baseline.results));
     assert.equal(requests.length, warm, 'Context changes discarded reusable raw native pages');
-    const changed = context([2]);
+    const changed = context([1]);
     const row = await source.resolvePageSection({ id: 'home', context: changed }, 'latest');
-    assert(row.items.every((item) => item.contentRating === 2 && item.context === changed));
+    assert(row.items.every((item) => item.contentRating === 1 && item.context === changed));
     assert.strictEqual(row.viewMoreLink.request.context, changed, 'viewMore lost its exact native context');
     await setting(source, false);
     if (nativeStore) assert.equal(await nativeStore.get('ManhwaNex.excludeNSFW'), false);
@@ -181,8 +181,8 @@ export async function testManhwaNexNativeRatings({ source, check, requests, fres
     assert.equal((await setting(freshSource())).value, true, 'Saved true did not survive source restart');
     await setting(source, false);
   });
-  await check('Native details use supported Mature fallback only for incomplete metadata and retain positive adult warnings', async () => {
-    const id = baseline.results.find((item) => item.contentRating === 2).id;
+  await check('Native details use supported Suggestive fallback for unclassified metadata and retain positive adult warnings', async () => {
+    const id = baseline.results.find((item) => item.contentRating === 1).id;
     for (const adult of [false, true]) {
       const cold = freshSource(), original = cold.api.text.bind(cold.api);
       cold.api.text = async (...args) => {
@@ -190,16 +190,16 @@ export async function testManhwaNexNativeRatings({ source, check, requests, fres
         if (adult) $('.tab-summary').first().append('<span class="adult-warning"></span>');
         return $.html();
       };
-      const details = await cold.getContent(id, context([adult ? 3 : 2]));
-      assert.equal(details.contentRating, adult ? 3 : 2);
+      const details = await cold.getContent(id, context([adult ? 3 : 1]));
+      assert.equal(details.contentRating, adult ? 3 : 1);
       const markers = details.additionalInfo.filter((section) => section.id === 'content-rating-metadata');
       assert.equal(markers.length, adult ? 0 : 1);
-      if (!adult) assert(markers[0].items.some((item) => /Incomplete metadata.*Mature compatibility fallback/.test(item.title)));
+      if (!adult) assert(markers[0].items.some((item) => /No verified source age rating.*Suggestive compatibility fallback/.test(item.title)));
       assert.equal(details.webUrl, `${domain}/manga/${id}/`);
       await assert.rejects(() => cold.getContent(id, context([adult ? 2 : 0])), /Mana.*content-rating policy/);
       await assert.rejects(() => cold.getContent(id, context([])), /Mana.*content-rating policy/);
     }
-    const allowed = freshSource(), details = await allowed.getContent(id, context([2]));
+    const allowed = freshSource(), details = await allowed.getContent(id, context([1]));
     await assert.rejects(() => allowed.getContent(id, context([3])), /Mana.*content-rating policy/);
     // Reader callbacks have no native SourceContext. A preceding restricted call
     // must not poison authorized source-only chapter or image access.
@@ -221,14 +221,14 @@ export async function testManhwaNexNativeRatings({ source, check, requests, fres
       else if (args[0] === third) $('.wp-pagenavi a.nextpostslink').remove();
       return $.html();
     };
-    const first = await cold.search({ page: 1, context: context([2]) });
-    const next = await cold.search({ page: 2, context: context([2]) });
+    const first = await cold.search({ page: 1, context: context([1]) });
+    const next = await cold.search({ page: 2, context: context([1]) });
     assert(first.results.length && next.results.length && next.isLastPage);
-    assert(first.results.every((item) => item.contentRating === 2) && next.results.every((item) => item.contentRating === 2));
+    assert(first.results.every((item) => item.contentRating === 1) && next.results.every((item) => item.contentRating === 1));
     assert.equal(new Set([...ids(first.results), ...ids(next.results)]).size, first.results.length + next.results.length);
     const explicit = await cold.search({ page: 1, context: context([3]) });
     assert(explicit.results.length && explicit.results.every((item) => item.contentRating === 3));
-    assert.deepEqual(ids((await cold.search({ page: 2, context: context([2]) })).results), ids(next.results));
+    assert.deepEqual(ids((await cold.search({ page: 2, context: context([1]) })).results), ids(next.results));
   });
   // Existing safety/authorization tests below explicitly exercise saved true.
   await setting(source, true);
@@ -256,13 +256,18 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
     };
     try { sections = await source.getSectionsForPage({ id: 'home' }); }
     finally { source.api.text = original; }
-    assert.deepEqual(Array.from(sections, (section) => section.title), ['Popular Series', 'Latest Updates', 'Action', 'Romance', 'Fantasy', 'Martial Arts', 'Adventure', 'Ghost', 'Cultivation', 'System']);
+    const nativeHome = load(homeHTML);
+    const nativeIds = (selector) => nativeHome(selector).toArray().map((node) => canonicalID(nativeHome(node).find('.post-title a').attr('href')));
+    const popularIds = nativeIds('.widget-manga-popular-slider .slider__item'), latestIds = nativeIds('.page-item-detail');
+    const repeatsLatest = popularIds.length > 0 && popularIds.every((id, index) => id === latestIds[index]);
+    assert.deepEqual(Array.from(sections, (section) => section.title), [...(repeatsLatest ? [] : ['Popular Series']), 'Latest Updates', 'Action', 'Romance', 'Fantasy', 'Martial Arts', 'Adventure', 'Ghost', 'Cultivation', 'System']);
     assert.equal(requests.length - before, 1, 'Section descriptors eagerly fetched category cards or metadata');
     home = {};
-    for (const section of sections.slice(0, 2)) home[section.id] = await source.resolvePageSection({ id: 'home' }, section.id);
+    // Legacy Popular callbacks remain usable even when the duplicate row is hidden.
+    for (const id of ['popular', 'latest']) home[id] = await source.resolvePageSection({ id: 'home' }, id);
     assert.equal(requests.length - before, 2, 'Cold discovery reintroduced metadata N+1');
     assert(home.popular.items.length && home.latest.items.length);
-    for (const section of sections.slice(0, 2)) await source.resolvePageSection({ id: 'home' }, section.id);
+    for (const id of ['popular', 'latest']) await source.resolvePageSection({ id: 'home' }, id);
     assert.equal(requests.length - before, 2, 'Warm discovery made network requests');
   });
   await check('Native home names, memberships, exact order and pagination are preserved', async () => {
@@ -299,7 +304,7 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
     for (const id of ['condition', 'author', 'artist', 'release', 'adult']) assert(form.some((field) => field.id === id));
     assert.equal(form.find((field) => field.id === 'adult').options.length, 1);
   });
-  for (const section of sections.slice(2)) await check(`Native ${section.title} archive stays lazy, ordered and complete in both safety modes`, async () => {
+  for (const section of sections.filter((section) => section.id.startsWith('genre:'))) await check(`Native ${section.title} archive stays lazy, ordered and complete in both safety modes`, async () => {
     try {
       for (const exclude of [true, false]) {
         const cold = freshSource(), original = cold.api.text.bind(cold.api), captured = new Map(), calls = [];
@@ -317,7 +322,7 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
           const href = nativeHome(node).attr('href');
           if (!menu.some((item) => item.url === href)) menu.push({ id: `genre:${new URL(href).pathname.split('/')[2]}`, title: nativeHome(node).text().trim(), url: href });
         });
-        assert.deepEqual(Array.from(descriptors.slice(2), ({ id, title }) => ({ id, title })), menu.map(({ id, title }) => ({ id, title })));
+        assert.deepEqual(Array.from(descriptors.filter((section) => section.id.startsWith('genre:')), ({ id, title }) => ({ id, title })), menu.map(({ id, title }) => ({ id, title })));
         const native = menu.find((item) => item.id === section.id), combined = [], seen = new Set();
         assert(native, 'A section was not backed by the native menu');
         let nextURL = native.url, page = 1;
