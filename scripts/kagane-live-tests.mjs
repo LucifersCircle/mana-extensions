@@ -139,12 +139,17 @@ export async function assertKaganeChapterLanguages({ freshSource, id, detail, bo
 export async function assertKaganeTagFilters({ freshSource, tags, response, option, groupId }) {
   const tag = tags.find((entry) => entry.id === option.id.split('+')[0]);
   assert(tag && response?.content?.length, 'Need actual Kagane taxonomy/search seeds');
-  const target = freshSource(), bodies = [];
-  target.api.tags = async () => tags;
-  target.api.search = async (body) => { bodies.push(JSON.parse(JSON.stringify(body))); return { ...response, last: true }; };
+  const bodies = [];
+  const replay = () => {
+    const target = freshSource();
+    target.api.tags = async () => tags;
+    target.api.search = async (body) => { bodies.push(JSON.parse(JSON.stringify(body))); return { ...response, last: true }; };
+    return target;
+  };
+  const target = replay();
   const saved = (await target.settings()).excludedTags;
   await target.save('excludedTags', []);
-  const search = (filters, listId) => target.search({ query: response.content[0].title, filters, ...(listId ? { listId } : {}) });
+  const search = (filters, listId, source = target) => source.search({ query: response.content[0].title, filters, ...(listId ? { listId } : {}) });
   try {
     for (const filters of [
       { tag_query: '__kagane_unknown_filter__' }, { tag_query: '-__kagane_unknown_filter__' },
@@ -168,10 +173,19 @@ export async function assertKaganeTagFilters({ freshSource, tags, response, opti
       [{ [groupId]: { included: [option], excluded: [] } }, option.id.split('+'), undefined],
       [{ [groupId]: { included: [], excluded: [option] } }, [], option.id.split('+')],
     ]) {
-      await search(filters);
+      // A singleton typed/native choice shares a cache key. Observe each cold
+      // request independently, then prove warm reuse instead of reading old wire data.
+      const source = replay(), before = bodies.length;
+      const cold = await search(filters, undefined, source);
+      assert.equal(bodies.length, before + 1);
       assert.deepEqual(bodies.at(-1).tags.values, values);
       assert.deepEqual(bodies.at(-1).tags.exclude, exclude);
       assert.equal(bodies.at(-1).genres, undefined, 'Narrative tag selection leaked into the genre namespace');
+      const equivalent = option.id !== tag.id ? filters : filters.tag_query !== undefined
+        ? { [groupId]: { included: values.length ? [option] : [], excluded: exclude?.length ? [option] : [] } }
+        : { tag_query: exclude?.length ? `-${tag.id}` : tag.id };
+      assert.deepEqual(await search(equivalent, undefined, source), cold, 'Warm equivalent tag request changed native results');
+      assert.equal(bodies.length, before + 1, 'Warm equivalent tag request repeated the API call');
     }
     for (const filters of [undefined, {}, { tag_query: ' , , ' }, { [groupId]: { included: [], excluded: [] } }]) {
       await search(filters);
