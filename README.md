@@ -300,6 +300,7 @@ Add this repository URL in Mana:
 
 - [Hijala](src/sources/Hijala)
 - [Kagane](src/sources/Kagane)
+- [MangaStash](src/sources/MangaStash)
 - [MangaSushi](src/sources/MangaSushi)
 - [ManhwaNex](src/sources/ManhwaNex)
 - [VortexScans](src/sources/VortexScans)
@@ -313,14 +314,14 @@ not silently imply Safe-only. Native context stays request-scoped, not a global
 reader setting. Source catalogs remain `CatalogRating.MIXED`, a separate enum.
 
 The SDK has no Unknown item rating. Missing or unreliable rating metadata uses
-`ContentRating.MATURE` as an **app-compatibility fallback**, not a site-reported age
+`ContentRating.SUGGESTIVE` as an **app-compatibility fallback**, not a site-reported age
 classification. Details include a single incomplete-metadata note; titles/cards
 are not renamed. Known source rating evidence is preserved, including explicit
 warnings. BL/GL, demographics and relationship tags alone do not imply sexuality.
 
 Previously implicit source adult caps are no longer enabled for never-saved
 preferences. Identifiable deliberate source selections remain extra filters.
-Native preference hooks are advertised for four sources, but this does not prove
+Sources advertise their supported native preference hooks, but this does not prove
 where an installed Mana app exposes their UI. Paid/access restrictions and explicit
 content-type/genre filters remain independent. Source labels cannot guarantee the
 content of every image.
@@ -355,7 +356,7 @@ content of every image.
   exclusion, excluded genres, content types and paid-chapter hiding.
   Explicit source exclusions remain fail-closed when classification is unverifiable.
 - The website has no reliable graded age taxonomy. Incomplete metadata uses an
-  explained Mature compatibility fallback; actual warning labels stay authoritative.
+  explained Suggestive compatibility fallback; actual warning labels stay authoritative.
 - Saved deliberate preferences remain honored, without a silent default adult cap
   for never-saved settings. Login, paid and protected content remain on the website.
 
@@ -401,13 +402,56 @@ in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
   active because its source metadata cannot safely enforce those filters.
 - Legacy API rating filters are not assumed reliable. Current source evidence is
   checked locally; explicit warnings cannot be downgraded by incomplete metadata.
-  Unknown ratings use an explained Mature fallback, not an invented Safe label.
+  Unknown ratings use an explained Suggestive fallback, not an invented Safe label.
 - Login, paid, unavailable and cross-series chapter access is not bypassed.
   Unlabeled bulk aliases do not trigger per-title requests just to infer a language.
 
 Implementation: [`src/sources/Kagane`](src/sources/Kagane).
 GPL attribution and pinned upstream references are in
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+
+</details>
+
+<details>
+<summary>MangaStash</summary>
+
+[MangaStash](https://mangastash.org/) is a native Mana source.
+
+**Discover and search**
+
+- Popular This Month, New Additions and Latest Updates retain the website's
+  distinct feeds. Catalog browsing uses the site's declared filters and sorts;
+  title search uses its separate search endpoint rather than silently ignoring
+  unsupported combinations.
+- Pagination retains the original query scope, canonical IDs and source order.
+  Covers use the largest candidate actually advertised in each response, without
+  guessed image rewrites or a detail request for every card.
+
+**Details and reader**
+
+- Source titles, synopsis, classifications and the complete available chapter
+  inventory retain their canonical routes. Decimal chapter identities are not
+  reconstructed from a rounded chapter number.
+- Ordered public-reader images preserve the source's credit pages as well as
+  reading pages. Reader ownership and issued image URLs are checked before use.
+- When bulk chapter dates are unavailable, Mana requires a date, so the extension
+  uses an explicitly unknown epoch sentinel, not a claimed 1970 publication date.
+  Its visible rendering depends on the app.
+
+**Settings and limitations**
+
+- Native content-rating choices apply independently of the optional source filter.
+  Unclassified items use the explained Suggestive compatibility fallback; real
+  source classifications stay authoritative.
+- The optional extra source exclusion is **off by default**. Enabling it requires
+  verified Safe metadata; unclassified home/catalog cards cannot bypass that
+  choice. A wholly blocked feed explains the policy limitation instead of
+  pretending the provider returned no titles.
+- Home/catalog cards do not consistently supply individual age ratings. No
+  demographic or review score is treated as an age classification, and no
+  per-card requests are added just to infer one. Source access restrictions remain.
+
+Implementation: [`src/sources/MangaStash`](src/sources/MangaStash).
 
 </details>
 
@@ -442,7 +486,7 @@ GPL attribution and pinned upstream references are in
 - Native allowed-content-rating policy applies per request. Optional source NSFW
   exclusion adds the site's adult filter and verified explicit genre labels across
   browsing, saved details, chapters and reader entry; an unset preference adds no
-  silent adult cap. Incomplete ratings use an explained Mature fallback.
+  silent adult cap. Incomplete ratings use an explained Suggestive fallback.
 - Setting changes invalidate caches and active results. Filtered or duplicate-only
   pages are traversed within bounded limits without losing eligible titles.
   Verified donation/recruitment announcements are excluded as non-reading content.
@@ -484,7 +528,7 @@ The [icon](assets/MangaSushi.png) comes from the website's published icon.
   exclusion adds verified explicit-label filtering; an unset preference adds no
   silent adult cap. Known warnings remain authoritative across in-flight work.
 - The website has no verified granular age taxonomy: non-adult/unknown titles use
-  the explained Mature compatibility bucket and actual adult warnings use Explicit.
+  the explained Suggestive compatibility bucket and actual adult warnings use Explicit.
 - Long punctuated searches can return unrelated native matches; some numeric
   author queries redirect to the homepage and report an error. Queries are not
   broadly rewritten. Only publicly listed chapters are returned, which can be a
@@ -522,7 +566,7 @@ The [icon](assets/ManhwaNex.png) comes from the website's published icon.
 
 - Native allowed-content-rating policy applies to source warning evidence.
   VortexScans has no source preference menu. Incomplete classification uses an
-  explained Mature compatibility fallback, not an invented Safe or adult label.
+  explained Suggestive compatibility fallback, not an invented Safe or adult label.
 - Locked chapters are excluded. Cloudflare/vShield challenges use Mana's supported
   resolution flow; access restrictions and TLS safeguards remain intact.
 
