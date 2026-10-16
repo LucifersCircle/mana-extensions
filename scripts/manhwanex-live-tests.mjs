@@ -707,6 +707,15 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
     const largeTags = Array.from(large.additionalInfo).filter((section) => /^source-tags(?:-\d+)?$/.test(section.id));
     assert(largeTags.every((section) => section.items.length <= 10));
     assert(largeTags.flatMap((section) => Array.from(section.items)).some((tag) => /%[a-f0-9]{2}/i.test(tag.id)), 'Encoded Unicode source tag IDs were not retained');
+    for (const detail of [content, large]) {
+      const information = detail.additionalInfo.filter((section) => section.id === 'publication' || /^source-tags(?:-\d+)?$/.test(section.id));
+      assert(information.length && information.every((section) => !form.some((field) => field.id === section.id)
+        && section.items.every((tag) => tag.isNonInteractive === true)), 'Source tags and publication metadata must not imply an unsupported search');
+      const genres = form.filter((field) => field.id === 'genres');
+      assert.equal(genres.length, 1, 'Main genres must have exactly one native search owner');
+      assert(detail.tags.length && detail.tags.every((tag) => tag.isNonInteractive !== true
+        && genres[0].options.filter((option) => option.id === tag.id && option.title === tag.title).length === 1), 'Main genres must remain interactive native search options');
+    }
   });
   await check('Source-issued images stay coherent across stale readers, cached writers, concurrent instances and store failures', async () => {
     assert(nativeStore && detailResponses.size, 'Missing native store or live detail responses for image-registry checks');
