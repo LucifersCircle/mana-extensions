@@ -103,7 +103,18 @@ export async function testHijala({ source, check, highlights, searchResult, imag
     await assert.rejects(source.getContent('mimosa', { allowedContentRatings: [] }), /excluded/);
   });
   await check('Actual source title, aliases, metadata, full cover and inline chapters agree', async () => {
-    content = await source.getContent('mimosa'); assert.equal(content.title, 'Mimosa'); assert(content.summary.length > 50);
+    const original = source.allowedDetail.bind(source);
+    let consumedPost;
+    source.allowedDetail = async (...args) => { const value = await original(...args); consumedPost = value.post; return value; };
+    try { content = await source.getContent('mimosa'); } finally { source.allowedDetail = original; }
+    assert.equal(content.title, 'Mimosa'); assert(content.summary.length > 50);
+    assert(consumedPost && /^[1-9]\d{3}$/.test(consumedPost.releaseDate));
+    const score = consumedPost.averageRating, votes = consumedPost.totalRatings;
+    assert(typeof score === 'number' && Number.isFinite(score) && score >= 1 && score <= 10 && Number.isSafeInteger(votes) && votes > 0);
+    const publication = content.additionalInfo.find((section) => section.id === 'publication');
+    assert(publication && publication.items.length <= 10 && publication.items.every((item) => item.isNonInteractive === true));
+    assert(publication.items.some((item) => item.title === `Release: ${consumedPost.releaseDate}`));
+    assert.equal(publication.items.find((item) => item.id === 'source-score')?.title, `★ ${score}/10 (${votes} ${votes === 1 ? 'vote' : 'votes'})`);
     assert(content.additionalTitles.includes('미모사')); assert(content.tags.length >= 6); assert(content.additionalInfo[0].items.length);
     assert.equal(content.cover, catalog.results.find((item) => item.id === 'mimosa').cover);
     assert(!/\/(?:thumb|small|medium)\//i.test(content.cover)); assert(content.chapters.length > 30);

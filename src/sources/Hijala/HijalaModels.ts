@@ -34,7 +34,7 @@ export interface SiteChapter {
 export interface Post {
     slug: string, postTitle: string, featuredImage: string, postContent?: string,
     alternativeTitles?: string, author?: string, artist?: string, releaseDate?: string,
-    seriesStatus?: string, seriesType?: string, isNovel?: boolean, averageRating?: number,
+    seriesStatus?: string, seriesType?: string, isNovel?: boolean, averageRating?: number, totalRatings?: number,
     genres?: Genre[], chapters?: SiteChapter[], _count?: { chapters: number }
 }
 export interface Catalog { posts: Post[], totalCount: number }

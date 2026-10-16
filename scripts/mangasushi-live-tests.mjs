@@ -717,7 +717,23 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
     }
   });
   await check('Sample details, asynchronous chapters, decimals and original labels', async () => {
-    const content = await source.getContent(sample);
+    let detailHTML;
+    const original = source.api.text.bind(source.api);
+    source.api.text = async (...args) => { const value = await original(...args); if (args[0] === `https://mangasushi.org/manga/${sample}/`) detailHTML = value; return value; };
+    let content;
+    try { content = await source.getContent(sample); } finally { source.api.text = original; }
+    assert(detailHTML, 'Missing the detail response consumed by native getContent');
+    const reference = load(detailHTML);
+    const aggregate = reference('.tab-summary .vote-details[typeof="AggregateRating"]')
+    const score = Number(aggregate.find('[property="ratingValue"]').text().trim()), votes = Number(aggregate.find('[property="ratingCount"]').text().trim());
+    assert.equal(aggregate.find('[property="bestRating"]').text().trim(), '5');
+    assert(Number.isFinite(score) && score > 0 && score <= 5 && Number.isSafeInteger(votes) && votes > 0, 'The consumed detail must provide a positive source score and votes');
+    const publication = content.additionalInfo.find((section) => section.id === 'publication');
+    assert(publication && publication.items.length <= 10 && publication.items.every((item) => item.isNonInteractive === true));
+    assert.equal(publication.items.find((item) => item.id === 'source-score')?.title, `★ ${score}/5 (${votes} ${votes === 1 ? 'vote' : 'votes'})`);
+    const field = (name) => reference('.tab-summary .post-content_item').filter((_, node) => reference(node).find('.summary-heading').text().trim().toLowerCase() === name).first().find('.summary-content').text().trim();
+    assert.equal(content.contentType, { Manga: 0, Manhua: 1, Manhwa: 2 }[field('type')]);
+    for (const [name, label] of [['type', 'Type'], ['release', 'Release']]) assert(publication.items.some((item) => item.title === `${label}: ${field(name)}`));
     assert.equal(content.title, 'Welcome to the Cheap Restaurant of Outcasts!');
     assert(content.summary?.trim()); assert(content.additionalTitles?.length);
     chapters = await source.getChapters(sample);

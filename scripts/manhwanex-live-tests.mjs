@@ -699,7 +699,17 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
     assert(content.additionalTitles.some((title) => title.includes('Logging 10,000 Years into the Future')));
     assert(content.tags.length && !content.tags.some((tag) => blocked.has(tag.id)));
     assert(content.additionalInfo.some((section) => section.id === 'publication'));
-    const reference = await html(content.webUrl);
+    const consumedDetail = detailResponses.get(JSON.stringify([content.webUrl]));
+    assert(consumedDetail, 'Missing the detail response consumed by native getContent');
+    const reference = load(consumedDetail);
+    const aggregate = reference('.tab-summary .vote-details[typeof="AggregateRating"]')
+    const score = Number(aggregate.find('[property="ratingValue"]').text().trim()), votes = Number(aggregate.find('[property="ratingCount"]').text().trim());
+    assert.equal(aggregate.find('[property="bestRating"]').text().trim(), '5');
+    assert(Number.isFinite(score) && score > 0 && score <= 5 && Number.isSafeInteger(votes) && votes > 0, 'The consumed detail must provide a positive source score and votes');
+    const publication = content.additionalInfo.find((section) => section.id === 'publication');
+    assert(publication && publication.items.length <= 10 && publication.items.every((item) => item.isNonInteractive === true));
+    assert.equal(publication.items.find((item) => item.id === 'source-score')?.title, `★ ${score}/5 (${votes} ${votes === 1 ? 'vote' : 'votes'})`);
+
     const tagSections = Array.from(content.additionalInfo).filter((section) => /^source-tags(?:-\d+)?$/.test(section.id));
     assert(tagSections.every((section) => section.items.length <= 10));
     assert.deepEqual(tagSections.flatMap((section) => Array.from(section.items, (tag) => tag.title)),

@@ -9,7 +9,8 @@ import { Chapter,
     Highlight,
     PublicationStatus,
     ReadingMode,
-    staff } from '@mana-app/types'
+    staff,
+    tags } from '@mana-app/types'
 import { load } from 'cheerio'
 import { incompleteRatingInfo,
     nativeRating } from '../../ContentRatingPolicy'
@@ -125,12 +126,22 @@ export function content(data: Detail, id: string, hidePaid: boolean): Content {
         ...(post.artist?.trim() && post.artist.trim() !== post.author?.trim() ? [staff.item({ id: `artist:${post.artist}`, title: post.artist.trim(), subtitle: 'Artist' })] : []) ]
     const statuses: Record<string, PublicationStatus> = { ONGOING: PublicationStatus.ONGOING, COMPLETED: PublicationStatus.COMPLETED, CANCELLED: PublicationStatus.CANCELLED, DROPPED: PublicationStatus.CANCELLED, HIATUS: PublicationStatus.HIATUS }
     const types: Record<string, ContentType> = { MANHWA: ContentType.MANHWA, MANHUA: ContentType.MANHUA, MANGA: ContentType.MANGA }
+    const release = typeof post.releaseDate === 'string' ? post.releaseDate.trim() : ''
+    const score = post.averageRating, votes = post.totalRatings
+    // The source's actual detail data and rendered 1–10 control define this scale;
+    // its SEO aggregate is a placeholder and must never supply the score.
+    const details = [/^[1-9]\d{3}$/.test(release) ? tags.item({ id: `release:${release}`, title: `Release: ${release}`, isNonInteractive: true }) : undefined,
+        typeof score === 'number' && Number.isFinite(score) && score >= 1 && score <= 10
+            && typeof votes === 'number' && Number.isSafeInteger(votes) && votes > 0
+            ? tags.item({ id: 'source-score', title: `★ ${score}/10 (${votes} ${votes === 1 ? 'vote' : 'votes'})`, isNonInteractive: true }) : undefined
+    ].filter((entry): entry is ReturnType<typeof tags.item> => Boolean(entry))
     return { title: item.title, cover: item.cover, contentRating: item.contentRating, webUrl: item.webUrl, summary: plainText(post.postContent ?? ''),
         additionalTitles: [...new Set((post.alternativeTitles ?? '').split(/\s*[•\n]\s*|\s+\/\s+/).map((title) => title.trim()).filter((title) => title && title !== item.title))],
         tags: genres(post).map((genre) => ({ id: String(genre.id), title: genre.name.trim() })), status: statuses[post.seriesStatus ?? ''],
         contentType: post.isNovel ? ContentType.NOVEL : types[post.seriesType ?? ''] ?? ContentType.COMIC,
         recommendedPanelMode: post.seriesType === 'MANGA' ? ReadingMode.PAGED_MANGA : ReadingMode.WEBTOON,
-        additionalInfo: [...(people.length ? [staff.section({ id: 'staff', title: 'Staff', hasMore: false, items: people })] : []), ...(rating(post) === undefined ? [incompleteRatingInfo()] : [])],
+        additionalInfo: [...(people.length ? [staff.section({ id: 'staff', title: 'Staff', hasMore: false, items: people })] : []),
+            ...(details.length ? [tags.section({ id: 'publication', title: 'Publication', items: details })] : []), ...(rating(post) === undefined ? [incompleteRatingInfo()] : [])],
         chapters: nativeChapters(data, id, hidePaid) }
 }
 export function reader(html: string, id: string, chapterId: string): ChapterData {
