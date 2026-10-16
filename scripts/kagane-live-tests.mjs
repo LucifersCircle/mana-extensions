@@ -98,6 +98,29 @@ export async function assertKaganeHostGuards({ freshSource } = {}) {
   assert(!redactURL(`${api}/books/page/book/image.jxl?token=not-a-live-token&is_datasaver=false`).includes('not-a-live-token'));
 }
 
+// A failed preference-menu load is not cached. A separate later caller may
+// recover once; only a validated success can satisfy the shared-cache contract.
+export async function assertKaganeTaxonomyCache({ source, requests, logger = console.log }) {
+  for (const method of ['genres', 'tags', 'sources']) {
+    const path = `/api/v2/${method}/list`;
+    const attempts = requests.filter((request) => new URL(request.url).pathname === path);
+    const succeeded = (request) => request.status >= 200 && request.status < 300 && !request.error;
+    assert.equal(attempts.filter(succeeded).length, 1, `Expected one successful public taxonomy load: ${path}`);
+    assert(attempts.length <= 2, `Public taxonomy exceeded one failed attempt before recovery: ${path}`);
+    assert(succeeded(attempts.at(-1)), `Public taxonomy was fetched again after success: ${path}`);
+    const failed = attempts.length === 2 ? attempts[0] : undefined;
+    if (failed) {
+      assert((Number.isInteger(failed.status) && failed.status >= 100 && failed.status <= 599 && (failed.status < 200 || failed.status >= 300))
+        || (typeof failed.error === 'string' && failed.error.trim()), `Missing failed taxonomy attempt evidence: ${path}`);
+    }
+    const before = requests.length;
+    const cached = await source.api[method]();
+    assert(Array.isArray(cached) && cached.length, `No validated cached public taxonomy: ${path}`);
+    assert.equal(requests.length, before, `Public taxonomy cache read fetched again: ${path}`);
+    if (failed) logger(`RECOVERED public taxonomy ${path}: ${failed.status ?? 'ERROR'}${failed.error ? ` (${redactText(failed.error)})` : ''} before successful cached load`);
+  }
+}
+
 // Reuse this run's actual public series/books, changing only language fields.
 // Reader/image checks remain separate and use actual provider manifests and bytes.
 export async function assertKaganeChapterLanguages({ freshSource, id, detail, books, sources }) {
@@ -1201,7 +1224,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   });
   await check('Test host permits only exact public Kagane operations and redacts reader tokens', async () => {
     await assertKaganeHostGuards({ freshSource });
-    for (const path of ['/genres/list', '/tags/list', '/sources/list']) assert.equal(requests.filter((request) => new URL(request.url).pathname === `/api/v2${path}`).length, 1, `Public taxonomy was redundantly fetched: ${path}`);
+    await assertKaganeTaxonomyCache({ source, requests });
     assert(!requests.some((request) => request.url.includes('token=') && !request.url.includes('redacted')));
   });
   source.search = nativeSearch;

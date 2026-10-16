@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { runInNewContext } from 'node:vm'
 import test from 'node:test'
 import { assertPublicKaganeRequest, assertReadOnlyKaganePost, createManaRuntime } from './mana-runtime.mjs'
+import { assertKaganeTaxonomyCache } from './kagane-live-tests.mjs'
 
 const origin = 'https://kagane.org'
 const searchURL = `${origin}/api/v2/search/series?page=0&size=50`
@@ -166,4 +167,32 @@ test('finalized range requests fail closed before transport and accepted bodies 
     assert.equal(sent.length, 1)
     assert.equal(sent[0].body, JSON.stringify(body))
     assert.equal(sent[0].url, searchURL)
+})
+
+test('taxonomy cache oracle distinguishes one evidenced recovery from redundant or failed loads', async () => {
+    const run = async (tags, mutate) => {
+        const requests = ['genres', 'sources'].map(method => ({ url: `${origin}/api/v2/${method}/list`, status: 200 }))
+        requests.push(...tags.map(attempt => ({ url: `${origin}/api/v2/tags/list`, ...attempt })))
+        const evidence = [], reads = []
+        const source = { api: Object.fromEntries(['genres', 'tags', 'sources'].map(method => [method, async () => {
+            reads.push(method)
+            return mutate?.(method, requests) ?? [{ id: method }]
+        }])) }
+        await assertKaganeTaxonomyCache({ source, requests, logger: line => evidence.push(line) })
+        assert.deepEqual(reads, ['genres', 'tags', 'sources'])
+        return evidence
+    }
+    assert.deepEqual(await run([{ status: 200 }]), [])
+    assert.match((await run([{ status: 500 }, { status: 200 }]))[0], /RECOVERED.*tags\/list: 500/)
+    assert.match((await run([{ error: 'Network unavailable' }, { status: 200 }]))[0], /RECOVERED.*ERROR/)
+    for (const attempts of [
+        [], [{ status: 500 }], [{ status: 500 }, { status: 500 }],
+        [{ status: 200 }, { status: 200 }], [{ status: 200 }, { status: 500 }],
+        [{ status: 500 }, { status: 500 }, { status: 200 }], [{}, { status: 200 }],
+        [{ status: 0 }, { status: 200 }], [{ status: 200, error: ' ' }, { status: 200 }],
+    ]) await assert.rejects(run(attempts), /taxonomy/i)
+    await assert.rejects(run([{ status: 200 }], method => method === 'tags' ? [] : undefined), /No validated cached/)
+    await assert.rejects(run([{ status: 200 }], (method, requests) => {
+        if (method === 'tags') requests.push({ url: `${origin}/api/v2/tags/list`, status: 200 })
+    }), /cache read fetched again/)
 })
