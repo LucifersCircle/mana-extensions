@@ -30,7 +30,7 @@
       "path": "Hijala",
       "environment": "source",
       "intents": 6298637,
-      "hash": "00f9e0a100f9e0a100f9e0a100f9e0a100f9e0a100f9e0a100f9e0a100f9e0a1"
+      "hash": "65761e2e65761e2e65761e2e65761e2e65761e2e65761e2e65761e2e65761e2e"
     },
     {
       "id": "Kagane",
@@ -59,7 +59,7 @@
       "path": "Kagane",
       "environment": "source",
       "intents": 6298637,
-      "hash": "64fc4b5d64fc4b5d64fc4b5d64fc4b5d64fc4b5d64fc4b5d64fc4b5d64fc4b5d"
+      "hash": "0173b3ef0173b3ef0173b3ef0173b3ef0173b3ef0173b3ef0173b3ef0173b3ef"
     },
     {
       "id": "MangaSushi",
@@ -84,7 +84,7 @@
       "path": "MangaSushi",
       "environment": "source",
       "intents": 6298637,
-      "hash": "0c6d34720c6d34720c6d34720c6d34720c6d34720c6d34720c6d34720c6d3472"
+      "hash": "5a02ca7c5a02ca7c5a02ca7c5a02ca7c5a02ca7c5a02ca7c5a02ca7c5a02ca7c"
     },
     {
       "id": "ManhwaNex",
@@ -111,11 +111,11 @@
       "path": "ManhwaNex",
       "environment": "source",
       "intents": 6298637,
-      "hash": "1fb6e0a21fb6e0a21fb6e0a21fb6e0a21fb6e0a21fb6e0a21fb6e0a21fb6e0a2"
+      "hash": "46b91e6c46b91e6c46b91e6c46b91e6c46b91e6c46b91e6c46b91e6c46b91e6c"
     },
     {
       "id": "VortexScans",
-      "version": "0.0.1-alpha.9",
+      "version": "0.0.1-alpha.10",
       "name": "VortexScans",
       "description": "Read manga, manhwa, and manhua from VortexScans.",
       "thumbnail": "VortexScans.png",
@@ -138,7 +138,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 6298636,
-      "hash": "2dccf4c72dccf4c72dccf4c72dccf4c72dccf4c72dccf4c72dccf4c72dccf4c7"
+      "hash": "53dbdfc053dbdfc053dbdfc053dbdfc053dbdfc053dbdfc053dbdfc053dbdfc0"
     }
   ]
 }
