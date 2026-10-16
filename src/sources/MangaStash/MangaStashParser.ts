@@ -172,6 +172,7 @@ export function parseDetail(html: string, id: string): Detail {
     if (declared.some((label) => !/^(safe|suggestive|mature|explicit|adult|18\+|nsfw)$/i.test(label))) throw new Error('MangaStash content rating is unrecognized')
     const rating = labelRating([...labels, ...declared], text($('.series-page > .content-warning,.series-banner .content-warning,.series-meta .content-warning,.series-page > .age-warning,.series-meta .age-warning,.series-page > .nsfw-warning').text()))
     const original = $('meta[property="og:image"]').attr('content'), card = { id, title, cover: original ? imageURL(original, id) : cover($, $('.series-cover'), id), rating, classified: rating !== undefined }
+    let missingReadableDates = false
     const chapters = $('#chapter-list > a.chapter-row').toArray().map((node, index) => {
         const row = $(node), chapter = chapterId(row.attr('href') ?? '', id), rawNumber = row.attr('data-num') ?? ''
         if (!/^\d+(?:\.\d+)?$/.test(rawNumber)) throw new Error('MangaStash chapter number is malformed')
@@ -179,6 +180,7 @@ export function parseDetail(html: string, id: string): Detail {
         if (!Number.isFinite(date.getTime())) throw new Error('MangaStash bulk chapter date is invalid')
         const locked = row.is('.locked,.chapter-locked,[data-locked="true"],[aria-disabled="true"]') || row.find('.locked,.chapter-locked,.chapter-lock').length > 0
             || /locked|premium|log ?in|sign ?in|unlock|members only|subscription/i.test(text(row.find('.chapter-meta').text()))
+        if (!locked && !actualDate) missingReadableDates = true
         const rawTitle = text(row.find('.chapter-num').text()), number = Number(rawNumber)
         return { chapterId: chapter, number, index, date, locked, language: 'en_US', webUrl: `${DOMAIN}/${chapter}`, title: rawTitle === `Ch. ${rawNumber}` ? undefined : rawTitle }
     })
@@ -201,7 +203,7 @@ export function parseDetail(html: string, id: string): Detail {
             ...(author ? [staff.section({ id: 'author', title: 'Author', hasMore: false, items: [staff.item({ id: author, title: author })] })] : []),
             ...detailTagSections(groups),
             ...(rating === undefined ? [incompleteRatingInfo()] : []),
-            tags.section({ id: 'chapter-date-metadata', title: 'Chapter dates', items: [tags.item({ id: 'unavailable-dates', title: 'Bulk chapter dates may be unavailable. Date(0) is a required technical unknown-date sentinel, not an actual publication date.', isNonInteractive: true })] })
+            ...(missingReadableDates ? [tags.section({ id: 'chapter-date-metadata', title: 'Chapter dates', items: [tags.item({ id: 'unavailable-dates', title: 'The site does not provide dates for some chapters. Their displayed upload ages are not reliable.', isNonInteractive: true })] })] : [])
         ] }
     return { card, content, chapters }
 }
