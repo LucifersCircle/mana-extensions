@@ -30,7 +30,7 @@
       "path": "Hijala",
       "environment": "source",
       "intents": 6298637,
-      "hash": "68978ecb68978ecb68978ecb68978ecb68978ecb68978ecb68978ecb68978ecb"
+      "hash": "70ecd9c870ecd9c870ecd9c870ecd9c870ecd9c870ecd9c870ecd9c870ecd9c8"
     },
     {
       "id": "Kagane",
@@ -59,7 +59,34 @@
       "path": "Kagane",
       "environment": "source",
       "intents": 6298637,
-      "hash": "68a4342868a4342868a4342868a4342868a4342868a4342868a4342868a43428"
+      "hash": "604ee69b604ee69b604ee69b604ee69b604ee69b604ee69b604ee69b604ee69b"
+    },
+    {
+      "id": "MangaStash",
+      "version": "0.0.1-alpha.1",
+      "name": "MangaStash",
+      "thumbnail": "MangaStash.png",
+      "rating": 1,
+      "website": "https://mangastash.org",
+      "description": "MangaStash native feeds and browse controls. Unlabeled titles use Suggestive only as a compatibility fallback. Missing bulk chapter dates use Date(0) as a technical unknown, not a publication date. Covers use the largest URL actually advertised per response.",
+      "supportedLanguages": [
+        "en_US"
+      ],
+      "badges": [
+        "Manga",
+        "Manhwa",
+        "Manhua"
+      ],
+      "developers": [
+        {
+          "name": "Lucifers Circle",
+          "github": "https://github.com/LucifersCircle"
+        }
+      ],
+      "path": "MangaStash",
+      "environment": "source",
+      "intents": 6298637,
+      "hash": "39da3b2639da3b2639da3b2639da3b2639da3b2639da3b2639da3b2639da3b26"
     },
     {
       "id": "MangaSushi",
@@ -84,7 +111,7 @@
       "path": "MangaSushi",
       "environment": "source",
       "intents": 6298637,
-      "hash": "5337efcd5337efcd5337efcd5337efcd5337efcd5337efcd5337efcd5337efcd"
+      "hash": "4ae2a4ae4ae2a4ae4ae2a4ae4ae2a4ae4ae2a4ae4ae2a4ae4ae2a4ae4ae2a4ae"
     },
     {
       "id": "ManhwaNex",
@@ -111,7 +138,7 @@
       "path": "ManhwaNex",
       "environment": "source",
       "intents": 6298637,
-      "hash": "10e7729610e7729610e7729610e7729610e7729610e7729610e7729610e77296"
+      "hash": "0892270408922704089227040892270408922704089227040892270408922704"
     },
     {
       "id": "VortexScans",
@@ -138,7 +165,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 6298636,
-      "hash": "1b970acf1b970acf1b970acf1b970acf1b970acf1b970acf1b970acf1b970acf"
+      "hash": "1341bf6e1341bf6e1341bf6e1341bf6e1341bf6e1341bf6e1341bf6e1341bf6e"
     }
   ]
 }
