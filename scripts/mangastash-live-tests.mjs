@@ -32,7 +32,7 @@ export async function testMangaStash({ check, referenceFetch = globalThis.fetch 
   const findToggle = async (target) => (await target.getPreferenceMenu()).sections[0].children.find((item) => item.id === 'onlySafe');
   let catalog, content, chapters, reader, home;
   await check('MangaStash native initialization and exact browse controls', async () => {
-    assert.equal(source.info.id, 'MangaStash'); assert.equal(source.info.version, '0.0.1-alpha.2');
+    assert.equal(source.info.id, 'MangaStash'); assert.equal(source.info.version, '0.0.1-alpha.3');
     assert.match(source.info.description, /technical unknown/);
     assert.equal((await findToggle(source)).value, false);
     const form = await source.getSearchForm();
@@ -122,8 +122,37 @@ export async function testMangaStash({ check, referenceFetch = globalThis.fetch 
     assert.equal(content.title, $('.series-meta h1').text().trim());
     assert.equal(content.cover, $('meta[property="og:image"]').attr('content'));
     assert.deepEqual(Array.from(content.tags, ({ id }) => id), ['action', 'comedy']);
-    const genreOwner = (await source.getSearchForm()).sections[0].children.find((field) => field.id === 'genres');
+    const fields = (await source.getSearchForm()).sections[0].children, genreOwner = fields.find((field) => field.id === 'genres');
     assert(content.tags.every((tag) => tag.isNonInteractive === false && genreOwner.options.some((option) => option.id === tag.id)));
+    const beforeTagRoutes = requests.length; let verifiedTagRoutes = 0;
+    for (const node of $('.series-tags .tag-group').toArray()) {
+      const group = $(node), title = group.find('.tag-category').text().trim().replace(/:$/, '');
+      if (title === 'Genres') continue;
+      const owner = fields.find((field) => field.title === title);
+      if (!owner) continue;
+      const section = content.additionalInfo.find((section) => section.id === owner.id);
+      assert(section, `Detail tags must use their native owner ${owner.id}`);
+      for (const link of group.find('.tag-chip').toArray().slice(0, 10)) {
+        const destination = new URL($(link).attr('href'), domain), entries = [...destination.searchParams];
+        const option = owner.options.find((option) => option.id && option.id === entries[0]?.[1] && option.title === $(link).text().trim());
+        if (destination.origin !== domain || destination.pathname !== '/browse/' || destination.hash || entries.length !== 1 || entries[0][0] !== owner.id || !option) continue;
+        const tag = section.items.find((tag) => tag.id === option.id);
+        assert(tag && tag.title === option.title && tag.isNonInteractive === false, 'Source browse tags must retain canonical option ID and title');
+        // Exercise serialized native detail-to-search routing without another
+        // provider request. This verifies the callback contract, not an iOS tap.
+        const selected = plain({ filters: { [section.id]: owner.id === 'rating' ? tag : [tag] }, context: all });
+        let routed = 0;
+        const target = host(async (input) => {
+          routed++; const params = new URLSearchParams([[owner.id === 'rating' ? owner.id : `${owner.id}[]`, option.id]]);
+          assert.equal(String(input), `${domain}/browse/?${params}`);
+          throw new Error('Verified detail-tag search route');
+        }).source;
+        await assert.rejects(() => target.search(selected), /Verified detail-tag search route/);
+        assert.equal(routed, 1); verifiedTagRoutes++;
+      }
+    }
+    assert(verifiedTagRoutes > 0, 'Actual detail must exercise a non-genre native search route');
+    assert.equal(requests.length, beforeTagRoutes, 'Detail tag routing must not add provider requests');
     assert.equal(content.contentRating, 0); assert(chapters.length > 0); assert.equal(chapters.length, rows.length);
     assert.deepEqual(Array.from(chapters, (item) => item.chapterId), rows.map((row) => $(row).attr('href').slice(1)));
     assert(chapters.some((item) => item.chapterId === 'ayashimon/chapter-25.6' && item.number === 25.6));
