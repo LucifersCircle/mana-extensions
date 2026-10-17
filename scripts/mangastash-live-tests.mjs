@@ -53,7 +53,8 @@ function coverOwnerDiagnostic(html, surface) {
         || !/\.(?:jpe?g|png|webp|avif|gif)$/i.test(target.pathname)) return { ...context, classification: 'unsafe-or-unsupported-path' };
     // Match ownership independently of the narrower disclosure allowlist.
     const id = seriesPath.slice(1, -1);
-    const namedCover = new RegExp(`^/content/covers/(?:thumbnails/)?${id}\\.(?:jpe?g|png|webp|avif|gif)$`, 'i').test(target.pathname);
+    const namedCover = ['/content/covers/kagura-bachi.jpg', '/content/covers/thumbnails/kagura-bachi.jpg'].includes(target.pathname)
+      ? id === 'kagurabachi' : new RegExp(`^/content/covers/(?:thumbnails/)?${id}\\.(?:jpe?g|png|webp|avif|gif)$`, 'i').test(target.pathname);
     const ownedPageCover = target.pathname.startsWith(`/content/${id}/`) && new RegExp(`^/content/${id}/chapter-\\d+(?:\\.\\d+)?/[a-zA-Z0-9_-]+\\.(?:jpe?g|png|webp|avif|gif)$`, 'i').test(target.pathname);
     if (!namedCover && !ownedPageCover) return { ...context, classification: !coverPath ? 'unsafe-or-unsupported-path'
       : coverPath.toLowerCase().startsWith('/content/covers/') ? 'named-cover-owner-mismatch' : 'chapter-owner-mismatch' };
@@ -99,7 +100,7 @@ export async function testMangaStash({ check, referenceFetch = globalThis.fetch 
   const findToggle = async (target) => (await target.getPreferenceMenu()).sections[0].children.find((item) => item.id === 'onlySafe');
   let catalog, content, chapters, reader, home;
   await check('MangaStash native initialization and exact browse controls', async () => {
-    assert.equal(source.info.id, 'MangaStash'); assert.equal(source.info.version, '0.0.1-alpha.5');
+    assert.equal(source.info.id, 'MangaStash'); assert.equal(source.info.version, '0.0.1-alpha.6');
     assert.match(source.info.description, /chapter dates are unavailable/);
     assert.equal((await findToggle(source)).value, false);
     const form = await source.getSearchForm();
@@ -137,6 +138,38 @@ export async function testMangaStash({ check, referenceFetch = globalThis.fetch 
         await assert.rejects(() => target.search({ context: all }), /owner|URL/);
       }
     }
+  });
+  await check('Source-proven Kagurabachi alias preserves exact ownership and persisted grants', async () => {
+    const id = 'kagurabachi', pageURL = `${domain}/${id}/`, before = requests.length, pair = host();
+    const detail = await pair.source.getContent(id, all), html = responses.get(pageURL), $ = load(html);
+    assert.equal(requests.length, before + 1, 'One detail response must supply alias provenance without catalog N+1 requests');
+    const books = $('script[type="application/ld+json"]').toArray().map((node) => JSON.parse($(node).html())).filter((item) => item['@type'] === 'Book');
+    assert.equal($('link[rel="canonical"]').attr('href'), pageURL); assert.equal(books.length, 1);
+    assert.equal(books[0]['@id'], pageURL); assert.equal(books[0].url, pageURL);
+    assert.equal(books[0].image, `${domain}/content/covers/kagura-bachi.jpg`);
+    assert.equal($('meta[property="og:image"]').attr('content'), books[0].image);
+    assert.equal(detail.cover, books[0].image);
+    const thumbnail = `${domain}/content/covers/thumbnails/kagura-bachi.jpg`;
+    assert.equal($('.series-cover img').attr('src'), thumbnail);
+    const cold = host(replay(), pair.store).source;
+    assert.equal((await authorizeTestImage(cold, detail.cover, { origin: 'cover' })).url, detail.cover);
+    // The other known alias is not issued by this isolated detail response.
+    await assert.rejects(() => authorizeTestImage(cold, thumbnail, { origin: 'cover' }), /issued/);
+    for (const owner of ['other', 'kagura-bachi', 'kagura--bachi']) {
+      const changed = host(async () => new Response(html.replaceAll(id, owner), { status: 200, headers: { 'content-type': 'text/html' } })).source;
+      await assert.rejects(() => changed.getContent(owner, all), /owner/);
+    }
+    for (const value of [detail.cover + '?x=1', detail.cover + '#x', detail.cover.replace('.jpg', '.webp'), detail.cover.replace('kagura-bachi', 'kagura--bachi'), detail.cover.replace('mangastash.org', 'other.example')]) {
+      const changed = host(async () => new Response(html.replaceAll(detail.cover, value), { status: 200, headers: { 'content-type': 'text/html' } })).source;
+      await assert.rejects(() => changed.getContent(id, all), /owner|URL/);
+      await assert.rejects(() => authorizeTestImage(cold, value, { origin: 'cover' }),
+        (error) => error.message === 'Invalid MangaStash image request' || /issued|URL/.test(error.message));
+    }
+    const response = await fetchTestImage(cold, detail.cover, { origin: 'cover', fetchImpl: referenceFetch });
+    assert.equal(response.status, 200); assert.match(response.headers.get('content-type'), /^image\/jpe?g(?:;|$)/i);
+    const bytes = Buffer.from(await response.arrayBuffer()); assert(bytes.length > 1000 && bytes.length < 16 * 1024 * 1024);
+    assert.equal(bytes.subarray(0, 2).toString('hex'), 'ffd8'); assert.equal(bytes.subarray(-2).toString('hex'), 'ffd9');
+    console.log(`MangaStash verified alias complete JPEG ${bytes.length}B ${detail.cover}`);
   });
   await check('Exact source home feeds, same-response whole-feed comparison and overlaps', async () => {
     const sections = await withMangaStashCoverDiagnostic(() => source.getSectionsForPage({ id: 'home', context: all }),
