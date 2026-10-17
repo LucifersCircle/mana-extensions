@@ -640,32 +640,33 @@ image bytes are preserved. Warm-up waits for ordinary noninteractive managed
 checks only: CAPTCHA controls are never clicked, and an explicit CAPTCHA or browser
 security warning stops the test. TLS verification stays enabled. The native source
 still uses Mana's built-in CloudflareError flow; no helper is bundled in extensions.
-For Marumaru, the same CI helper also executes the built source's actual
-`WebViewPage.create/goto/evaluate/close` calls in an isolated anonymous Chromium
-page. Compiled callbacks carry the serialized-function helpers from their own source bundle into an isolated browser scope. It preserves JSON arguments/results, seconds-based operation timeouts,
-`domcontentloaded`/`load` navigation, single-page source lifetime and automatic
-cleanup. Only the currently supported public Marumaru catalog, search, detail and
-reader document routes are allowed. Document redirects, explicit CAPTCHA controls,
-TLS/security warnings, unsupported APIs and malformed bridge values fail closed;
-no solver clicks, cookie extraction or replacement parser are used. Reader lazy
-loading runs in the real browser, and first/last native image-byte assertions stay
-unchanged on the direct transport. `evaluateScript` is explicitly unsupported by
-this minimal host. Passing Chromium checks is not proof of physical-device or
-WKWebView equivalence.
-Cover and page images use separate SDK transport factories and the official image dispatcher. Async request/response interceptors preserve source authorization; the SDK identifies Cloudflare challenges before response interceptors, and HTTP status validation precedes image-body acceptance. Only a positively identified challenge on an
-authorized Marumaru cover can use browser-context resolution: the helper loads its
-ordinary public title page, verifies the exact advertised hero image, and captures
-that same completed network response's status, MIME and real bytes. It never
-navigates directly to the image, exports cookies, substitutes URLs, or treats an
-ordinary denial as a challenge. Source authorization is checked again before bytes
-are accepted. Logs distinguish the original direct HTTP response from the
-browser-context result; this is not proof that raw Node or physical iOS succeeds.
-Reader images remain on the direct transport. The observed Marumaru cover MIME
-`application/octet-stream` is preserved, not rewritten: only a verified browser
-capture can accept it, after the same hero's bounded `image.decode()` succeeds
-and its complete JPEG/PNG/WebP body passes independent container checks. The live
-assertion rechecks those full bytes. Other source and reader MIME/byte guards are
-unchanged. No diagnostic-only workflow or skipped check is used by the full suite.
+Marumaru uses the site's ordinary JSON catalog/search/work APIs and the exact public
+reader API advertised by each work. Metadata, complete chapter inventories and reader
+pages use reusable SDK HTTP clients; no WebView navigation or per-card detail request
+is needed. The complete advertised inventory is validated before hiding only chapters with
+`ready === false`; unknown availability remains visible. Native chapter IDs, numbers,
+labels and order are preserved, including multipart labels. Refreshing the chapter
+list rechecks bulk availability without per-chapter requests. Counts and first/last
+page comparisons come from live advertised inventories, not saved provider fixtures.
+
+Title access is persisted separately from catalog/image snapshots so overlapping
+source contexts cannot erase a completed detail grant. Grants retain their native
+rating scope, original one-hour lifetime and revocation generation; positive adult
+evidence cannot be downgraded by a stale catalog snapshot. Missing or expired access
+still requires a successful title refresh with native content-policy context.
+
+Cover and page images use separate reusable SDK clients and synchronous transport
+factories. Async request/response interceptors retain request-local exact-URL,
+origin, issuing-policy and revocation checks. The SDK's native Cloudflare challenge
+handling is unchanged. API and image clients send the Marumaru site origin as Referer;
+X-Site remains limited to the Marumaru site API. The source does not replace the native host's User-Agent: the
+current Mana SDK has no Paperback-style default-UA getter, so a Node-host check
+must not be reported as proof of the iOS host's identity. Marumaru live checks
+exercise direct native HTTP only, without
+browser image fallback: even an `application/octet-stream` cover must return its
+exact issued URL and pass independent full JPEG/PNG/WebP container/dimension checks.
+The retained test-only WebView/browser image adapter is not part of Marumaru's source
+or native-API proof. Passing the SDK test host is not physical iOS device validation.
 Without FLARESOLVERR_URL, local network checks use ordinary direct requests,
 challenges fail visibly, and WebView-dependent checks report a missing real browser
 rather than being skipped or receiving substitute data. New sources must support the exercised contract; unsupported host
@@ -691,7 +692,7 @@ npm run verify:bundles
 npm run test:extensions
 ```
 
-To use the same Kagane browser transport and Marumaru WebView host locally:
+To use the same Kagane browser transport and retained test-only WebView host locally:
 
 ```sh
 docker compose up -d --build --wait
