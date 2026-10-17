@@ -8,6 +8,71 @@ import { authorizeTestImage, fetchTestImage } from './mana-test-images.mjs';
 const domain = 'https://mangastash.org', all = { allowedContentRatings: [0, 1, 2, 3] };
 const ids = (items) => Array.from(items, (item) => item.id);
 const plain = (value) => JSON.parse(JSON.stringify(value));
+// Failure-only public-path context. Never log provider HTML, titles or arbitrary URLs.
+function coverOwnerDiagnostic(html, surface) {
+  const entry = { surface, feed: null, cardIndex: null, selectedField: null, advertisedWidth: null,
+    seriesPath: null, coverPath: null, classification: 'diagnostic-unavailable' };
+  if (!['catalog', 'home'].includes(surface) || typeof html !== 'string' || html.length > 4_000_000) return undefined;
+  const safePath = (value, series = false) => {
+    if (typeof value !== 'string' || value.length > 1024 || /[\s\\%?#]/.test(value) || /(?:^|\/)\.{1,2}(?:\/|$)/.test(value)) return null;
+    let target;
+    try { target = new URL(value, domain); } catch { return null; }
+    if (target.origin !== domain || target.username || target.password || target.search || target.hash) return null;
+    const valid = series ? /^\/[a-z0-9][a-z0-9-]{0,255}\/$/.test(target.pathname)
+      : /^\/content\/(?:covers\/(?:thumbnails\/)?[a-zA-Z0-9][a-zA-Z0-9_-]{0,255}|[a-zA-Z0-9][a-zA-Z0-9_-]{0,255}\/chapter-\d{1,32}(?:\.\d{1,16})?\/[a-zA-Z0-9_-]{1,256})\.(?:jpe?g|png|webp|avif|gif)$/i.test(target.pathname);
+    return valid ? target.pathname : null;
+  };
+  const $ = load(html), groups = surface === 'catalog' ? [[null, $('.series-grid > .series-card')]]
+    : [['popular', 'Popular This Month'], ['new', 'New Additions'], ['latest', 'Latest Updates']].map(([id, title]) => {
+      const section = $('section.home-section').filter((_, node) => $(node).find('h2.section-title').first().text().replace(/\s+/g, ' ').trim() === title);
+      return [id, section.find(id === 'latest' ? '.update-row' : '.series-card')];
+    });
+  let visited = 0;
+  for (const [feed, rows] of groups) for (const [cardIndex, node] of rows.toArray().entries()) {
+    if (++visited > 512) return entry;
+    const row = $(node), anchor = row.is('a') ? row : row.find('a.update-title').first(), img = row.find('img').first();
+    const seriesPath = safePath(anchor.attr('href'), true), candidates = [];
+    // Keep the production parser's stable largest-advertised-candidate ordering.
+    let fragments = 0;
+    for (const field of ['data-srcset', 'srcset']) for (const part of (img.attr(field) ?? '').split(',', 257)) {
+      if (++fragments > 256) return entry;
+      const match = part.trim().match(/^(\S+)\s+(\d+)w$/);
+      if (match) candidates.push({ field, value: match[1], size: Number(match[2]) });
+    }
+    for (const field of ['data-src', 'src']) if (img.attr(field)) candidates.push({ field, value: img.attr(field), size: 0 });
+    candidates.sort((a, b) => b.size - a.size);
+    const selected = candidates[0], coverPath = safePath(selected?.value);
+    const context = { ...entry, feed, cardIndex, selectedField: selected?.field ?? null,
+      advertisedWidth: Number.isSafeInteger(selected?.size) && selected.size <= 1_000_000 ? selected.size : null, seriesPath, coverPath };
+    if (!seriesPath || !selected) return { ...context, classification: 'unsafe-or-unsupported-path' };
+    const value = selected.value;
+    let target;
+    try { target = new URL(value, domain); } catch { return { ...context, classification: 'unsafe-or-unsupported-path' }; }
+    if (/[\s\\]/.test(value) || /%/.test(value.split('?')[0]) || /(?:^|\/)\.{1,2}(?:\/|$)/.test(value)
+        || target.origin !== domain || target.username || target.password || target.search || target.hash
+        || !/\.(?:jpe?g|png|webp|avif|gif)$/i.test(target.pathname)) return { ...context, classification: 'unsafe-or-unsupported-path' };
+    // Match ownership independently of the narrower disclosure allowlist.
+    const id = seriesPath.slice(1, -1);
+    const namedCover = new RegExp(`^/content/covers/(?:thumbnails/)?${id}\\.(?:jpe?g|png|webp|avif|gif)$`, 'i').test(target.pathname);
+    const ownedPageCover = target.pathname.startsWith(`/content/${id}/`) && new RegExp(`^/content/${id}/chapter-\\d+(?:\\.\\d+)?/[a-zA-Z0-9_-]+\\.(?:jpe?g|png|webp|avif|gif)$`, 'i').test(target.pathname);
+    if (!namedCover && !ownedPageCover) return { ...context, classification: !coverPath ? 'unsafe-or-unsupported-path'
+      : coverPath.toLowerCase().startsWith('/content/covers/') ? 'named-cover-owner-mismatch' : 'chapter-owner-mismatch' };
+  }
+  return { ...entry, classification: 'owner-mismatch-not-found' };
+}
+
+export async function withMangaStashCoverDiagnostic(read, getHTML, surface, log = console.error) {
+  try { return await read(); } catch (error) {
+    try {
+      if (error?.message === 'MangaStash cover has wrong owner') {
+        const diagnostic = coverOwnerDiagnostic(getHTML(), surface);
+        if (diagnostic) log(`MangaStash cover-owner diagnostic ${JSON.stringify(diagnostic)}`);
+      }
+    } catch { /* Diagnostics must never replace the original failure. */ }
+    throw error;
+  }
+}
+
 export async function testMangaStash({ check, referenceFetch = globalThis.fetch }) {
   const code = readFileSync('dist/sources/MangaStash.mana', 'utf8'), responses = new Map(), requests = [];
   const fetchImpl = async (input, init) => {
@@ -43,7 +108,8 @@ export async function testMangaStash({ check, referenceFetch = globalThis.fetch 
     assert.equal(requests.length, 0, 'Initialization must not make provider requests');
   });
   await check('Catalog same-response identities, source cover provenance and unknown fallback', async () => {
-    catalog = await source.search({ page: 1, context: all });
+    catalog = await withMangaStashCoverDiagnostic(() => source.search({ page: 1, context: all }),
+      () => responses.get(`${domain}/browse/`), 'catalog');
     const $ = load(responses.get(`${domain}/browse/`));
     const rows = $('.series-grid > .series-card').toArray();
     for (const field of (await source.getSearchForm()).sections[0].children) {
@@ -73,7 +139,8 @@ export async function testMangaStash({ check, referenceFetch = globalThis.fetch 
     }
   });
   await check('Exact source home feeds, same-response whole-feed comparison and overlaps', async () => {
-    const sections = await source.getSectionsForPage({ id: 'home', context: all });
+    const sections = await withMangaStashCoverDiagnostic(() => source.getSectionsForPage({ id: 'home', context: all }),
+      () => responses.get(`${domain}/`), 'home');
     home = responses.get(`${domain}/`); const $ = load(home), expected = [];
     const signatures = new Set();
     for (const [id, title] of [['popular', 'Popular This Month'], ['new', 'New Additions'], ['latest', 'Latest Updates']]) {
