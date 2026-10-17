@@ -51,9 +51,50 @@ def canonical_body(result):
     return result['body']
 
 
+MIME_CATEGORIES = frozenset({'jpeg', 'jpg', 'png', 'gif', 'webp', 'avif', 'bmp', 'icon',
+                            'octet-stream', 'binary-octet-stream', 'chemical-xyz', 'image-xyz', 'application-xyz',
+                            'application-x-xyz', 'text', 'html',
+                            'json', 'other', 'missing', 'duplicate', 'invalid'})
+
+
+def mime_category(value):
+    """Diagnostic classification only; never use this to accept an image."""
+    if value is None:
+        return 'missing'
+    if not isinstance(value, str) or re.search(r'[\x00-\x1f\x7f]', value):
+        return 'invalid'
+    mime = value.split(';', 1)[0].strip().lower()
+    if not re.fullmatch(r'[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+', mime):
+        return 'invalid'
+    known = {'image/jpeg': 'jpeg', 'image/jpg': 'jpg', 'image/png': 'png',
+             'image/gif': 'gif', 'image/webp': 'webp', 'image/avif': 'avif', 'image/bmp': 'bmp',
+             'image/x-icon': 'icon', 'image/vnd.microsoft.icon': 'icon',
+             'application/octet-stream': 'octet-stream', 'binary/octet-stream': 'binary-octet-stream',
+             'chemical/x-xyz': 'chemical-xyz', 'image/xyz': 'image-xyz', 'application/xyz': 'application-xyz',
+             'application/x-xyz': 'application-x-xyz', 'text/html': 'html', 'application/xhtml+xml': 'html',
+             'application/json': 'json', 'text/json': 'json'}
+    if mime in known:
+        return known[mime]
+    if mime.endswith('+json'):
+        return 'json'
+    return 'text' if mime.startswith('text/') else 'other'
+
+
+def content_type_category(headers):
+    if type(headers) is not dict or any(not isinstance(name, str) for name in headers):
+        return 'invalid'
+    values = [value for name, value in headers.items() if name.lower() == 'content-type']
+    if not values:
+        return 'missing'
+    if len(values) != 1:
+        return 'duplicate'
+    return mime_category(values[0]) if isinstance(values[0], str) else 'invalid'
+
+
 class ImageEvidence:
     """Bind the exact observed Image request, response and completed load."""
-    def __init__(self, target):
+    def __init__(self, target, diagnostic=None):
+        self.diagnostic = diagnostic if diagnostic is not None else {}
         self.target = target
         self.document = title_page(target)
         self.request_id = None
@@ -121,6 +162,10 @@ class ImageEvidence:
                 if result.get('securityState') in ('insecure', 'broken'):
                     raise BrowserGate('security', 'image-transport-error')
                 mime = result.get('mimeType')
+                # Record only closed categories from metadata already observed;
+                # neither classification changes acceptance or reads the body.
+                self.diagnostic['cdpMimeCategory'] = mime_category(mime)
+                self.diagnostic['contentTypeCategory'] = content_type_category(result.get('headers', {}))
                 if mime not in IMAGE_MIMES:
                     raise ValueError('Browser response is not a supported image')
                 headers = result.get('headers', {})
@@ -205,7 +250,7 @@ def capture_image(driver, payload, diagnostic=None):
         navigation_started = True
         diagnostic['stage'] = 'navigation'
         navigate(driver, document, 'domcontentloaded', remaining, allow_startup=first)
-        evidence = ImageEvidence(target)
+        evidence = ImageEvidence(target, diagnostic)
         while True:
             diagnostic['stage'] = 'page-safety'
             if time.monotonic() >= deadline:
@@ -312,7 +357,12 @@ def register(app):
         except Exception as error:
             response.status = 502
             # Never return network headers, cookies, logs or exception text.
-            return {'error': 'Anonymous browser image capture failed', 'code': 'operation',
-                    'phase': 'image-capture',
-                    'stage': diagnostic['stage'] if diagnostic['stage'] in CAPTURE_STAGES else 'setup',
-                    'reason': image_failure_reason(error)}
+            result = {'error': 'Anonymous browser image capture failed', 'code': 'operation',
+                      'phase': 'image-capture',
+                      'stage': diagnostic['stage'] if diagnostic['stage'] in CAPTURE_STAGES else 'setup',
+                      'reason': image_failure_reason(error)}
+            for key in ('cdpMimeCategory', 'contentTypeCategory'):
+                if key in diagnostic:
+                    value = diagnostic[key]
+                    result[key] = value if isinstance(value, str) and value in MIME_CATEGORIES else 'invalid'
+            return result

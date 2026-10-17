@@ -140,14 +140,16 @@ function helperFixture(result = {}) {
 
 test('image failures expose only approved capture stage/reason enums and close without retries', async () => {
   assert.deepEqual(safeWebViewDiagnostic({ phase: 'secret-phase', stage: 'secret-stage', reason: 'secret-token' }),
-    { phase: 'unknown', stage: 'unknown', reason: 'unknown' });
+    { phase: 'unknown', stage: 'unknown', reason: 'unknown', cdpMimeCategory: 'unknown', contentTypeCategory: 'unknown' });
   for (const stage of ['setup', 'validation', 'session-acquisition', 'initial-safety', 'network-enable',
     'initial-log', 'navigation', 'page-safety', 'observation', 'hero', 'body-read', 'final-verification', 'body-validation']) {
     const { host, calls } = helperFixture({ error: 'SECRET BODY', code: 'operation', phase: 'image-capture',
-      stage, reason: 'image-response-http-status' });
+      stage, reason: 'image-response-http-status', cdpMimeCategory: 'octet-stream', contentTypeCategory: 'SECRET-header' });
     await assert.rejects(host.captureCoverImage(cover), error => {
       assert(!error.message.includes('SECRET'));
       assert(error.message.includes(`image-capture: image-response-http-status; stage: ${stage}`));
+      assert.equal(error.liveTestDiagnostic.cdpMimeCategory, 'octet-stream');
+      assert.equal(error.liveTestDiagnostic.contentTypeCategory, 'unknown');
       return true;
     });
     assert.deepEqual(calls.map(call => call.cmd ?? call.path), ['sessions.create', '/webview/image-response', 'sessions.destroy']);

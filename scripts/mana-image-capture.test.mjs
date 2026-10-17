@@ -266,7 +266,7 @@ assert active_driver.commands == []
 active_driver = Driver()
 active_driver.body = RuntimeError('SECRET headers cookies upstream-url')
 bottle.request.json = {'session': 'valid', 'url': url, 'timeout': 1}
-assert endpoint() == {'error': 'Anonymous browser image capture failed', 'code': 'operation', 'phase': 'image-capture', 'stage': 'body-read', 'reason': 'unexpected-error'}
+assert endpoint() == {'error': 'Anonymous browser image capture failed', 'code': 'operation', 'phase': 'image-capture', 'stage': 'body-read', 'reason': 'unexpected-error', 'cdpMimeCategory': 'webp', 'contentTypeCategory': 'webp'}
 assert bottle.response.status == 502
 active_driver = Driver()
 active_driver.gate = 'captcha'
@@ -318,8 +318,11 @@ for index, (stage, expected_reason) in enumerate([
  elif stage == 'body-validation': active_driver.body = {'body': '', 'base64Encoded': True}
  bottle.request.json = {'session': 'stage-' + str(index), 'url': url, 'timeout': 1}
  result = endpoint()
- assert result == {'error': 'Anonymous browser image capture failed', 'code': 'operation',
-  'phase': 'image-capture', 'stage': stage, 'reason': expected_reason}, result
+ expected = {'error': 'Anonymous browser image capture failed', 'code': 'operation',
+  'phase': 'image-capture', 'stage': stage, 'reason': expected_reason}
+ if stage in ('hero', 'body-read', 'final-verification', 'body-validation'):
+  expected.update(cdpMimeCategory='webp', contentTypeCategory='webp')
+ assert result == expected, result
  assert bottle.response.status == 502
  assert 'SECRET' not in json.dumps(result)
  assert len(active_driver.navigations) <= 1
@@ -383,5 +386,59 @@ for change, reason in [
  try: module.ImageEvidence(url).observe(entries)
  except ValueError as error: assert module.image_failure_reason(error) == reason
  else: raise AssertionError('must retain failure')
+`);
+});
+
+test('Python MIME diagnostics use only closed categories and preserve MIME rejection without reading a body', () => {
+  python(String.raw`
+for value, expected in [
+ ('image/jpeg', 'jpeg'), ('image/jpg', 'jpg'), ('image/png', 'png'), ('image/gif', 'gif'),
+ ('image/webp', 'webp'), ('image/avif', 'avif'), ('image/bmp', 'bmp'), ('image/x-icon', 'icon'),
+ ('image/vnd.microsoft.icon', 'icon'), ('application/octet-stream', 'octet-stream'),
+ ('binary/octet-stream', 'binary-octet-stream'), ('chemical/x-xyz', 'chemical-xyz'),
+ ('image/xyz', 'image-xyz'), ('application/xyz', 'application-xyz'), ('application/x-xyz', 'application-x-xyz'),
+ ('text/plain', 'text'), ('text/html', 'html'), ('application/json', 'json'),
+ ('application/problem+json', 'json'), ('application/SECRET', 'other'),
+ (None, 'missing'), ({'SECRET': 'not a MIME'}, 'invalid'), ('SECRET\r\nvalue', 'invalid'),
+ ('', 'invalid'), ('image/png,image/jpeg', 'invalid'), ('  IMAGE/JPEG; SECRET=value  ', 'jpeg'),
+]:
+ assert module.mime_category(value) == expected
+ assert module.mime_category(value) in module.MIME_CATEGORIES
+assert module.content_type_category({}) == 'missing'
+assert module.content_type_category({'Content-Type': 'image/jpeg', 'content-type': 'image/jpeg'}) == 'duplicate'
+assert module.content_type_category({'Content-Type': None}) == 'invalid'
+assert module.content_type_category({'CoNtEnT-TyPe': 'image/png; SECRET=value', 'Set-Cookie': 'SECRET'}) == 'png'
+class App:
+ def __init__(self): self.routes = {}
+ def post(self, path):
+  def register(fn): self.routes[path] = fn; return fn
+  return register
+app = App()
+module.register(app)
+endpoint = app.routes['/webview/image-response']
+for index, (cdp, headers, expected_cdp, expected_header, expected_reason) in enumerate([
+ ('chemical/x-xyz', {'Content-Type': 'chemical/x-xyz'}, 'chemical-xyz', 'chemical-xyz', 'image-response-mime'),
+ ('application/octet-stream', {'Content-Type': 'image/jpeg'}, 'octet-stream', 'jpeg', 'image-response-mime'),
+ ('image/jpg', {'Content-Type': 'image/jpg'}, 'jpg', 'jpg', 'image-response-mime'),
+ ('image/webp', {}, 'webp', 'missing', 'image-content-type-missing'),
+ ('image/webp', {'Content-Type': 'image/png'}, 'webp', 'png', 'image-content-type-mismatch'),
+ ('image/webp', {'Content-Type': 'image/webp', 'content-type': 'image/webp'}, 'webp', 'duplicate', 'image-content-type-duplicate'),
+ ('image/webp', {'Content-Type': 'SECRET\nvalue'}, 'webp', 'invalid', 'image-content-type-invalid'),
+ ('application/SECRET', {'Content-Type': 'text/plain; secret=SECRET'}, 'other', 'text', 'image-response-mime'),
+]):
+ entries = events()
+ message = json.loads(entries[1]['message'])
+ message['message']['params']['response'].update(mimeType=cdp, headers=headers)
+ entries[1]['message'] = json.dumps(message)
+ active_driver = Driver([[], entries])
+ bottle.request.json = {'session': 'mime-category-' + str(index), 'url': url, 'timeout': 1}
+ result = endpoint()
+ assert result == {'error': 'Anonymous browser image capture failed', 'code': 'operation',
+  'phase': 'image-capture', 'stage': 'observation', 'reason': expected_reason,
+  'cdpMimeCategory': expected_cdp, 'contentTypeCategory': expected_header}, result
+ assert bottle.response.status == 502
+ assert active_driver.navigations == [page]
+ assert [cmd for cmd, _ in active_driver.commands] == ['Network.enable']
+ assert 'SECRET' not in json.dumps(result)
 `);
 });

@@ -41,9 +41,12 @@ try {
   finally { void reader.cancel().catch(() => {}); }
   console.log(`DIAGNOSTIC_RESULT ${JSON.stringify({ outcome: 'cover-bytes-passed-not-full-suite', nativeCalls, captures })}`);
 } catch (error) {
-  // Match only the host's fixed enum diagnostic envelope, never arbitrary errors.
-  const match = /^Live-test WebView operation failed \(([a-z-]+): ([a-z-]+)(?:; stage: ([a-z-]+))?\); no upstream details are logged$/.exec(error?.message ?? '');
-  if (match) console.log(`CAPTURE_DIAGNOSTIC ${JSON.stringify(safeWebViewDiagnostic({ phase: match[1], reason: match[2], stage: match[3] }))}`);
+  // The host attaches only its sanitized enum payload. Sanitize again here;
+  // never echo arbitrary error messages or parse provider-controlled text.
+  try {
+    const diagnostic = Object.getOwnPropertyDescriptor(error ?? {}, 'liveTestDiagnostic')?.value;
+    if (diagnostic) console.log(`CAPTURE_DIAGNOSTIC ${JSON.stringify(safeWebViewDiagnostic(diagnostic))}`);
+  } catch { /* Unknown errors remain the fixed stage-only result below. */ }
   console.log(`DIAGNOSTIC_RESULT ${JSON.stringify({ stage, outcome: 'failed-not-full-suite', nativeCalls, captures })}`);
   process.exitCode = 1;
 } finally {

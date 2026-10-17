@@ -106,7 +106,11 @@ export function safeWebViewDiagnostic(result) {
     'image-hero-identity', 'image-hero-changed', 'image-body-unavailable', 'image-capture-timeout'].includes(result?.reason) ? result.reason : 'unknown';
   const stage = ['setup', 'validation', 'session-acquisition', 'initial-safety', 'network-enable', 'initial-log',
     'navigation', 'page-safety', 'observation', 'hero', 'body-read', 'final-verification', 'body-validation'].includes(result?.stage) ? result.stage : 'unknown';
-  return { phase, reason, stage };
+  const media = ['jpeg', 'jpg', 'png', 'gif', 'webp', 'avif', 'bmp', 'icon', 'octet-stream', 'binary-octet-stream',
+    'chemical-xyz', 'image-xyz', 'application-xyz', 'application-x-xyz', 'text', 'html', 'json', 'other', 'missing', 'duplicate', 'invalid'];
+  const cdpMimeCategory = media.includes(result?.cdpMimeCategory) ? result.cdpMimeCategory : 'unknown';
+  const contentTypeCategory = media.includes(result?.contentTypeCategory) ? result.contentTypeCategory : 'unknown';
+  return { phase, reason, stage, cdpMimeCategory, contentTypeCategory };
 }
 
 export function createManaTestWebView({ solverURL = process.env.FLARESOLVERR_URL, fetchImpl = globalThis.fetch } = {}) {
@@ -134,9 +138,12 @@ export function createManaTestWebView({ solverURL = process.env.FLARESOLVERR_URL
         const reason = ['insecure-capability', 'internal-page', 'certificate-marker', 'tls-navigation-error'].includes(result.reason) ? ` (${result.reason})` : '';
         stopped = new Error(`Browser security warning${reason}; WebView live checks stopped`);
       }
-      const { phase, reason, stage } = safeWebViewDiagnostic(result);
-      const diagnostic = result?.code === 'operation' ? ` (${phase}: ${reason}${phase === 'image-capture' ? `; stage: ${stage}` : ''})` : '';
-      throw stopped ?? new Error(`Live-test WebView operation failed${diagnostic}; no upstream details are logged`);
+      const safe = safeWebViewDiagnostic(result), { phase, reason, stage, cdpMimeCategory, contentTypeCategory } = safe;
+      const diagnostic = result?.code === 'operation' ? ` (${phase}: ${reason}${phase === 'image-capture' ? `; stage: ${stage}; mime: ${cdpMimeCategory}; content-type: ${contentTypeCategory}` : ''})` : '';
+      if (stopped) throw stopped;
+      const failure = new Error(`Live-test WebView operation failed${diagnostic}; no upstream details are logged`);
+      if (result?.code === 'operation') Object.defineProperty(failure, 'liveTestDiagnostic', { value: safe });
+      throw failure;
     }
     return result;
   }
