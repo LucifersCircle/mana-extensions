@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { performance } from 'node:perf_hooks';
-import { createManaRuntime, redactURL, redactText } from './mana-runtime.mjs';
+import { createManaRuntime, installManaHTTP, redactURL, redactText } from './mana-runtime.mjs';
 import { testKagane } from './kagane-live-tests.mjs';
 import { testHijala } from './hijala-live-tests.mjs';
 import { createManaTestTransport } from './mana-test-browser.mjs';
@@ -27,6 +27,14 @@ let marumaruDetailHTML;
 const testWebViews = createManaTestWebView({ onDocument: ({ url, html }) => {
   if (url === 'https://marumaru105.com/manhwa/17155') marumaruDetailHTML = html;
 } });
+const sourceHosts = new Map();
+function wrapSource(context) {
+  const prelude = Object.getOwnPropertyDescriptor(context, '__manaSerializedFunctionPrelude')?.value;
+  assert(typeof prelude === 'string' && prelude.length > 0, 'Built Mana bundle lacks its serialized function helpers');
+  let host = sourceHosts.get(context);
+  if (!host) { host = installManaHTTP(context); sourceHosts.set(context, host); }
+  return host.wrapSource(testWebViews.wrapSource(new context.Target(), { serializedFunctionPrelude: prelude }));
+}
 const manifest = JSON.parse(readFileSync('dist/sources.json', 'utf8'));
 const nonempty = (value, label) => assert(typeof value === 'string' && value.trim(), `${label} is empty`);
 const url = (value) => assert(['http:', 'https:'].includes(new URL(value).protocol), `Invalid URL: ${value}`);
@@ -56,8 +64,10 @@ async function assertVortexGenres(contentId, content) {
     'Detail genres differ from the live source, including legitimately untagged titles');
 }
 
-async function image(source, imageUrl) {
+async function image(source, imageUrl, origin) {
+  assert(['cover', 'page'].includes(origin), 'Image origin must be explicit');
   const response = await fetchTestImage(source, imageUrl, {
+    origin,
     fetchImpl: testTransport.fetch,
     captureCoverImage: testWebViews.captureCoverImage,
     log: (transport, status, target) => console.log(`IMAGE ${transport} ${status} ${redactURL(target)}`),
@@ -122,7 +132,7 @@ for (const name of names) {
     assert.equal(entries.length, 1, 'Source must have one unique built manifest entry');
     context = vm.createContext(createManaRuntime({ fetchImpl: testTransport.fetch, webViewPage: testWebViews.WebViewPage, logger: (request) => { requests.push(request); console.log(`[http] ${request.status ?? 'ERROR'} ${request.url} (${request.durationMs}ms)${request.error ? `: ${request.error}` : ''}`); } }));
     vm.runInContext(readFileSync(`dist/sources/${name}.mana`, 'utf8'), context, { timeout: 10_000 });
-    source = testWebViews.wrapSource(new context.Target());
+    source = wrapSource(context);
     assert.equal(source.info.id, name);
     nonempty(source.info.version, 'Version');
     assert.equal(source.info.version, entries[0].version, 'Bundle version differs from built manifest');
@@ -132,7 +142,7 @@ for (const name of names) {
     let attempted = 0;
     const closed = vm.createContext(createManaRuntime({ logger: () => {}, fetchImpl: async () => { attempted++; throw new Error('Unexpected request from malformed native policy'); } }));
     vm.runInContext(readFileSync(`dist/sources/${name}.mana`, 'utf8'), closed, { timeout: 10_000 });
-    const target = new closed.Target();
+    const target = wrapSource(closed);
     for (const allowedContentRatings of [null, '1', 1, {}, { includes: () => true }, [1, '3'], [1, 99], [1, NaN]]) {
       const invalid = { allowedContentRatings };
       for (const run of [() => target.search({ page: 1, context: invalid }), () => target.getContent('unread', invalid),
@@ -144,13 +154,13 @@ for (const name of names) {
   });
   if (name !== 'VortexScans') {
     if (name === 'Kagane') {
-      await testKagane({ source, check, referenceFetch: testTransport.fetch, highlights, searchResult, image, requests, freshSource: () => testWebViews.wrapSource(new context.Target()) });
+      await testKagane({ source, check, referenceFetch: testTransport.fetch, highlights, searchResult, image, requests, freshSource: () => wrapSource(context) });
     } else if (name === 'Hijala') {
-      await testHijala({ source, check, nativeStore: context.ObjectStore, highlights, searchResult, image, requests, freshSource: () => testWebViews.wrapSource(new context.Target()), referenceFetch: testTransport.fetch });
+      await testHijala({ source, check, nativeStore: context.ObjectStore, highlights, searchResult, image, requests, freshSource: () => wrapSource(context), referenceFetch: testTransport.fetch });
     } else if (name === 'MangaSushi') {
-      await testMangaSushi({ source, check, nativeStore: context.ObjectStore, highlights, searchResult, image, requests, freshSource: () => testWebViews.wrapSource(new context.Target()) });
+      await testMangaSushi({ source, check, nativeStore: context.ObjectStore, highlights, searchResult, image, requests, freshSource: () => wrapSource(context) });
     } else if (name === 'ManhwaNex') {
-      await testManhwaNex({ source, check, nativeStore: context.ObjectStore, requests, freshSource: () => testWebViews.wrapSource(new context.Target()) });
+      await testManhwaNex({ source, check, nativeStore: context.ObjectStore, requests, freshSource: () => wrapSource(context) });
     } else if (name === 'Marumaru') {
       await testMarumaru({ source, check, searchResult, image, renderedDetail: () => marumaruDetailHTML });
     } else if (name === 'MangaStash') {
@@ -182,7 +192,7 @@ for (const name of names) {
     assert.equal(content.title, catalog.results[0].title);
     url(content.webUrl); url(content.cover);
     await assertVortexGenres(catalog.results[0].id, content);
-    await image(source, content.cover);
+    await image(source, content.cover, 'cover');
   });
   await check('Search form exposes live genres and sort options', async () => {
     form = await source.getSearchForm();
@@ -234,7 +244,7 @@ for (const name of names) {
   }
   let popularEvidence;
   await check('Popular Today uses source-published originals with one homepage request', async () => {
-    const cold = new context.Target(), original = cold.api.getText.bind(cold.api);
+    const cold = wrapSource(context), original = cold.api.getText.bind(cold.api);
     cold.api.getText = async (...args) => { const html = await original(...args); popularEvidence = html; return html; };
     const before = requests.length;
     const result = await cold.resolvePageSection({ id: 'home' }, 'popular-today');
@@ -266,7 +276,7 @@ for (const name of names) {
     assert(popularEvidence, 'Missing live homepage provenance');
     const $ = load(popularEvidence), section = $('h1,h2,h3,h4,p').filter((_, node) => $(node).text().trim() === 'Popular Today').first().closest('section');
     const anchor = section.find('a[href^="/series/"]').first(), href = anchor.attr('href'), current = anchor.find('img[src]').first().attr('src');
-    const baseline = new context.Target(); baseline.api.getText = async () => popularEvidence;
+    const baseline = wrapSource(context); baseline.api.getText = async () => popularEvidence;
     const first = (await baseline.resolvePageSection({ id: 'home' }, 'popular-today')).items[0];
     assert(first && first.cover !== current);
     const noOriginals = popularEvidence.replace(/featuredImage:"(?:\\.|[^"\\])*"/g, 'featuredImage:null');
@@ -288,7 +298,7 @@ for (const name of names) {
       const img = popular.find(`a[href="${href}"]`).first().find('img[src]').first();
       assert.equal(img.attr('src'), current, 'Fallback mutation must target the original Popular Today image');
       img.removeAttr('data-fallback-src'); if (value !== undefined) img.attr('data-fallback-src', value);
-      const cold = new context.Target(); cold.api.getText = async () => page.html();
+      const cold = wrapSource(context); cold.api.getText = async () => page.html();
       const before = requests.length;
       const result = await cold.resolvePageSection({ id: 'home' }, 'popular-today');
       assert.equal(result.items.find((item) => item.id === first.id)?.cover, expected, label);
@@ -301,17 +311,17 @@ for (const name of names) {
       ['unrelated serialized asset', JSON.stringify(first.cover.replace(/[^/]+$/, 'unrelated.png')), current]
     ]) {
       const mutated = popularEvidence.replaceAll(`featuredImage:${JSON.stringify(first.cover)}`, `featuredImage:${replacement}`);
-      const cold = new context.Target(); cold.api.getText = async () => mutated;
+      const cold = wrapSource(context); cold.api.getText = async () => mutated;
       assert.equal((await cold.resolvePageSection({ id: 'home' }, 'popular-today')).items.find((item) => item.id === first.id)?.cover, expected, label);
     }
   });
   await check('Search and detail retain source originals including octet-stream WebP bytes', async () => {
-    const cold = new context.Target(), client = cold.api.client, original = client.request, evidence = [];
+    const cold = wrapSource(context), client = cold.api.client, original = client.request, evidence = [];
     const query = 'Dao of the Bizarre Immortal', slug = 'dao-of-the-bizarre-immortal', id = `289:${slug}`;
     // Capture the same native response bytes before the bundle parses them, not an unrelated homepage snapshot.
     client.request = async function (...args) {
       const response = await original.apply(this, args);
-      evidence.push({ url: response.request.url, data: response.data });
+      evidence.push({ url: response.request.url, data: await response.text() });
       return response;
     };
     const before = requests.length;
@@ -373,14 +383,14 @@ for (const name of names) {
   });
   await check('First and last chapter images load with source headers', async () => {
     assert(pages?.length, 'No chapter pages to load');
-    for (const page of [pages[0], ...(pages.length > 1 ? [pages.at(-1)] : [])]) await image(source, page.url);
+    for (const page of [pages[0], ...(pages.length > 1 ? [pages.at(-1)] : [])]) await image(source, page.url, 'page');
   });
   await check('Series deep link resolves the same live content', async () => {
     const result = await source.handleURL(content.webUrl);
     assert.equal(result?.content?.id, catalog.results[0].id);
   });
-  await testVortexSynopsis({ check, requests, post: detailPost, freshSource: () => testWebViews.wrapSource(new context.Target()) });
-  await testVortexRatings({ source, check, requests, freshSource: () => testWebViews.wrapSource(new context.Target()) });
+  await testVortexSynopsis({ check, requests, post: detailPost, freshSource: () => wrapSource(context) });
+  await testVortexRatings({ source, check, requests, freshSource: () => wrapSource(context) });
   } catch (error) {
     // Keep executed checks, but never present an aborted suite as a complete report.
     suiteError = `Source suite aborted before completion; remaining checks were not run.\n${redactText(error?.stack ?? String(error))}`;
@@ -395,7 +405,7 @@ for (const name of names) {
   }
 }
 } finally {
-  try { await Promise.all([testTransport.close(), testWebViews.close()]); }
+  try { await Promise.all([testTransport.close(), testWebViews.close(), ...[...sourceHosts.values()].map(host => host.close())]); }
   catch (error) { console.error(redactText(error.message)); process.exitCode = 1; }
 }
 mkdirSync('bundles', { recursive: true });

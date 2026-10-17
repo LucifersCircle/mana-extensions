@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { load } from 'cheerio';
 import { coverDimensions } from './mangasushi-live-tests.mjs';
+import { runTestOperation, authorizeTestImage, withSourceTransport } from './mana-test-images.mjs';
 
 // All source behavior below runs through the real built native Mana bundle.
 // Negative cases mutate a fresh live response in memory, never saved fixtures.
@@ -25,7 +26,7 @@ export async function testHijala({ source, check, highlights, searchResult, imag
     assert.match(footer, /Suggestive compatibility/); assert.match(footer, /not a four-category/);
     assert(nativeStore, 'Missing actual native host store for migration test');
     await nativeStore.set('Hijala.preferences', { excludeNSFW: true, hidePaid: false, types: ['MANGA'], sections: ['latest'], excludedGenres: ['4'] });
-    const migrated = freshSource(), saved = await migrated.preferences(); assert.equal(saved.excludeNSFW, false); assert.equal(saved.hidePaid, false); assert.deepEqual(Array.from(saved.types), ['MANGA']); assert.deepEqual(Array.from(saved.excludedGenres), ['4']);
+    const migrated = freshSource(), saved = await runTestOperation(migrated, () => migrated.preferences()); assert.equal(saved.excludeNSFW, false); assert.equal(saved.hidePaid, false); assert.deepEqual(Array.from(saved.types), ['MANGA']); assert.deepEqual(Array.from(saved.excludedGenres), ['4']);
     await nativeStore.remove('Hijala.preferences');
     await setting('excludeNSFW', true); assert.equal((await nativeStore.get('Hijala.preferences')).ratingPreferenceVersion, 1);
     assert.equal((await field('excludeNSFW', freshSource())).value, true);
@@ -150,17 +151,26 @@ export async function testHijala({ source, check, highlights, searchResult, imag
     reader = await source.getChapterData('mimosa', 'chapter-56'); assert(reader.pages.length >= 10);
     assert.equal(new Set(reader.pages.map((item) => item.url)).size, reader.pages.length);
     for (const index of [...new Set([0, Math.floor(reader.pages.length / 2), reader.pages.length - 1])]) {
-      assert.equal(typeof reader.pages[index].url, 'string'); await image(source, reader.pages[index].url);
+      assert.equal(typeof reader.pages[index].url, 'string'); await image(source, reader.pages[index].url, 'page');
     }
   });
   await check('A second real public chapter reads actual image bytes too', async () => {
     const available = chapters.find((item) => item.chapterId !== 'chapter-56'); assert(available);
-    const pages = await source.getChapterData('mimosa', available.chapterId); assert(pages.pages.length); await image(source, pages.pages[0].url);
+    const pages = await source.getChapterData('mimosa', available.chapterId); assert(pages.pages.length); await image(source, pages.pages[0].url, 'page');
   });
   await check('Source headers are attached to native metadata and image requests', async () => {
-    const request = await source.willRequestImage(reader.pages[0].url); assert.equal(request.headers.Referer, `${domain}/`); assert.equal(request.headers.Origin, domain); assert.match(request.headers.Accept, /image/);
-    assert(source.api.client, 'Missing native network client');
-    assert.equal(source.api.client.builder.headers.Referer, `${domain}/`); assert.equal(source.api.client.builder.headers.Origin, domain);
+    for (const [factory, origin] of [['getCoverTransport', 1], ['getPageTransport', 2]]) {
+      const client = source[factory]({ url: reader.pages[0].url, origin });
+      assert(client && typeof client.then !== 'function', 'Image transport factories must be synchronous');
+    }
+    const request = await authorizeTestImage(source, reader.pages[0].url, { origin: 'page' });
+    const coverRequest = await authorizeTestImage(source, content.cover, { origin: 'cover' });
+    assert.equal(new Headers(coverRequest.headers).get('referer'), `${domain}/`); assert.equal(new Headers(request.headers).get('referer'), `${domain}/`); assert.equal(new Headers(request.headers).get('origin'), domain); assert.match(new Headers(request.headers).get('accept'), /image/);
+    const seen = [];
+    const capture = (request) => { seen.push(request.headers.toJSON()); return request; };
+    source.api.client.addRequestInterceptor(capture);
+    try { await runTestOperation(source, () => source.api.text(`${domain}/series/`)); } finally { source.api.client.removeRequestInterceptor(capture); }
+    assert.equal(seen.length, 1); assert.equal(new Headers(seen[0]).get('referer'), `${domain}/`); assert.equal(new Headers(seen[0]).get('origin'), domain);
   });
   await check('Every current native discovery section resolves without stale Hot or fabricated genre cards', async () => {
     const cold = freshSource(), start = requests.length, original = cold.api.text.bind(cold.api);
@@ -227,7 +237,7 @@ export async function testHijala({ source, check, highlights, searchResult, imag
   });
   await check('A genuine live decimal chapter retains its number and reads actual image bytes', async () => {
     assert(largeTitle); const all = await source.getChapters(largeTitle), decimal = all.find((chapter) => !Number.isInteger(chapter.number)); assert(decimal, 'No real public decimal chapter found');
-    const pages = await source.getChapterData(largeTitle, decimal.chapterId); assert(pages.pages.length); await image(source, pages.pages[0].url);
+    const pages = await source.getChapterData(largeTitle, decimal.chapterId); assert(pages.pages.length); await image(source, pages.pages[0].url, 'page');
     console.log(`REAL DECIMAL READER ${largeTitle}/${decimal.chapterId} number${decimal.number} ${pages.pages.length} pages`);
   });
   await check('Deep links preserve encoded IDs and reader links safely resolve to native series', async () => {
@@ -366,14 +376,14 @@ export async function testHijala({ source, check, highlights, searchResult, imag
     assert(requests.slice(start).some((request) => request.url.includes('/api/query?')));
   });
   await check('Ordinary forbidden responses do not become Cloudflare or cross an access boundary', async () => {
-    const target = freshSource(), original = target.api.client.get.bind(target.api.client);
-    target.api.client.get = async (url) => ({ ...await original(url), status: 403, headers: {} });
-    await assert.rejects(target.getContent('mimosa'), (error) => error.name !== 'CloudflareError' && /HTTP 403/.test(error.message));
+    const target = freshSource();
+    await assert.rejects(withSourceTransport(target, async () => new Response('Forbidden', { status: 403 }), () => target.getContent('mimosa')),
+      (error) => error.name !== 'CloudflareError' && /HTTP 403/.test(error.message));
   });
-  await check('Verified challenge responses use the source resolution URL', async () => {
-    const target = freshSource(), original = target.api.client.get.bind(target.api.client);
-    target.api.client.get = async (url) => ({ ...await original(url), status: 403, headers: { 'cf-mitigated': 'challenge' } });
-    await assert.rejects(target.getContent('mimosa'), (error) => error.name === 'CloudflareError' && error.resolutionURL === domain);
+  await check('Verified SDK challenges retain their actual request resolution URL', async () => {
+    const target = freshSource(); let requested;
+    await assert.rejects(withSourceTransport(target, async (url) => { requested = String(url); return new Response('Challenge', { status: 403, headers: { 'cf-mitigated': 'challenge' } }); }, () => target.getContent('mimosa')),
+      (error) => error.name === 'CloudflareError' && error.resolutionURL === requested);
   });
   await check('No downloaded script execution or cross-series/invalid chapter fallback occurs', async () => {
     const target = transformed((text, url) => url === `${domain}/series/mimosa/chapter-56` ? replaceRequired(text, 'requiresProtectedFetch:!1', 'requiresProtectedFetch:(globalThis.__hijalaExecuted=true)') : text);
@@ -433,8 +443,8 @@ export async function testHijalaPagination({ source, check, freshSource, publicD
   const preference = async (target, id, value) => { const field = (await target.getPreferenceMenu()).sections.flatMap((section) => section.children ?? []).find((item) => item.id === id); assert(field?.didChange); await field.didChange(value); };
 
   await check('Pagination mutation seed is captured once from current public metadata', async () => {
-    archive = publicData?.archive ?? await source.api.text(`${domain}/series/`);
-    livePosts = publicData?.posts ?? JSON.parse(await source.api.text(`${api}/api/query?page=1&perPage=100&orderBy=lastChapterAddedAt&orderDirection=desc`)).posts;
+    archive = publicData?.archive ?? await runTestOperation(source, () => source.api.text(`${domain}/series/`));
+    livePosts = publicData?.posts ?? JSON.parse(await runTestOperation(source, () => source.api.text(`${api}/api/query?page=1&perPage=100&orderBy=lastChapterAddedAt&orderDirection=desc`))).posts;
     const safe = livePosts.filter(hijalaSafePost), count = Math.floor(Math.min(60, safe.length) / 20) * 20;
     assert(count >= 40, 'Need at least forty current safe source records for two real-size pages');
     pool = safe.slice(0, count); assert.equal(new Set(pool.map((post) => post.slug)).size, pool.length);

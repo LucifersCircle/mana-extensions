@@ -136,7 +136,7 @@ try {
   if (location.href !== payload.url) return fail('document-identity-changed');
   // The callback is the actual compiled source function, not a replacement
   // parser. Evaluate it in this page's JS realm with only JSON bridge arguments.
-  const fn = (0, eval)('(' + payload.script + ')');
+  const fn = (0, eval)('(function(){\n' + (payload.prelude ?? '') + '\nreturn (' + payload.script + ');\n})()');
   if (typeof fn !== 'function') return fail('callback-invalid');
   let value;
   try { value = fn(...payload.args); } catch (error) { return callbackFailure(error); }
@@ -155,8 +155,9 @@ try {
 def evaluate(driver, payload):
     assert_document_url(payload['url'])
     seconds = operation_timeout(payload['timeout'])
-    script, args = payload['script'], payload['args']
-    if not isinstance(script, str) or len(script.encode()) > 128 * 1024 or not isinstance(args, list):
+    script, args, prelude = payload['script'], payload['args'], payload.get('prelude', '')
+    if (not isinstance(script, str) or len(script.encode()) > 128 * 1024 or not isinstance(args, list)
+            or not isinstance(prelude, str) or len(prelude.encode()) > 128 * 1024):
         raise ValueError('Unsupported WebView evaluation')
     if len(json.dumps(args, allow_nan=False).encode()) > MAX_JSON:
         raise ValueError('WebView arguments exceed limit')
@@ -249,4 +250,4 @@ def register(app):
 
     @app.post('/webview/evaluate')
     def run_evaluation():
-        return handle({'session', 'url', 'script', 'args', 'timeout'}, evaluate, 'evaluate')
+        return handle({'session', 'url', 'script', 'args', 'prelude', 'timeout'}, evaluate, 'evaluate')

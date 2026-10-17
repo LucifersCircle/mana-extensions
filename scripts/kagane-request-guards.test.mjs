@@ -3,8 +3,8 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { runInNewContext } from 'node:vm'
 import test from 'node:test'
-import { assertPublicKaganeRequest, assertReadOnlyKaganePost, createManaRuntime } from './mana-runtime.mjs'
-import { assertKaganeTaxonomyCache } from './kagane-live-tests.mjs'
+import { assertPublicKaganeRequest, assertReadOnlyKaganePost } from './mana-runtime.mjs'
+import { assertKaganeTaxonomyCache, createKaganeHTTPFixture } from './kagane-live-tests.mjs'
 
 const origin = 'https://kagane.org'
 const searchURL = `${origin}/api/v2/search/series?page=0&size=50`
@@ -152,21 +152,32 @@ print(json.dumps(results))
 
 test('finalized range requests fail closed before transport and accepted bodies serialize unchanged', async () => {
     const sent = []
-    const client = new (createManaRuntime({ logger: () => {}, fetchImpl: async (url, init) => {
+    const { sdk, host } = createKaganeHTTPFixture(async (url, init) => {
         sent.push({ url: String(url), ...init })
         return new Response('{}', { headers: { 'content-type': 'application/json' } })
-    } }).NetworkClient)()
-    for (const { request, allowed } of fixtures) {
-        if (!allowed && request.method === 'POST') await assert.rejects(client.request(request))
+    })
+    const client = new sdk.HttpClient()
+    for (const { name, request, allowed } of fixtures) {
+        // The official SDK drops a fragment before transport. The raw guard
+        // rejects it above; below we separately verify its normalized wire URL.
+        if (!allowed && request.method === 'POST' && request.url !== `${searchURL}#fragment`) {
+            const body = typeof request.body === 'string' ? sdk.Body.text(request.body, 'application/json') : sdk.Body.json(request.body)
+            await assert.rejects(host.runOperation(() => client.request({ url: request.url, method: sdk.HttpMethod.Post, body })), undefined, name)
+        }
     }
-    await assert.rejects(client.request({ ...search({ current_books: { min: 0 } }), params: { purchase: true } }))
-    await assert.rejects(client.request({ ...search({ current_books: { min: 0 } }), params: { page: 1 } }))
+    const probeBody = sdk.Body.json({ current_books: { min: 0 } })
+    await assert.rejects(host.runOperation(() => client.request({ url: searchURL, method: sdk.HttpMethod.Post, body: probeBody }, { params: { purchase: true } })))
+    await assert.rejects(host.runOperation(() => client.request({ url: searchURL, method: sdk.HttpMethod.Post, body: probeBody }, { params: { page: 1 } })))
     assert.equal(sent.length, 0)
     const body = { current_books: { min: 0, max: 2147483647 }, start_year: { min: 1, max: 9999 } }
-    await client.request(search(body))
+    await host.runOperation(() => client.post(searchURL, sdk.Body.json(body)).then(response => response.text()))
     assert.equal(sent.length, 1)
     assert.equal(sent[0].body, JSON.stringify(body))
     assert.equal(sent[0].url, searchURL)
+    await host.runOperation(() => client.post(`${searchURL}#fragment`, sdk.Body.json(body)).then(response => response.text()))
+    assert.equal(sent.length, 2)
+    assert.equal(sent[1].url, searchURL, 'Only the exact fragment-free public URL reaches the bridge')
+    assert.equal(sent[1].body, JSON.stringify(body))
 })
 
 test('taxonomy cache oracle distinguishes one evidenced recovery from redundant or failed loads', async () => {

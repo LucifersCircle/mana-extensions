@@ -398,7 +398,8 @@ void test("live sweeps use schedule/manual and PR events while pushes retain sta
   assert.match(publish, /if: github\.ref == 'refs\/heads\/generic'/);
   assert.match(publish, /run: npm run test:report\n      - run: npm test/);
   assert.match(publish, /run: npm run typecheck\n      - run: npm run lint/);
-  assert.match(publish, /run: npm run build -- --output dist/);
+  assert.match(publish, /run: \|\n          npm run build -- --output dist\n          npm run verify:bundles/);
+  assert.match(live, /          npm run build -- --output dist\n          npm run verify:bundles/);
   assert.doesNotMatch(publish, /test:extensions/);
 });
 

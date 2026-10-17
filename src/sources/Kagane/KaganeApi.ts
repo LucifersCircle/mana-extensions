@@ -1,8 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2026 Inkdex */
 /* Chapter traversal adapted from LucifersCircle/pirate.vodka-extensions (Inkdex). */
-import { NetworkClientBuilder,
-    NetworkResponse } from '@mana-app/types'
+import { Body,
+    CloudflareError,
+    HttpClient,
+    HttpMethod,
+    HttpResponse,
+    JsonValue } from '@mana-app/types'
 import { API,
     Book,
     Challenge,
@@ -24,10 +28,9 @@ const publicTaxonomy = new Map<string, CacheEntry>()
 const publicTaxonomyRequests = new Map<string, Promise<unknown>>()
 
 export class KaganeApi {
-    private readonly client = new NetworkClientBuilder().setRateLimit(3, 1).setTimeout(30_000)
-        .setStatusValidator(() => true)
+    private readonly client = new HttpClient().setRateLimit(3, 1000).setTimeoutMs(30_000)
         .addHeader('Accept', 'application/json').addHeader('Content-Type', 'application/json')
-        .addHeader('Origin', DOMAIN).addHeader('Referer', `${DOMAIN}/`).build()
+        .addHeader('Origin', DOMAIN).addHeader('Referer', `${DOMAIN}/`)
     private readonly cache = new Map<string, CacheEntry>()
     private readonly inflight = new Map<string, Promise<unknown>>()
     private generation = 0
@@ -80,11 +83,21 @@ export class KaganeApi {
         return request
     }
 
-    private async response(url: string, body?: Record<string, unknown>, headers?: Record<string, string>): Promise<NetworkResponse> {
-        const response = await this.client.request({ url, method: body === undefined ? 'GET' : 'POST', ...(body === undefined ? {} : { body }), headers })
-        const type = String(Object.entries(response.headers ?? {}).find(([key]) => key.toLowerCase() === 'content-type')?.[1] ?? '')
-        const mitigated = Object.entries(response.headers ?? {}).some(([key, value]) => key.toLowerCase() === 'cf-mitigated' && value === 'challenge')
-        if (mitigated || ((response.status === 403 || response.status === 503) && !type.includes('application/json') && /cf-chl-|_cf_chl_opt|Just a moment|cf-browser-verification/i.test(response.data))) {
+    private async response(url: string, body?: Record<string, JsonValue>, headers?: Record<string, string>): Promise<HttpResponse> {
+        let response: HttpResponse
+        try {
+            response = await this.client.request({ url, method: body === undefined ? HttpMethod.Get : HttpMethod.Post, ...(body === undefined ? {} : { body: Body.json(body) }) }, { headers })
+        } catch (error) {
+            // The SDK detects positive challenges before response interceptors.
+            if (error instanceof CloudflareError) {
+                this.token = ''
+                this.expiry = 0
+            }
+            throw error
+        }
+        const type = response.headers.get('content-type') ?? ''
+        const mitigated = response.headers.get('cf-mitigated') === 'challenge'
+        if (mitigated || ((response.status === 403 || response.status === 503) && !type.includes('application/json') && /cf-chl-|_cf_chl_opt|Just a moment|cf-browser-verification/i.test(await response.text()))) {
             this.token = ''
             this.expiry = 0
             throw new CloudflareError(`${DOMAIN}/`)
@@ -92,17 +105,17 @@ export class KaganeApi {
         return response
     }
 
-    private parse<T>(response: NetworkResponse): T {
+    private async parse<T>(response: HttpResponse): Promise<T> {
         // Never include token-bearing URLs or remote response bodies in errors.
         if (response.status < 200 || response.status >= 300) throw new Error(`Kagane request failed (HTTP ${response.status})`)
-        try { return JSON.parse(response.data) as T } catch { throw new Error('Kagane returned invalid JSON') }
+        try { return await response.json<T>() } catch { throw new Error('Kagane returned invalid JSON') }
     }
 
-    private async json<T>(path: string, body?: Record<string, unknown>): Promise<T> {
+    private async json<T>(path: string, body?: Record<string, JsonValue>): Promise<T> {
         return this.parse<T>(await this.response(`${API}${path}`, body))
     }
 
-    search(body: Record<string, unknown>, page: number, size: number, sort: string, exactMatch = false): Promise<SearchResponse> {
+    search(body: Record<string, JsonValue>, page: number, size: number, sort: string, exactMatch = false): Promise<SearchResponse> {
         const path = `/search/series?page=${page - 1}&size=${size}${sort ? `&sort=${encodeURIComponent(sort)}` : ''}${exactMatch ? '&exact_match=true' : ''}`
         return this.cached(`search:${path}:${JSON.stringify(body)}`, 30_000, async () => {
             const result = await this.json<SearchResponse>(path, body)
@@ -199,7 +212,7 @@ export class KaganeApi {
         const request = (async () => {
             const warmup = await this.response(`${DOMAIN}/`)
             if (warmup.status >= 400) throw new Error(`Kagane session bootstrap failed (HTTP ${warmup.status})`)
-            const result = this.parse<{ token: string, exp: number }>(await this.response(`${DOMAIN}/api/integrity`, {}))
+            const result = await this.parse<{ token: string, exp: number }>(await this.response(`${DOMAIN}/api/integrity`, {}))
             if (!result || typeof result.token !== 'string' || !result.token || !Number.isFinite(result.exp) || result.exp * 1000 <= Date.now()) throw new Error('Kagane returned an invalid reader bootstrap')
             if (generation !== this.generation) throw new Error('Kagane settings changed; refresh to continue')
             this.token = result.token
@@ -218,12 +231,12 @@ export class KaganeApi {
                 const response = await this.response(`${API}/books/${chapterId}?is_datasaver=${dataSaver}`, {}, { 'x-integrity-token': token })
                 if ([401, 403, 507].includes(response.status) && !force) {
                     // Refresh only the public session bootstrap, never a login or paid entitlement.
-                    if (/login|sign.?in|subscription|premium|purchase|payment|paid|permission/i.test(response.data)) break
+                    if (/login|sign.?in|subscription|premium|purchase|payment|paid|permission/i.test(await response.text())) break
                     this.token = ''
                     this.expiry = 0
                     continue
                 }
-                const result = this.parse<Challenge>(response)
+                const result = await this.parse<Challenge>(response)
                 const pages = result?.manifest?.pages
                 if (!result || typeof result.access_token !== 'string' || !result.access_token || !Array.isArray(pages) || !pages.length) throw new Error('Kagane reader manifest is missing pages')
                 const ids = new Set<string>()

@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 import { ContentRating,
+    JsonValue,
     Option,
     SearchRequest } from '@mana-app/types'
 import { Filters,
@@ -84,7 +85,7 @@ function validateTagIds(values: string[], tags: TagEntry[]): void {
     }
 }
 
-function compound(included: string[], excluded: string[], match: boolean): Record<string, unknown> | undefined {
+function compound(included: string[], excluded: string[], match: boolean): Record<string, JsonValue> | undefined {
     const values = [...new Set(included)]
     const exclude = [...new Set(excluded)]
     return values.length || exclude.length ? { values, ...(match && values.length ? { match_all: true } : {}), ...(exclude.length ? { exclude } : {}) } : undefined
@@ -113,13 +114,13 @@ export function selectedRatings(request: SearchRequest<Filters>, settings: Setti
     const selected = selectedOptions(request.filters, 'content_rating')
     return RATINGS.filter((rating) => settings.contentRatings.includes(rating) && (!selected.length || selected.includes(rating)) && ratingAllowed(manaRating({ content_rating: rating }), request.context))
 }
-export function searchBody(request: SearchRequest<Filters>, settings: Settings, tags: TagEntry[]): Record<string, unknown> {
+export function searchBody(request: SearchRequest<Filters>, settings: Settings, tags: TagEntry[]): Record<string, JsonValue> {
     const ranges = readNumericRanges(request.filters)
     needsTagTaxonomy(request.filters, settings.excludedTags)
     const pooled = ['tags', ...TAG_GROUPS.map((group) => tagFilterId(group.id))].map((id) => selection(request.filters, id))
     validateTagIds([...pooled.flatMap((pick) => [...pick.included, ...pick.excluded]), ...settings.excludedTags], tags)
     const ratings = selectedRatings(request, settings)
-    const body: Record<string, unknown> = {
+    const body: Record<string, JsonValue> = {
         ...ranges,
         content_rating: ratings,
         age_rating: [...new Set(ratings.map((rating) => rating === 'Safe' ? 'Safe' : rating === 'Suggestive' ? 'FifteenPlus' : 'EighteenPlus'))],

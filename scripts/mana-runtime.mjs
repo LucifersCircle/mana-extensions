@@ -1,156 +1,26 @@
-import { setTimeout as delay } from 'node:timers/promises'
+import { createHTTPBridge, registerHTTPRuntime } from './mana-http-host.mjs'
+export { installManaHTTP } from './mana-http-host.mjs'
 
-// A small Node host for live source checks, not a Mana/iOS emulator. The built
-// bundle supplies the real @mana-app/types enums and NetworkClientBuilder.
-// ObjectStore is process-local for preference callbacks. Optional WebViews use real
-// test-only Chromium, not WKWebView. iOS persistence, automatic retries and shared
-// cookie persistence are not emulated.
+// Test-only host: real SDK HttpClient and host-operation runtime are installed
+// in the bundle VM, not imitated as global NetworkClient or error classes.
 export function createManaRuntime({ logger = logRequest, fetchImpl = globalThis.fetch, webViewPage } = {}) {
-    class NetworkError extends Error {
-        constructor(name, message, req, res) {
-            super(redactText(message))
-            this.name = name
-            this.req = req
-            this.res = res
+    const host = createHTTPBridge({ fetchImpl, logger, redactURL, redactText,
+        assertRequest(request) {
+            if (!['GET', 'HEAD'].includes(request.method) || request.body != null) assertReadOnlyPost(request)
         }
-    }
-
-    class CloudflareError extends Error {
-        constructor(resolutionURL) {
-            super(`Challenge requires the Mana app: ${resolutionURL ?? 'unknown URL'}`)
-            this.name = 'CloudflareError'
-            this.resolutionURL = resolutionURL
-        }
-    }
-
-    class NetworkClient {
-        constructor(builder = {}) {
-            this.builder = builder
-            this.nextRequestAt = 0
-        }
-
-        get(url, config) {
-            return this.request({ ...config, url, method: 'GET' })
-        }
-
-        post(url, config) {
-            return this.request({ ...config, url, method: 'POST' })
-        }
-
-        async request(input) {
-            const builder = this.builder
-            let request = {
-                ...input,
-                timeout: input.timeout ?? builder.timeout ?? 30_000,
-                maxRetries: input.maxRetries ?? builder.maxRetries ?? 0,
-                validateStatus: input.validateStatus ?? builder.statusValidator,
-                method: input.method ?? 'GET',
-                headers: { ...builder.headers, ...input.headers },
-                cookies: [...(builder.cookies ?? []), ...(input.cookies ?? [])],
-                transformRequest: [...(builder.requestTransformers ?? []), ...asArray(input.transformRequest)],
-                transformResponse: [...(builder.responseTransformers ?? []), ...asArray(input.transformResponse)]
-            }
-            for (const transform of request.transformRequest) {
-                request = await transform(request)
-            }
-            if (request.maxRetries !== 0) {
-                throw new Error('Automatic retries are unsupported by the live test host')
-            }
-            if (!Number.isFinite(request.timeout) || request.timeout <= 0) {
-                throw new Error('Live test requests require a positive finite timeout')
-            }
-            if (request.responseEncoding && !['text', 'base64'].includes(request.responseEncoding)) {
-                throw new Error(`Unsupported response encoding: ${request.responseEncoding}`)
-            }
-            const url = new URL(request.url)
-            if (!['http:', 'https:'].includes(url.protocol)) {
-                throw new Error(`Unsupported request protocol: ${url.protocol}`)
-            }
-            for (const [key, value] of Object.entries(request.params ?? {})) {
-                if (value == null) continue
-                if (!['string', 'number', 'boolean'].includes(typeof value)) {
-                    throw new Error(`Unsupported non-scalar query parameter: ${key}`)
-                }
-                url.searchParams.append(key, String(value))
-            }
-            // Validate the actual outgoing URL after params are merged, not a pre-merge
-            // version which could hide unsupported or duplicate operation parameters.
-            if (!['GET', 'HEAD'].includes(request.method) || request.body != null) {
-                assertReadOnlyPost({ ...request, url: url.href })
-            }
-            const headers = new Headers()
-            for (const [key, value] of Object.entries(request.headers ?? {})) {
-                headers.set(key, String(value))
-            }
-            if (request.cookies?.length) {
-                const cookies = request.cookies.map(({ name, value }) => `${name}=${value}`).join('; ')
-                headers.set('Cookie', [headers.get('Cookie'), cookies].filter(Boolean).join('; '))
-            }
-            const rate = builder.requestsPerSecond
-            if (rate != null && rate !== 0) {
-                if (!Number.isFinite(rate) || rate < 0) throw new Error('Invalid request rate limit')
-                const startAt = Math.max(Date.now(), this.nextRequestAt)
-                this.nextRequestAt = startAt + 1000 / rate
-                await delay(Math.max(0, startAt - Date.now()))
-            }
-            const started = Date.now()
-            let status
-            try {
-                const raw = await fetchImpl(url, {
-                    method: request.method,
-                    headers,
-                    body: request.body != null && typeof request.body === 'object' ? JSON.stringify(request.body) : request.body,
-                    signal: AbortSignal.timeout(request.timeout)
-                })
-                status = raw.status
-                let response = {
-                    status,
-                    headers: Object.fromEntries(raw.headers),
-                    data: request.responseEncoding === 'base64'
-                        ? Buffer.from(await raw.arrayBuffer()).toString('base64')
-                        : await raw.text(),
-                    request: { ...request, url: url.href }
-                }
-                for (const transform of asArray(request.transformResponse)) {
-                    response = await transform(response)
-                }
-                const validate = request.validateStatus ?? ((value) => value >= 200 && value < 300)
-                if (!validate(response.status)) {
-                    throw new NetworkError('NetworkError', `HTTP ${response.status}: ${url.href}`, response.request, response)
-                }
-                logger({ url: redactURL(url.href), status, durationMs: Date.now() - started })
-                return response
-            } catch (error) {
-                logger({ url: redactURL(url.href), status, durationMs: Date.now() - started, error: redactText(error.message) })
-                throw error
-            }
-        }
-    }
-
+    })
     const runtime = {
-        NetworkClient,
-        NetworkError,
-        CloudflareError,
+        __manaHTTPBridge: host.bridge,
         ObjectStore: createObjectStore(),
         SecureStore: unsupported('SecureStore'),
         WebViewPage: webViewPage ?? unsupported('WebViewPage'),
-        console,
-        URL,
-        URLSearchParams,
-        Buffer,
-        TextEncoder,
-        TextDecoder,
-        atob,
-        btoa,
-        setTimeout,
-        clearTimeout
+        console, URL, URLSearchParams, Buffer, TextEncoder, TextDecoder, atob, btoa,
+        setTimeout, clearTimeout, setInterval, clearInterval, queueMicrotask
     }
     runtime.global = runtime
+    registerHTTPRuntime(runtime, host)
+    registerHTTPRuntime(host.bridge, host)
     return runtime
-}
-
-function asArray(value) {
-    return value == null ? [] : Array.isArray(value) ? value : [value]
 }
 
 function unsupported(name) {

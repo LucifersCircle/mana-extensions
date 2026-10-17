@@ -1,130 +1,127 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { fetchTestImage, interceptImageResponse, resolvedBrowserImageProof } from './mana-test-images.mjs';
+import vm from 'node:vm';
+import { createManaRuntime, installManaHTTP } from './mana-runtime.mjs';
+import { fetchTestImage, authorizeTestImage, resolvedBrowserImageProof, withSourceTransport } from './mana-test-images.mjs';
 import { assertCoverImageURL, createManaTestWebView, safeWebViewDiagnostic } from './mana-test-webview.mjs';
 
 const url = 'https://images.example.invalid/public-cover';
-function response(body, status = 200, headers = { 'content-type': 'image/png' }) {
-  const value = new Response(body, { status, headers });
-  Object.defineProperty(value, 'url', { value: url });
-  return value;
-}
-
-test('image callbacks without response transformers retain the original streaming response', async () => {
-  const raw = response('actual bytes');
-  assert.equal(await interceptImageResponse(raw, { url }), raw);
-  assert.equal(raw.bodyUsed, false);
-});
-
-test('actual image response transformers run before HTTP validation and retain exact binary bytes', async () => {
-  const bytes = Buffer.from([0, 255, 128, 1, 2, 3]);
-  const request = { url, responseEncoding: 'base64', transformResponse: async value => {
-    assert.equal(value.request, request); assert.equal(value.data, bytes.toString('base64'));
-    assert.equal(value.headers['content-type'], 'image/png'); return value;
-  } };
-  const result = await interceptImageResponse(response(bytes), request);
-  assert.deepEqual(Buffer.from(await result.arrayBuffer()), bytes); assert.equal(result.url, url);
-  const cfError = new Error('Challenge required'); cfError.name = 'CloudflareError';
-  const challenged = { url, transformResponse: value => {
-    assert.equal(value.status, 403); assert.equal(value.data, 'actual challenge HTML'); throw cfError;
-  } };
-  await assert.rejects(interceptImageResponse(response('actual challenge HTML', 403), challenged), error => error === cfError);
-});
-
-test('ordinary denied responses remain failures and synthetic status/body/header changes are rejected', async () => {
-  const raw = await interceptImageResponse(response('Forbidden', 403), { url, transformResponse: value => value });
-  assert.equal(raw.status, 403); assert.equal(raw.ok, false);
-  for (const transform of [value => ({ ...value, status: 200 }), value => ({ ...value, data: 'fake bytes' }),
-    value => ({ ...value, headers: { 'content-type': 'image/png' } }), value => ({ ...value, request: { url } })]) {
-    await assert.rejects(interceptImageResponse(response('Forbidden', 403, { 'content-type': 'text/html' }),
-      { url, transformResponse: transform }), /rewriting is unsupported/);
-  }
-});
-
-test('intercepted image bodies are bounded, and invalid transformer/encoding is explicit', async () => {
-  await assert.rejects(interceptImageResponse(response('x'), { url, transformResponse: 1 }), /Invalid image/);
-  await assert.rejects(interceptImageResponse(response('x'), { url, transformResponse: value => value, responseEncoding: 'binary' }), /encoding/);
-  let cancelled = false;
-  const body = new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array(16 * 1024 * 1024 + 1)); }, cancel() { cancelled = true; } });
-  await assert.rejects(interceptImageResponse(response(body), { url, transformResponse: value => value }), /byte limit/);
-  assert.equal(cancelled, true);
-});
-
 const cover = 'https://peer.storagewebtoon.store/manhwa/17155/issued-cover.webp';
-function coverResponse(status = 200, headers = { 'content-type': 'image/webp' }, body = new Uint8Array([0, 255, 128, 2])) {
-  const value = new Response(body, { status, headers }); Object.defineProperty(value, 'url', { value: cover }); return value;
+function response(body, status = 200, headers = { 'content-type': 'image/png' }, target = url) {
+  const value = new Response(body, { status, headers });
+  Object.defineProperty(value, 'url', { value: target }); return value;
 }
-function sourceFixture({ mutate = () => {}, onAuthorization = () => {}, onTransform = () => {} } = {}) {
-  return { info: { id: 'Marumaru' }, async willRequestImage(target) {
-    onAuthorization();
-    return { url: target, headers: { Referer: 'https://marumaru105.com/' }, transformResponse: value => {
-      onTransform(); mutate(value.request);
-      if (value.headers['cf-mitigated'] === 'challenge') {
-        const error = new Error('Managed challenge'); error.name = 'CloudflareError'; error.resolutionURL = target; throw error;
-      }
-      return value;
-    } };
-  } };
+function coverResponse(status = 200, headers = { 'content-type': 'image/webp' }, body = new Uint8Array([0, 255, 128, 2])) {
+  return response(body, status, headers, cover);
 }
 const challenge = () => coverResponse(403, { 'content-type': 'text/html', 'cf-mitigated': 'challenge' }, 'challenge');
+function sourceFixture({ fetchImpl = async () => coverResponse(), onAuthorization = () => {}, onResponse = value => value,
+  id = 'Marumaru', referer = 'https://marumaru105.com/' } = {}) {
+  const context = vm.createContext(createManaRuntime({ fetchImpl, logger: () => {} }));
+  const host = installManaHTTP(context);
+  Object.assign(context, { onAuthorization, onResponse, sourceID: id, referer });
+  const source = host.wrapSource(vm.runInContext(`({
+    info: { id: sourceID },
+    transport(image) {
+      return new ManaHTTP.HttpClient().addHeader('Referer', referer)
+        .addRequestInterceptor((request, ctx) => Promise.resolve(onAuthorization(request, ctx)).then(() => request))
+        .addResponseInterceptor((value, ctx) => onResponse(value, ctx));
+    },
+    getCoverTransport(request) { return this.transport(request); },
+    getPageTransport(request) { return this.transport(request); }
+  })`, context));
+  return { source, host, context };
+}
 
-test('image URL protocols are validated before any network or browser I/O', async () => {
-  let requests = 0, captures = 0;
-  for (const target of ['data:image/png;base64,AAAA', 'file:///private/image', 'javascript:alert(1)', 'not a URL']) {
-    await assert.rejects(fetchTestImage({ async willRequestImage() { return { url: target }; } }, target, {
-      fetchImpl: async () => { requests++; return coverResponse(); }, captureCoverImage: async () => { captures++; return coverResponse(); },
-    }));
+test('official image dispatch preserves exact native bytes and distinct cover/page origins', async () => {
+  const bytes = Buffer.from([0, 255, 128, 1, 2, 3]), origins = [];
+  const { source, host } = sourceFixture({ fetchImpl: async () => response(bytes), onAuthorization: (_request, ctx) => origins.push(ctx.origin),
+    onResponse: async value => { assert.equal(await value.base64(), bytes.toString('base64')); return value; } });
+  for (const origin of ['cover', 'page']) {
+    const result = await fetchTestImage(source, url, { origin });
+    assert.deepEqual(Buffer.from(await result.arrayBuffer()), bytes); assert.equal(result.url, url); assert.equal(result.requestedImageURL, url);
+    assert.deepEqual(host.stats(), { operations: 0, bodies: 0, transfers: 0 });
   }
+  assert.deepEqual(origins, [1, 2]);
+});
+
+test('async authorization probes stop at image Fetch and do not skip denial', async () => {
+  let requests = 0, authorizations = 0;
+  const { source } = sourceFixture({ fetchImpl: async () => { requests++; return coverResponse(); }, onAuthorization: async request => {
+    await Promise.resolve(); authorizations++; if (request.url.includes('denied')) throw new Error('Issuing policy denied');
+    request.url = cover;
+  } });
+  const request = await authorizeTestImage(source, url, { origin: 'cover' });
+  assert.equal(request.url, cover); assert.equal(request.headers.referer, 'https://marumaru105.com/');
+  await assert.rejects(authorizeTestImage(source, url + '/denied', { origin: 'page' }), /denied/);
+  assert.equal(authorizations, 2); assert.equal(requests, 0);
+});
+
+test('image protocols and required origin are validated before any I/O', async () => {
+  let requests = 0, captures = 0;
+  const { source } = sourceFixture({ fetchImpl: async () => { requests++; return coverResponse(); } });
+  for (const target of ['data:image/png;base64,AAAA', 'file:///private/image', 'javascript:alert(1)', 'not a URL']) {
+    await assert.rejects(fetchTestImage(source, target, { origin: 'cover', captureCoverImage: async () => { captures++; } }));
+  }
+  await assert.rejects(fetchTestImage(source, cover), /explicit cover or page origin/);
   assert.equal(requests, 0); assert.equal(captures, 0);
 });
 
-test('direct image responses retain the requested URL for the existing source-specific byte guards', async () => {
-  const requested = 'https://kagane.org/api/v2/image/test';
-  const raw = response('actual bytes');
-  const result = await fetchTestImage({ async willRequestImage() { return { url: requested }; } }, requested,
-    { fetchImpl: async () => raw });
-  assert.equal(result, raw); assert.equal(result.requestedImageURL, requested);
-  assert.equal(result.url, url);
-});
-
-test('only an exact positive source CloudflareError enables one explicitly browser-context capture and reauthorization', async () => {
+test('real SDK Cloudflare detection precedes response interceptors; exact positive evidence permits one capture and reauthorization', async () => {
   let authorizations = 0, transforms = 0, requests = 0, captures = 0;
   const phases = [], bytes = new Uint8Array([0, 255, 128, 2]);
-  const source = sourceFixture({ onAuthorization: () => authorizations++, onTransform: () => transforms++ });
-  const result = await fetchTestImage(source, cover, {
-    fetchImpl: async (target, config) => { requests++; assert.equal(target, cover); assert.deepEqual(config.headers, { Referer: 'https://marumaru105.com/' }); return challenge(); },
-    captureCoverImage: async target => { captures++; assert.equal(target, cover); return coverResponse(); },
-    log: phase => phases.push(phase),
-  });
+  const { source } = sourceFixture({ fetchImpl: async () => { requests++; return challenge(); },
+    onAuthorization: () => authorizations++, onResponse: value => { transforms++; return value; } });
+  const result = await fetchTestImage(source, cover, { origin: 'cover',
+    captureCoverImage: async target => { captures++; assert.equal(target, cover); return coverResponse(); }, log: phase => phases.push(phase) });
   assert.deepEqual(new Uint8Array(await result.arrayBuffer()), bytes);
-  assert.equal(requests, 1); assert.equal(captures, 1); assert.equal(authorizations, 2); assert.equal(transforms, 2);
+  assert.equal(requests, 1); assert.equal(captures, 1); assert.equal(authorizations, 2); assert.equal(transforms, 1);
   assert.deepEqual(phases, ['native', 'browser-context-after-cloudflare-error']);
 });
 
-test('ordinary denial, changed response identity, foreign source and in-place request mutation cannot activate a browser capture', async () => {
+test('generic denial, foreign source, page origin, redirect or absent positive header never activates capture', async () => {
   let captures = 0;
   const captureCoverImage = async () => { captures++; return coverResponse(); };
-  const ordinary = await fetchTestImage(sourceFixture(), cover, { fetchImpl: async () => coverResponse(403), captureCoverImage });
-  assert.equal(ordinary.ok, false);
-  const foreign = sourceFixture(); foreign.info.id = 'Other';
-  await assert.rejects(fetchTestImage(foreign, cover, { fetchImpl: async () => challenge(), captureCoverImage }), /contract/);
-  const redirect = new Response('challenge', { status: 403, headers: { 'cf-mitigated': 'challenge' } });
-  Object.defineProperty(redirect, 'url', { value: 'https://other.example.invalid/' });
-  await assert.rejects(fetchTestImage(sourceFixture(), cover, { fetchImpl: async () => redirect, captureCoverImage }), { name: 'CloudflareError' });
-  for (const mutate of [request => { request.url = cover + '?changed'; }, request => { request.headers.Referer = 'https://other.example.invalid/'; }]) {
-    await assert.rejects(fetchTestImage(sourceFixture({ mutate }), cover, { fetchImpl: async () => challenge(), captureCoverImage }), /request changed/);
+  for (const [fixture, origin, pattern] of [
+    [{ fetchImpl: async () => coverResponse(403) }, 'cover', { name: 'HttpStatusError' }],
+    [{ fetchImpl: async () => challenge(), id: 'Other' }, 'cover', { name: 'CloudflareError' }],
+    [{ fetchImpl: async () => challenge() }, 'page', { name: 'CloudflareError' }],
+    [{ fetchImpl: async () => response('challenge', 403, { 'cf-mitigated': 'challenge' }) }, 'cover', { name: 'CloudflareError' }],
+    [{ fetchImpl: async () => coverResponse(503, { server: 'cloudflare' }, 'cf-chl') }, 'cover', { name: 'CloudflareError' }],
+  ]) {
+    const { source } = sourceFixture(fixture);
+    await assert.rejects(fetchTestImage(source, cover, { origin, captureCoverImage }), pattern);
   }
   assert.equal(captures, 0);
 });
 
-test('revoked source authorization or changed captured image never becomes a successful image result', async () => {
+test('synthetic status, body, URL and header responses cannot masquerade as native image passes', async () => {
+  for (const onResponse of [value => { value.status = 201; return value; }, value => value.withBody('fake bytes'),
+    value => { value.url += '?changed'; return value; }, value => { value.headers.set('content-type', 'image/fake'); return value; },
+    value => { value.request.url += '?changed'; return value; }, value => { value.request.headers.set('referer', 'https://other.invalid/'); return value; }]) {
+    const { source, host } = sourceFixture({ onResponse });
+    await assert.rejects(fetchTestImage(source, cover, { origin: 'cover' }), /rewriting is unsupported|request changed/);
+    assert.deepEqual(host.stats(), { operations: 0, bodies: 0, transfers: 0 });
+  }
+});
+
+test('revoked authorization, late response revocation and changed capture identity cannot produce an image pass', async () => {
   let revoked = false, captures = 0;
-  const source = sourceFixture({ onAuthorization: () => { if (revoked) throw new Error('Issuing policy revoked'); } });
-  await assert.rejects(fetchTestImage(source, cover, { fetchImpl: async () => challenge(),
-    captureCoverImage: async () => { captures++; revoked = true; return coverResponse(); } }), /revoked/);
+  const { source } = sourceFixture({ fetchImpl: async () => challenge(), onAuthorization: () => { if (revoked) throw new Error('Issuing policy revoked'); } });
+  await assert.rejects(fetchTestImage(source, cover, { origin: 'cover', captureCoverImage: async () => { captures++; revoked = true; return coverResponse(); } }), /revoked/);
   assert.equal(captures, 1);
-  await assert.rejects(fetchTestImage(sourceFixture(), cover, { fetchImpl: async () => challenge(),
-    captureCoverImage: async () => response('different image') }), /identity changed/);
+  const second = sourceFixture({ fetchImpl: async () => challenge() });
+  await assert.rejects(fetchTestImage(second.source, cover, { origin: 'cover', captureCoverImage: async () => response('different') }), /identity changed/);
+  const third = sourceFixture({ onResponse: () => { throw new Error('Response policy revoked'); } });
+  await assert.rejects(fetchTestImage(third.source, cover, { origin: 'cover' }), /revoked/);
+});
+
+test('scoped fixture transports do not leak into later real image requests', async () => {
+  let native = 0, fixture = 0;
+  const { source } = sourceFixture({ fetchImpl: async () => { native++; return coverResponse(); } });
+  await withSourceTransport(source, async () => { fixture++; return coverResponse(); }, () => fetchTestImage(source, cover, { origin: 'cover' }));
+  await fetchTestImage(source, cover, { origin: 'cover' });
+  assert.equal(fixture, 1); assert.equal(native, 1);
 });
 
 function helperFixture(result = {}) {
@@ -204,18 +201,19 @@ test('helper response byte limit cancels oversized streams without exposing thei
 });
 
 
-test('only a decoded exact browser capture carries octet-stream image proof after source reauthorization', async () => {
-  const body = "iVBORw0KGgoAAAANSUhEUgAAAAMAAAAECAIAAADETxJQAAAAF0lEQVR4nGO0yWtiYGBgYGBgYoABbCwALQoBNAc+s50AAAAASUVORK5CYII=";
+test('only decoded exact browser captures carry octet-stream proof after full source reauthorization', async () => {
+  const body = 'iVBORw0KGgoAAAANSUhEUgAAAAMAAAAECAIAAADETxJQAAAAF0lEQVR4nGO0yWtiYGBgYGBgYoABbCwALQoBNAc+s50AAAAASUVORK5CYII=';
   const { host } = helperFixture({ contentType: 'application/octet-stream', body });
-  const result = await fetchTestImage(sourceFixture(), cover, { fetchImpl: async () => challenge(), captureCoverImage: host.captureCoverImage });
+  const fixture = sourceFixture({ fetchImpl: async () => challenge() });
+  const result = await fetchTestImage(fixture.source, cover, { origin: 'cover', captureCoverImage: host.captureCoverImage });
   assert.equal(result.headers.get('content-type'), 'application/octet-stream');
   assert.deepEqual(resolvedBrowserImageProof(result), { url: cover, contentType: 'application/octet-stream', format: 'PNG', width: 3, height: 4 });
-  assert.equal(Buffer.from(await result.arrayBuffer()).toString('base64'), body);
-  await host.close();
-  const native = await fetchTestImage(sourceFixture(), cover, { fetchImpl: async () => coverResponse(200, { 'content-type': 'application/octet-stream' }, Buffer.from(body, 'base64')) });
-  assert.equal(resolvedBrowserImageProof(native), undefined, 'Native bytes must not claim browser decode');
-  const forged = await fetchTestImage(sourceFixture(), cover, { fetchImpl: async () => challenge(), captureCoverImage: async () => coverResponse(200, { 'content-type': 'application/octet-stream' }, Buffer.from(body, 'base64')) });
-  assert.equal(resolvedBrowserImageProof(forged), undefined, 'An arbitrary capture Response must not forge host proof');
+  assert.equal(Buffer.from(await result.arrayBuffer()).toString('base64'), body); await host.close();
+  const nativeFixture = sourceFixture({ fetchImpl: async () => coverResponse(200, { 'content-type': 'application/octet-stream' }, Buffer.from(body, 'base64')) });
+  const native = await fetchTestImage(nativeFixture.source, cover, { origin: 'cover' });
+  assert.equal(resolvedBrowserImageProof(native), undefined);
+  const forged = await fetchTestImage(fixture.source, cover, { origin: 'cover', captureCoverImage: async () => coverResponse(200, { 'content-type': 'application/octet-stream' }, Buffer.from(body, 'base64')) });
+  assert.equal(resolvedBrowserImageProof(forged), undefined);
   for (const change of [{ body: Buffer.from('<html>denied</html>').toString('base64') }, { body: Buffer.from(body, 'base64').subarray(0, -2).toString('base64') }, { decoded: false }, { contentType: 'binary/octet-stream' }]) {
     const { host } = helperFixture({ contentType: 'application/octet-stream', body, ...change });
     await assert.rejects(host.captureCoverImage(cover)); await host.close();

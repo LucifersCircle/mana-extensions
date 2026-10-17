@@ -7,8 +7,12 @@ import { CatalogRating,
     DeepLinkContext,
     Form,
     Highlight,
-    ImageRequestHandler,
-    NetworkRequest,
+    CoverRequestHandler,
+    HttpClient,
+    HttpMethod,
+    ImageRequest,
+    PageRequestHandler,
+    RequestOrigin,
     PageLink,
     PageLinkResolver,
     PageSection,
@@ -59,8 +63,8 @@ import { allowed,
     requireAllowed } from './MangaStashPolicy'
 
 const TTL = 300000
-export class Target implements ChapterSource, PageLinkResolver, ImageRequestHandler, SourcePreferenceProvider {
-    readonly info: SourceInfo = { id: 'MangaStash', version: '0.0.1-alpha.4', name: 'MangaStash', thumbnail: 'MangaStash.png', rating: CatalogRating.MIXED, website: DOMAIN,
+export class Target implements ChapterSource, PageLinkResolver, CoverRequestHandler, PageRequestHandler, SourcePreferenceProvider {
+    readonly info: SourceInfo = { id: 'MangaStash', version: '0.0.1-alpha.5', name: 'MangaStash', thumbnail: 'MangaStash.png', rating: CatalogRating.MIXED, website: DOMAIN,
         description: 'MangaStash native feeds and browse controls. Unlabeled titles use Suggestive only as a compatibility fallback. Some chapter dates are unavailable; their displayed upload ages are not reliable. Covers use the largest URL actually advertised per response.',
         supportedLanguages: ['en_US'], badges: ['Manga', 'Manhwa', 'Manhua'], developers: [{ name: 'Lucifers Circle', github: 'https://github.com/LucifersCircle' }] }
     readonly config = { owningLinks: ['mangastash.org'] }
@@ -167,10 +171,25 @@ export class Target implements ChapterSource, PageLinkResolver, ImageRequestHand
         await issue([], policy, { id, chapter, urls: result.pages?.map((page) => page.url ?? '') ?? [] }); await check(policy)
         return result
     }
-    async willRequestImage(target: string): Promise<NetworkRequest> {
-        const policy = await enter(); await authorizeImage(target, policy); await check(policy)
-        return { url: target, headers: { Referer: `${DOMAIN}/`, Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8' } }
+    private imageTransport(image: ImageRequest, origin: RequestOrigin.Cover | RequestOrigin.Page): HttpClient {
+        const url = image.url, requestedOrigin = image.origin
+        const policies = new Map<string, Policy>()
+        return new HttpClient().addRequestInterceptor(async (request, context) => {
+            if (requestedOrigin !== origin || context.origin !== origin || request.url !== url || request.method !== HttpMethod.Get) throw new Error('Invalid MangaStash image request')
+            const policy = await enter(); await authorizeImage(request.url, policy); await check(policy)
+            policies.set(context.requestId, policy)
+            request.headers.setAll({ Referer: `${DOMAIN}/`, Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8' })
+            return request
+        }).addResponseInterceptor(async (response, context) => {
+            const policy = policies.get(context.requestId)
+            policies.delete(context.requestId)
+            if (!policy) throw new Error('MangaStash image authorization is missing')
+            await authorizeImage(response.request.url, policy); await check(policy)
+            return response
+        })
     }
+    getCoverTransport(request: ImageRequest): HttpClient { return this.imageTransport(request, RequestOrigin.Cover) }
+    getPageTransport(request: ImageRequest): HttpClient { return this.imageTransport(request, RequestOrigin.Page) }
     async handleURL(target: string): Promise<DeepLinkContext | null> {
         let id: string, chapter: string | undefined
         try { const parsed = url(target); if (parsed.search) return null; if (/\/chapter-/.test(parsed.pathname)) { id = validId(parsed.pathname.split('/')[1] ?? ''); chapter = chapterId(parsed.href, id) } else id = seriesId(parsed.href) } catch { return null }

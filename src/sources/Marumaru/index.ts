@@ -10,9 +10,12 @@ import { PageLink,
     ChapterData,
     ChapterSource,
     Content,
-    ImageRequestHandler,
-    NetworkRequest,
-    NetworkResponse,
+    CoverRequestHandler,
+    PageRequestHandler,
+    ImageRequest,
+    RequestOrigin,
+    HttpClient,
+    CloudflareError,
     PagedSearchResult,
     SearchRequest,
     SourceContext,
@@ -35,8 +38,8 @@ import { accessPolicy,
     Policy,
     rating,
     visible } from './MarumaruPolicy'
-export class Target implements ChapterSource, ImageRequestHandler, PageLinkResolver {
-    readonly info:SourceInfo={id:'Marumaru',name:'Marumaru',version:'0.0.1-alpha.5',website:DOMAIN,rating:CatalogRating.MIXED,supportedLanguages:['ko_KR'],badges:['Manga'],developers:[{name:'Lucifers Circle',github:'https://github.com/LucifersCircle'}],description:'Korean manga catalog and reader through ordinary rendered website pages. Unclassified titles use a Suggestive compatibility fallback, not a source age rating. Explicit 19 labels are preserved. WebView device validation is required before release.'};
+export class Target implements ChapterSource, CoverRequestHandler, PageRequestHandler, PageLinkResolver {
+    readonly info:SourceInfo={id:'Marumaru',name:'Marumaru',version:'0.0.1-alpha.6',website:DOMAIN,rating:CatalogRating.MIXED,supportedLanguages:['ko_KR'],badges:['Manga'],developers:[{name:'Lucifers Circle',github:'https://github.com/LucifersCircle'}],description:'Korean manga catalog and reader through ordinary rendered website pages. Unclassified titles use a Suggestive compatibility fallback, not a source age rating. Explicit 19 labels are preserved. WebView device validation is required before release.'};
     readonly config={owningLinks:['marumaru105.com']};
     private readonly service=new MarumaruService(renderedHTML);
     private revision=-1;
@@ -80,15 +83,25 @@ export class Target implements ChapterSource, ImageRequestHandler, PageLinkResol
         const urls=await this.service.reader(work,episode);await check(policy);await issue(work,urls,policy,episode);await accessPolicy(work);await check(policy)
         return {pages:urls.map(url=>({url}))}
     }
-    async willRequestImage(url:string):Promise<NetworkRequest>{
-        const policy=await this.policy();await authorize(url,policy);await check(policy)
-        // Covers are embedded by the source page; preserve its origin referrer.
-        if(!/^https:\/\/peer\.storagewebtoon\.store\/(?:manhwa|webtoon)\//.test(url))return {url}
-        return {url,headers:{Referer:DOMAIN+'/'},transformResponse:async(response:NetworkResponse)=>{
-            if(response.request.url!==url)throw new Error('Marumaru image response identity mismatch')
+    getCoverTransport(request:ImageRequest):HttpClient{return this.imageTransport(request,RequestOrigin.Cover)}
+    getPageTransport(request:ImageRequest):HttpClient{return this.imageTransport(request,RequestOrigin.Page)}
+    private imageTransport(image:ImageRequest,origin:RequestOrigin.Cover|RequestOrigin.Page):HttpClient{
+        const url=image.url,cover=origin===RequestOrigin.Cover
+        const pattern=cover?/^https:\/\/peer\.storagewebtoon\.store\/(?:manhwa|webtoon)\/[1-9]\d*\/[A-Za-z0-9._-]+$/:/^https:\/\/peer\.storagewebtoon\.store\/api\/media\/episode\/[1-9]\d*\/[1-9]\d*\.webp$/
+        if(image.origin!==origin||!pattern.test(url)||/\/(?:\.|\.\.)$/.test(url))throw new Error('Invalid Marumaru image transport identity')
+        let policy:Policy|undefined
+        const client=new HttpClient().setTimeoutMs(30000).addRequestInterceptor(async(request,context)=>{
+            if(context.origin!==origin||request.url!==url)throw new Error('Marumaru image request identity mismatch')
+            policy=await this.policy();await authorize(url,policy);await check(policy)
+            return request
+        }).addResponseInterceptor(async(response)=>{
+            if(!policy||response.request.url!==url)throw new Error('Marumaru image response identity mismatch')
             await authorize(url,policy);await check(policy)
-            if(Object.entries(response.headers??{}).some(([name,value])=>name.toLowerCase()==='cf-mitigated'&&String(value).toLowerCase()==='challenge'))throw new CloudflareError(url)
+            if(response.headers.get('cf-mitigated')?.toLowerCase()==='challenge')throw new CloudflareError(url)
             return response
-        }}
+        })
+        // Covers are embedded by the source page; preserve its origin referrer.
+        if(cover)client.addHeader('Referer',DOMAIN+'/')
+        return client
     }
 }

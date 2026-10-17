@@ -43,6 +43,7 @@ jobs:
           npm run typecheck
           npm run lint
           npm run build -- --output dist
+          npm run verify:bundles
       - name: Select PR live sources (all sources on other events)
         run: node scripts/changed-sources.mjs
       - name: Start test-only Chromium transport

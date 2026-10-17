@@ -22,7 +22,7 @@ for (const [aborted, partial] of [['Kagane', false], ['ManhwaNex', true]]) {
     try {
       // Exercise the real dispatcher and reporter with no provider content or network access.
       for (const file of ['live-tests.mjs', 'test-status.mjs', 'test-sources.mjs',
-        'changed-sources.mjs', 'source-dependencies.mjs', 'mana-runtime.mjs', 'mana-test-webview.mjs', 'mana-test-images.mjs', 'mana-test-image-bytes.mjs']) {
+        'changed-sources.mjs', 'source-dependencies.mjs', 'mana-runtime.mjs', 'mana-http-host.mjs', 'mana-test-webview.mjs', 'mana-test-images.mjs', 'mana-test-image-bytes.mjs']) {
         mkdirSync(join(dir, 'scripts'), { recursive: true });
         copyFileSync(join(scripts, file), join(dir, 'scripts', file));
       }
@@ -32,7 +32,8 @@ for (const [aborted, partial] of [['Kagane', false], ['ManhwaNex', true]]) {
       }`);
       for (const name of names) {
         put(`src/sources/${name}/index.ts`, '');
-        put(`dist/sources/${name}.mana`, `globalThis.Target = class {
+        put(`dist/sources/${name}.mana`, `globalThis.__manaSerializedFunctionPrelude = '/* infrastructure-only callback prelude */';
+        globalThis.Target = class {
           info = { id: ${JSON.stringify(name)}, version: 'test', website: 'https://example.invalid' };
           async search() { throw new Error('Invalid Mana content-rating policy'); }
           async getContent() { throw new Error('Invalid Mana content-rating policy'); }

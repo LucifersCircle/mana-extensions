@@ -2,14 +2,16 @@ import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 import { load } from 'cheerio';
 import { assertReadOnlyMangaSushiPost } from './mana-runtime.mjs';
+import { runTestOperation, authorizeTestImage, fetchTestImage } from './mana-test-images.mjs';
 
-export async function coverDimensions(source, url) {
-  return readCoverDimensions(await source.willRequestImage(url));
+export async function coverDimensions(source, url, origin = 'cover') {
+  return readCoverDimensions({ url }, source, origin);
 }
 
-async function readCoverDimensions(request) {
+async function readCoverDimensions(request, source, origin = 'cover') {
   const url = request.url;
-  const response = await fetch(request.url, { headers: request.headers, signal: AbortSignal.timeout(30_000) });
+  const response = source ? await fetchTestImage(source, request.url, { origin, fetchImpl: fetch })
+    : await fetch(request.url, { headers: request.headers, signal: AbortSignal.timeout(30_000) });
   assert(response.ok, `Cover HTTP ${response.status}: ${url}`);
   const chunks = [], reader = response.body.getReader();
   let length = 0;
@@ -137,7 +139,7 @@ export async function testMangaSushiNativeRatings({ source, check, requests, fre
     const chapters = await cold.getChapters(sample.id);
     assert(chapters.length);
     const reader = await cold.getChapterData(sample.id, chapters.at(-1).chapterId);
-    await coverDimensions(cold, reader.pages[0].url);
+    await coverDimensions(cold, reader.pages[0].url, 'page');
     await coverDimensions(cold, details.cover);
   });
   await check('Native singleton ratings preserve source markers and use Suggestive only as the unclassified fallback', async () => {
@@ -408,7 +410,7 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
     safeContent = await source.getContent(catalog.results[0].id);
     assert(safeContent.tags?.length, 'Source exclusion needs actual genres');
     assert(!safeContent.tags.some((tag) => blockedTags.has(tag.id)));
-    await image(source, safeContent.cover);
+    await image(source, safeContent.cover, 'cover');
   });
   await check('Native catalog pagination advances without using filtered counts', async () => {
     assert.equal(catalog.isLastPage, false, 'Current live catalog should have continuation');
@@ -609,7 +611,7 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
       [dp('.summary_image img').first(), detail.cover]
     ];
     const decoded = new Map();
-    const dimensions = (request) => { if (!decoded.has(request.url)) decoded.set(request.url, readCoverDimensions(request)); return decoded.get(request.url); };
+    const dimensions = (request, nativeSource) => { if (!decoded.has(request.url)) decoded.set(request.url, readCoverDimensions(request, nativeSource)); return decoded.get(request.url); };
     const referenceCover = (url, headers) => {
       const parsed = new URL(url);
       assert.equal(parsed.origin, domain); assert.equal(parsed.username, ''); assert.equal(parsed.password, '');
@@ -627,9 +629,9 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
       assert(advertised.length, 'Live source stopped advertising same-asset cover widths');
       const [expected, descriptor] = advertised.sort((left, right) => parseInt(right[1]) - parseInt(left[1]))[0];
       assert.equal(cover, expected, 'Cover must be the largest URL actually advertised by this image');
-      const issued = await cold.willRequestImage(cover); assert.equal(issued.url, cover);
-      const current = await dimensions(currentURL === cover ? issued : referenceCover(currentURL, issued.headers));
-      const largest = await dimensions(issued);
+      const issued = await authorizeTestImage(cold, cover, { origin: 'cover' }); assert.equal(issued.url, cover);
+      const current = await dimensions(currentURL === cover ? issued : referenceCover(currentURL, issued.headers), currentURL === cover ? cold : undefined);
+      const largest = await dimensions(issued, cold);
       assert.equal(largest.width, parseInt(descriptor), 'Advertised largest width must match actual decoded pixels');
       assert(largest.width >= current.width && largest.height >= current.height, 'Selection must not downgrade real dimensions');
       assert(largest.bytes > 0);
@@ -647,7 +649,7 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
     const largeImage = findImage(largePage, '.c-tabs-item__content', largeId);
     assert(largeImage.attr('data-srcset').split(',').some((entry) => entry.trim() === `${largeItem.cover} 640w`), '640px original must be explicitly advertised, not manufactured');
     assert.equal(largeDetail.cover, largeItem.cover);
-    assert.equal((await dimensions(await cold.willRequestImage(largeItem.cover))).width, 640, 'The former medium cap must not limit a real 640px PNG original');
+    assert.equal((await dimensions(await authorizeTestImage(cold, largeItem.cover, { origin: 'cover' }), cold)).width, 640, 'The former medium cap must not limit a real 640px PNG original');
   });
   await check('Cover fallbacks reject malformed or unrelated metadata and retain explicitly advertised originals', async () => {
     assert(coverEvidence, 'Live cover evidence was not captured');
@@ -682,7 +684,7 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
       const $ = load(coverEvidence.home), img = $('.popular-slider .slider__item').first().find('img').first();
       img.removeAttr('srcset'); mutate(img);
       const cold = freshSource(); cold.api.text = async () => $.html();
-      assert.equal((await cold.home(false)).popular.items.find((item) => item.id === id)?.cover, expected, label);
+      assert.equal((await runTestOperation(cold, () => cold.home(false))).popular.items.find((item) => item.id === id)?.cover, expected, label);
     }
     for (const [label, srcset, expected] of [
       ['explicitly advertised original', originalEntry, originalURL],
@@ -706,7 +708,7 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
     assert.equal(requests.length - warmBefore, 0);
     console.log(`UNFILTERED DISCOVERY WARM: 0 requests, ${Math.round(performance.now() - warmStarted)}ms`);
     for (const row of [rows[0], warmRows[0]]) assert.equal(row.items.find((item) => item.id === 'yondome-wa-iya-na-shizokusei-majutsushi')?.title, 'Death Attribute Magician');
-    const nativeHome = await cold.home(false);
+    const nativeHome = await runTestOperation(cold, () => cold.home(false));
     for (const [index, id] of ['popular', 'latest'].entries()) {
       assert.deepEqual(Array.from(rows[index].items, (item) => item.id), homeIDs[id]);
       for (const item of rows[index].items) {
@@ -759,7 +761,7 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
       const data = await source.getChapterData(sample, chapter.chapterId, chapter);
       assert(data.pages.length); assert.equal(new Set(data.pages.map((page) => page.url)).size, data.pages.length);
       assert(data.pages.every((page) => new URL(page.url).pathname.includes('/WP-manga/data/')));
-      await image(source, data.pages[0].url); await image(source, data.pages.at(-1).url);
+      await image(source, data.pages[0].url, 'page'); await image(source, data.pages.at(-1).url, 'page');
       issuedReaderPages = data.pages.map((page) => page.url);
       if (chapter.number === 66.1) {
         assert.equal(data.pages.length, 12);
@@ -770,21 +772,35 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
   await check('Issued native images survive reload but reject mutation, expiry and actual source-policy changes without requests', async () => {
     const cold = freshSource(), before = requests.length, page = issuedReaderPages[0];
     const stored = await nativeStore.get('MangaSushi.issuedImages');
-    assert.equal((await cold.willRequestImage(page)).url, page);
+    assert.equal((await authorizeTestImage(cold, page, { origin: 'page' })).url, page);
     for (const url of [`${page}?unissued=1`, `${domain}/wp-content/uploads/unissued.jpg`, 'https://example.invalid/unissued.jpg', `${domain}/manga/${sample}/`]) {
-      await assert.rejects(cold.willRequestImage(url), /image|authorization/i);
+      await assert.rejects(authorizeTestImage(cold, url, { origin: 'page' }), /image|authorization/i);
     }
     try {
       const expired = JSON.parse(JSON.stringify(stored));
       for (const [, grant] of expired) { grant.at -= 86_400_001; grant.expires -= 86_400_001; }
       await nativeStore.set('MangaSushi.issuedImages', expired);
-      await assert.rejects(cold.willRequestImage(page), /expired|authorization/i);
+      await assert.rejects(authorizeTestImage(cold, page, { origin: 'page' }), /expired|authorization/i);
     } finally { await nativeStore.set('MangaSushi.issuedImages', stored); }
     assert.equal(requests.length, before, 'Image authorization must not fetch per-card metadata');
+    const cover = stored.find(([url, grant]) => grant.id === sample && grant.chapters.includes(''))?.[0];
+    assert(cover, 'Missing source-issued cover for independent cover/page transport checks');
+    for (const [url, origin, factory, nativeOrigin] of [[cover, 'cover', 'getCoverTransport', 1], [page, 'page', 'getPageTransport', 2]]) {
+      const client = cold[factory]({ url, origin: nativeOrigin });
+      assert(client && typeof client.then !== 'function', 'Image transport factories must be synchronous');
+      let outgoing = 0;
+      try {
+        await assert.rejects(fetchTestImage(cold, url, { origin, fetchImpl: async () => {
+          outgoing += 1; await nativeStore.set('MangaSushi.issuedImages', []);
+          return new Response('This controlled body must never escape revoked image policy', { status: 200 });
+        } }), /authorization|expired|settings/);
+        assert.equal(outgoing, 1, 'Revocation test must reach exactly one authorized image transport');
+      } finally { await nativeStore.set('MangaSushi.issuedImages', stored); }
+    }
     const previous = (await preference()).value;
     try {
       await preference(!previous);
-      await assert.rejects(cold.willRequestImage(page), /settings|authorization/i);
+      await assert.rejects(authorizeTestImage(cold, page, { origin: 'page' }), /settings|authorization/i);
     } finally { await preference(previous); }
   });
   await check('Editorial notices never become reading content, even with exclusion off', async () => {
@@ -798,7 +814,7 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
   });
   await check('Reader rejects mismatched identity, duplicate URLs and numbered page gaps', async () => {
     const readerURL = `${domain}/manga/${sample}/chapter-66-1/`;
-    const html = await source.api.text(readerURL);
+    const html = await runTestOperation(source, () => source.api.text(readerURL));
     const original = source.api.text;
     try {
       const responsive = load(html);
@@ -839,7 +855,7 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
     await assert.rejects(source.getContent(sample), /classification/i);
     await assert.rejects(source.getChapters(sample), /classification/i);
     await assert.rejects(source.getChapterData(sample, 'chapter-66-1'), /classification/i);
-    const html = await source.api.text(`${domain}/?s=&post_type=wp-manga&adult=0`);
+    const html = await runTestOperation(source, () => source.api.text(`${domain}/?s=&post_type=wp-manga&adult=0`));
     const original = source.api.text;
     try {
       source.api.text = async () => html.replaceAll('search-advanced-form', 'changed-search-markup');

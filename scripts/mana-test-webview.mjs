@@ -1,4 +1,4 @@
-// Test-only implementation of the @mana-app/types 0.0.27 WebView bridge.
+// Test-only implementation of the @mana-app/types 0.1.0 WebView bridge.
 // Uses anonymous Chromium, not a WKWebView/iOS emulator. No source imports this.
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
@@ -35,7 +35,7 @@ export function assertCoverImageURL(value) {
 // those helpers or change their return types/identity.
 const SOURCE_METHODS = new Set(['search', 'getContent', 'getChapters', 'getChapterData',
   'getSectionsForPage', 'resolvePageSection', 'getSearchForm', 'getSortOptions',
-  'handleURL', 'willRequestImage', 'getPreferenceMenu', 'onEnvironmentLoaded',
+  'handleURL', 'getPreferenceMenu', 'onEnvironmentLoaded',
   'willResolveSectionsForPage', 'getAdditionalInfoSectionItems', 'getLibraryPageLinks', 'validateSearchForm']);
 export function assertWebViewURL(value) {
   const reject = () => { throw new Error('Live-test WebView rejects unsupported document navigation'); };
@@ -192,7 +192,7 @@ export function createManaTestWebView({ solverURL = process.env.FLARESOLVERR_URL
           return serial(async () => {
             open();
             if (!documentURL) throw new Error('WebView must navigate before evaluating');
-            const result = await command('/webview/evaluate', { session, url: documentURL, script, args: values, timeout: seconds }, seconds);
+            const result = await command('/webview/evaluate', { session, url: documentURL, script, prelude: current.owner.prelude, args: values, timeout: seconds }, seconds);
             if (result.url !== documentURL || !Object.hasOwn(result, 'value')) throw new Error('WebView evaluation did not preserve document identity');
             const value = jsonBridge(result.value);
             // Observe only the exact public detail HTML already consumed by the
@@ -264,8 +264,12 @@ export function createManaTestWebView({ solverURL = process.env.FLARESOLVERR_URL
       try { return await operation; }
       finally { imageOperations.delete(operation); }
     },
-    wrapSource(source) {
-      const owner = { page: undefined };
+    wrapSource(source, { serializedFunctionPrelude = '' } = {}) {
+      if (typeof serializedFunctionPrelude !== 'string' || Buffer.byteLength(serializedFunctionPrelude) > 128 * 1024) {
+        throw new Error('Unsupported WebView serialized function prelude');
+      }
+      // Snapshot helpers from this source VM, never from another source's globals.
+      const owner = { page: undefined, prelude: serializedFunctionPrelude };
       return new Proxy(source, {
         get(target, key, receiver) {
           const value = Reflect.get(target, key, receiver);
