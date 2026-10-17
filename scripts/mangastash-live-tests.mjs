@@ -162,7 +162,8 @@ export async function testMangaStash({ check, referenceFetch = globalThis.fetch 
     for (const value of [detail.cover + '?x=1', detail.cover + '#x', detail.cover.replace('.jpg', '.webp'), detail.cover.replace('kagura-bachi', 'kagura--bachi'), detail.cover.replace('mangastash.org', 'other.example')]) {
       const changed = host(async () => new Response(html.replaceAll(detail.cover, value), { status: 200, headers: { 'content-type': 'text/html' } })).source;
       await assert.rejects(() => changed.getContent(id, all), /owner|URL/);
-      await assert.rejects(() => authorizeTestImage(cold, value, { origin: 'cover' }), /issued|URL/);
+      await assert.rejects(() => authorizeTestImage(cold, value, { origin: 'cover' }),
+        (error) => error.message === 'Invalid MangaStash image request' || /issued|URL/.test(error.message));
     }
     const response = await fetchTestImage(cold, detail.cover, { origin: 'cover', fetchImpl: referenceFetch });
     assert.equal(response.status, 200); assert.match(response.headers.get('content-type'), /^image\/jpe?g(?:;|$)/i);
