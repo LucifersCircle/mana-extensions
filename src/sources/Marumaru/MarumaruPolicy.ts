@@ -53,7 +53,7 @@ export function issue(work:string,urls:string[],policy:Policy,episode?:string):P
     })
 }
 function validateImage(url:string,work:string,episode?:string){
-    const pattern=episode?'^https://peer\\.storagewebtoon\\.store/api/media/episode/'+id(episode)+'/[1-9]\\d*\\.webp$':'^https://peer\\.storagewebtoon\\.store/manhwa/'+id(work)+'/[A-Za-z0-9._-]+$'
+    const pattern=episode?'^https://peer\\.storagewebtoon\\.store/api/media/episode/'+id(episode)+'/[1-9]\\d*\\.webp$':'^https://peer\\.storagewebtoon\\.store/(?:manhwa|webtoon)/'+id(work)+'/[A-Za-z0-9._-]+$'
     if(/\/(?:\.|\.\.)$/.test(url)||!new RegExp(pattern).test(url))throw new Error('Invalid Marumaru issued image identity')
 }
 export function authorize(url:string,policy:Policy):Promise<void>{return serial(async()=>{

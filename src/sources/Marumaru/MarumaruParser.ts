@@ -19,7 +19,8 @@ function route(value: string): {workId: string; episodeId?: string} | undefined 
 }
 function cover(value: string | undefined, workId: string): string {
     if (!value || /\/(?:\.|\.\.)$/.test(value)) throw new Error('Marumaru cover missing or invalid')
-    if (!new RegExp('^https://peer\\.storagewebtoon\\.store/manhwa/'+id(workId)+'/[A-Za-z0-9._-]+$').test(value))
+    // The manga catalog also advertises legacy /webtoon/<same work ID>/ covers.
+    if (!new RegExp('^https://peer\\.storagewebtoon\\.store/(?:manhwa|webtoon)/'+id(workId)+'/[A-Za-z0-9._-]+$').test(value))
         throw new Error('Marumaru cover identity does not match title')
     return value
 }
