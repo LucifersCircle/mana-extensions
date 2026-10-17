@@ -97,6 +97,7 @@ export function safeWebViewDiagnostic(result) {
   const phase = ['goto', 'evaluate', 'image-capture'].includes(result?.phase) ? result.phase : 'unknown';
   const reason = ['navigation-timeout', 'operation-timeout', 'document-identity-changed', 'navigation-error', 'evaluation-error',
     'callback-rejected', 'callback-invalid', 'render-readiness-timeout', 'serialization-error',
+    'chapter-count-exceeded', 'chapter-count-invalid', 'chapter-detail-ambiguous', 'chapter-detail-changed', 'chapter-ending-unconfirmed', 'chapter-endpoints-missing', 'chapter-latest-mismatch', 'chapter-link-identity', 'chapter-next-ambiguous', 'chapter-next-unavailable', 'chapter-page-invalid', 'chapter-page-repeated', 'chapter-page-unexpected', 'chapter-pager-ambiguous', 'reader-page-limit', 'callback-type-error', 'callback-reference-error', 'callback-range-error',
     'invalid-operation', 'driver-timeout', 'driver-element-changed', 'driver-frame-changed', 'driver-window-closed',
     'driver-session-lost', 'driver-script-error', 'driver-error', 'unexpected-error',
     'image-invalid-request', 'image-network-evidence-invalid', 'image-network-evidence-limit', 'image-redirect',
@@ -117,7 +118,8 @@ export function safeWebViewDiagnostic(result) {
   return { phase, reason, stage, cdpMimeCategory, contentTypeCategory };
 }
 
-export function createManaTestWebView({ solverURL = process.env.FLARESOLVERR_URL, fetchImpl = globalThis.fetch } = {}) {
+export function createManaTestWebView({ solverURL = process.env.FLARESOLVERR_URL, fetchImpl = globalThis.fetch, onDocument } = {}) {
+  if (onDocument !== undefined && typeof onDocument !== 'function') throw new Error('Invalid WebView document observer');
   let solver;
   if (solverURL) {
     solver = new URL(solverURL);
@@ -192,7 +194,13 @@ export function createManaTestWebView({ solverURL = process.env.FLARESOLVERR_URL
             if (!documentURL) throw new Error('WebView must navigate before evaluating');
             const result = await command('/webview/evaluate', { session, url: documentURL, script, args: values, timeout: seconds }, seconds);
             if (result.url !== documentURL || !Object.hasOwn(result, 'value')) throw new Error('WebView evaluation did not preserve document identity');
-            return jsonBridge(result.value);
+            const value = jsonBridge(result.value);
+            // Observe only the exact public detail HTML already consumed by the
+            // source. No second navigation/evaluation, parser substitute or log.
+            if (onDocument && typeof value === 'string' && /^https:\/\/marumaru105\.com\/manhwa\/[1-9]\d*$/.test(documentURL)) {
+              onDocument(Object.freeze({ url: documentURL, html: value }));
+            }
+            return value;
           });
         },
         evaluateScript() { throw new Error('evaluateScript is not implemented by the minimal test WebView host'); },

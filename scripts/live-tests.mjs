@@ -23,7 +23,10 @@ if (process.argv.length > 2) throw new Error('Use LIVE_TEST_SELECTION, not unval
 const names = readSelection().selectedSources;
 const report = {};
 const testTransport = createManaTestTransport();
-const testWebViews = createManaTestWebView();
+let marumaruDetailHTML;
+const testWebViews = createManaTestWebView({ onDocument: ({ url, html }) => {
+  if (url === 'https://marumaru105.com/manhwa/17155') marumaruDetailHTML = html;
+} });
 const manifest = JSON.parse(readFileSync('dist/sources.json', 'utf8'));
 const nonempty = (value, label) => assert(typeof value === 'string' && value.trim(), `${label} is empty`);
 const url = (value) => assert(['http:', 'https:'].includes(new URL(value).protocol), `Invalid URL: ${value}`);
@@ -149,7 +152,7 @@ for (const name of names) {
     } else if (name === 'ManhwaNex') {
       await testManhwaNex({ source, check, nativeStore: context.ObjectStore, requests, freshSource: () => testWebViews.wrapSource(new context.Target()) });
     } else if (name === 'Marumaru') {
-      await testMarumaru({ source, check, searchResult, image });
+      await testMarumaru({ source, check, searchResult, image, renderedDetail: () => marumaruDetailHTML });
     } else if (name === 'MangaStash') {
       await testMangaStash({ check, referenceFetch: testTransport.fetch });
     } else await check('Supported source-specific live contract', () => assert.fail(`No live contract implemented for ${name}`));
