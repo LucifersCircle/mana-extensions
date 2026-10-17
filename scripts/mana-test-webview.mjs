@@ -4,6 +4,13 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 
 const MAX_JSON = 4 * 1024 * 1024;
+// Only SDK entrypoints own a WebView lifetime. Test probes also call internal
+// synchronous helpers (URL builders, classifiers, parsers); never promise-wrap
+// those helpers or change their return types/identity.
+const SOURCE_METHODS = new Set(['search', 'getContent', 'getChapters', 'getChapterData',
+  'getSectionsForPage', 'resolvePageSection', 'getSearchForm', 'getSortOptions',
+  'handleURL', 'willRequestImage', 'getPreferenceMenu', 'onEnvironmentLoaded',
+  'willResolveSectionsForPage', 'getAdditionalInfoSectionItems', 'getLibraryPageLinks', 'validateSearchForm']);
 export function assertWebViewURL(value) {
   const reject = () => { throw new Error('Live-test WebView rejects unsupported document navigation'); };
   if (typeof value !== 'string' || /[\x00-\x20\x7f]/.test(value) || !/^https:\/\/marumaru105\.com\/[^#\\]*$/.test(value)) return reject();
@@ -82,7 +89,10 @@ export function createManaTestWebView({ solverURL = process.env.FLARESOLVERR_URL
     }
     if (!response.ok || !result || typeof result !== 'object' || result.error || (path === '/v1' && result.status !== 'ok')) {
       if (result?.code === 'captcha') stopped = new Error('Explicit CAPTCHA requires user approval; WebView live checks stopped');
-      if (result?.code === 'security') stopped = new Error('Browser security warning; WebView live checks stopped');
+      if (result?.code === 'security') {
+        const reason = ['insecure-capability', 'internal-page', 'certificate-marker', 'tls-navigation-error'].includes(result.reason) ? ` (${result.reason})` : '';
+        stopped = new Error(`Browser security warning${reason}; WebView live checks stopped`);
+      }
       throw stopped ?? new Error('Live-test WebView operation failed; no upstream details are logged');
     }
     return result;
@@ -164,7 +174,7 @@ export function createManaTestWebView({ solverURL = process.env.FLARESOLVERR_URL
       return new Proxy(source, {
         get(target, key, receiver) {
           const value = Reflect.get(target, key, receiver);
-          if (typeof value !== 'function') return value;
+          if (typeof value !== 'function' || !SOURCE_METHODS.has(key)) return value;
           return (...args) => scope.run({ page: undefined, finished: false, owner }, async () => {
             const current = scope.getStore();
             try { return await Reflect.apply(value, target, args); }

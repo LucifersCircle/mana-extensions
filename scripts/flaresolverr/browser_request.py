@@ -61,8 +61,9 @@ CHALLENGE_FRAMES = ('iframe[src*="challenges.cloudflare.com"], '
 
 
 class BrowserGate(Exception):
-    def __init__(self, code):
+    def __init__(self, code, reason=None):
         self.code = code
+        self.reason = reason
 
 
 def valid_numeric_range(value, minimum, maximum):
@@ -136,7 +137,7 @@ def session_driver(session_id):
         raise ValueError('Create an anonymous Chromium session first')
     session, _ = SESSIONS_STORAGE.get(session_id)
     if session.driver.capabilities.get('acceptInsecureCerts') is not False:
-        raise BrowserGate('security')
+        raise BrowserGate('security', 'insecure-capability')
     return session.driver
 
 
@@ -145,13 +146,18 @@ def session_lock(session_id):
         return LOCKS.setdefault(session_id, threading.Lock())
 
 
-def assert_browser_safety(driver):
+def assert_browser_safety(driver, allow_startup=False):
     current = urlparse(driver.current_url)
     title = driver.title.lower()
-    if (current.scheme in ('chrome-error', 'chrome') or 'privacy error' in title
-            or 'your connection is not private' in title or 'certificate error' in title
-            or 'net::err_cert_' in driver.page_source.lower()):
-        raise BrowserGate('security')
+    # A fresh anonymous Chromium may start on its empty built-in New Tab page.
+    # Only the WebView's first, not-yet-committed navigation may recognize it;
+    # warning titles/body markers and every other internal URL still fail.
+    startup = allow_startup and driver.current_url in ('chrome://newtab/', 'chrome://new-tab-page/')
+    if current.scheme == 'chrome-error' or (current.scheme == 'chrome' and not startup):
+        raise BrowserGate('security', 'internal-page')
+    if ('privacy error' in title or 'your connection is not private' in title
+            or 'certificate error' in title or 'net::err_cert_' in driver.page_source.lower()):
+        raise BrowserGate('security', 'certificate-marker')
     if driver.execute_script(CAPTCHA_SCRIPT):
         raise BrowserGate('captcha')
     for frame in driver.find_elements('css selector', CHALLENGE_FRAMES):
@@ -210,7 +216,7 @@ def register(app):
                     time.sleep(0.5)
         except BrowserGate as error:
             response.status = 409
-            return {'error': 'Browser requires user action', 'code': error.code}
+            return {'error': 'Browser requires user action', 'code': error.code, 'reason': error.reason}
         except Exception:
             response.status = 502
             return {'error': 'Anonymous browser warm-up failed'}
@@ -251,7 +257,7 @@ def register(app):
                 return result
         except BrowserGate as error:
             response.status = 409
-            return {'error': 'Browser requires user action', 'code': error.code}
+            return {'error': 'Browser requires user action', 'code': error.code, 'reason': error.reason}
         except Exception:
             response.status = 502
             # Never echo webdriver errors, request headers or reader response bodies.

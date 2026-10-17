@@ -74,13 +74,13 @@ function harness(override) {
 test('SDK bridge uses seconds, serializes actual function/JSON arguments, and cleans up', async () => {
   const { host, calls } = harness();
   let saved;
-  const source = host.wrapSource({ async read() {
+  const source = host.wrapSource({ async search() {
     saved = await host.WebViewPage.create({ timeout: 25 });
     await saved.goto(url, { waitUntil: 'domcontentloaded', timeout: 20 });
     const fn = runInNewContext('(async (expected, options) => ({ url: location.href, expected, options }))');
     return saved.evaluate(fn, url, { n: 1 });
   } });
-  await source.read();
+  await source.search();
   assert.deepEqual(calls.map(call => call.path), ['/v1', '/webview/goto', '/webview/evaluate', '/v1']);
   assert.equal(calls[0].body.cmd, 'sessions.create');
   assert.equal(calls[1].body.timeout, 20);
@@ -99,7 +99,7 @@ test('SDK bridge uses seconds, serializes actual function/JSON arguments, and cl
 test('page creation is method-scoped, single-page, and closes when a source throws', async () => {
   const { host, calls } = harness();
   await assert.rejects(host.WebViewPage.create(), /inside a source method/);
-  const source = host.wrapSource({ async read() {
+  const source = host.wrapSource({ async search() {
     const page = await host.WebViewPage.create();
     await assert.rejects(host.WebViewPage.create(), /Only one/);
     await assert.rejects(page.evaluate(() => true), /navigate before/);
@@ -109,14 +109,14 @@ test('page creation is method-scoped, single-page, and closes when a source thro
     assert.throws(() => page.evaluateScript('1'), /not implemented/);
     throw new Error('Source failed');
   } });
-  await assert.rejects(source.read(), /Source failed/);
+  await assert.rejects(source.search(), /Source failed/);
   assert.deepEqual(calls.map(call => call.body.cmd), ['sessions.create', 'sessions.destroy']);
 });
 
 test('missing browser remains an explicit failure, never a source skip or mock result', async () => {
   const host = createManaTestWebView({ solverURL: '' });
-  const source = host.wrapSource({ async read() { return host.WebViewPage.create(); } });
-  await assert.rejects(source.read(), /requires the real test-only Chromium helper/);
+  const source = host.wrapSource({ async search() { return host.WebViewPage.create(); } });
+  await assert.rejects(source.search(), /requires the real test-only Chromium helper/);
   for (const value of ['https://127.0.0.1:8191', 'http://example.com', 'http://localhost:8191', 'http://127.0.0.1:8191/?token=x']) {
     assert.throws(() => createManaTestWebView({ solverURL: value }), /loopback/);
   }
@@ -124,15 +124,15 @@ test('missing browser remains an explicit failure, never a source skip or mock r
 
 for (const code of ['captcha', 'security']) test(`${code} stops later operations without logging upstream secrets`, async () => {
   const { host, calls } = harness(path => path === '/webview/goto'
-    ? Response.json({ error: 'SECRET-cookie-and-token', code }, { status: 409 }) : undefined);
-  const source = host.wrapSource({ async read() {
+    ? Response.json({ error: 'SECRET-cookie-and-token', code, reason: 'SECRET-reason' }, { status: 409 }) : undefined);
+  const source = host.wrapSource({ async search() {
     const page = await host.WebViewPage.create();
     await page.goto(url);
   } });
-  await assert.rejects(source.read(), error => !error.message.includes('SECRET') && /stopped/.test(error.message));
+  await assert.rejects(source.search(), error => !error.message.includes('SECRET') && /stopped/.test(error.message));
   assert.equal(calls.at(-1).body.cmd, 'sessions.destroy');
   const count = calls.length;
-  await assert.rejects(source.read(), /stopped/);
+  await assert.rejects(source.search(), /stopped/);
   assert.equal(calls.length, count);
 });
 
@@ -143,12 +143,12 @@ test('wrong identity, malformed results and uncertain creation fail closed and d
       if (failAt === '/v1') throw new Error('SECRET: response lost');
       return Response.json({ ready: true, url: 'https://other.test', value: 'incorrect' });
     });
-    const source = host.wrapSource({ async read() {
+    const source = host.wrapSource({ async search() {
       const page = await host.WebViewPage.create();
       await page.goto(url);
       return page.evaluate(() => document.title);
     } });
-    await assert.rejects(source.read(), error => !error.message.includes('SECRET'));
+    await assert.rejects(source.search(), error => !error.message.includes('SECRET'));
     assert.equal(calls.at(-1).body.cmd, 'sessions.destroy');
     assert.equal(calls.filter(call => call.body.cmd === 'sessions.create').length, 1);
   }
@@ -161,12 +161,12 @@ test('late creation after method completion or host close is destroyed exactly o
     const { host, calls } = harness(async (path, body) => {
       if (body.cmd === 'sessions.create') await gate;
     });
-    const source = host.wrapSource({ async read() {
+    const source = host.wrapSource({ async search() {
       creation = host.WebViewPage.create();
       creation.catch(() => {});
       if (finish === 'host') await creation;
     } });
-    const method = source.read();
+    const method = source.search();
     method.catch(() => {});
     await new Promise(resolve => setImmediate(resolve));
     const shutdown = finish === 'host' ? host.close() : undefined;
@@ -184,15 +184,28 @@ test('overlapping methods cannot create two pages on the same source', async () 
   const { host, calls } = harness();
   let release;
   const gate = new Promise(resolve => { release = resolve; });
-  const source = host.wrapSource({ async read(wait) {
+  const source = host.wrapSource({ async search(wait) {
     await host.WebViewPage.create();
     if (wait) await gate;
   } });
-  const first = source.read(true);
+  const first = source.search(true);
   await new Promise(resolve => setImmediate(resolve));
-  await assert.rejects(source.read(false), /Only one WebView/);
+  await assert.rejects(source.search(false), /Only one WebView/);
   assert.equal(calls.filter(call => call.body.cmd === 'sessions.create').length, 1);
   release(); await first;
+});
+
+test('wrapping SDK entrypoints preserves synchronous internal helper types and identity', async () => {
+  const { host, calls } = harness();
+  const raw = { label: 'native', searchURL() { return url; }, allowed() { return false; },
+    highlight() { return { title: this.label }; }, async search() { return this.searchURL(); } };
+  const source = host.wrapSource(raw);
+  assert.equal(source.searchURL, raw.searchURL);
+  assert.equal(source.searchURL(), url);
+  assert.equal(source.allowed(), false);
+  assert.deepEqual(source.highlight(), { title: 'native' });
+  assert.equal(await source.search(), url);
+  assert.equal(calls.length, 0);
 });
 
 test('actual browser bridge awaits promises, preserves JSON and rejects lossy values without invoking serializers', async () => {
@@ -225,8 +238,9 @@ tree = ast.parse(pathlib.Path(sys.argv[1]).read_text())
 nodes = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in {'assert_document_url', 'operation_timeout', 'navigate'}]
 exec(compile(ast.Module(body=nodes, type_ignores=[]), sys.argv[1], 'exec'))
 class BrowserGate(Exception): pass
-def assert_browser_safety(driver):
+def assert_browser_safety(driver, allow_startup=False):
  if driver.state.get('gate'): raise BrowserGate(driver.state['gate'])
+ if driver.current_url.startswith('chrome:') and not (allow_startup and driver.current_url in ('chrome://newtab/', 'chrome://new-tab-page/')): raise BrowserGate('security')
 class Driver:
  def __init__(self, states, error=None):
   self.states, self.index, self.error, self.started = states, 0, error, False
@@ -247,14 +261,19 @@ class Driver:
  def sleep(self, delay):
   self.index = min(self.index + 1, len(self.states) - 1)
   self.clock += delay
-def run(states, wait='load', error=None):
+def run(states, wait='load', error=None, initial=False):
  global time
  d = Driver(states, error); d.clock = 0
  time = SimpleNamespace(monotonic=lambda: d.clock, sleep=d.sleep)
- return navigate(d, '${url}', wait, 0.5)
+ return navigate(d, '${url}', wait, 0.5, allow_startup=initial)
 old = {'url': 'https://marumaru105.com/manhwa', 'loader': 'old'}
 new = {'url': '${url}', 'loader': 'requested'}
 assert run([old, new])['ready']
+startup = {'url': 'chrome://newtab/', 'loader': 'blank'}
+assert run([startup, new], initial=True)['ready']
+try: run([startup, {**new, 'title': 'Just a moment...'}, startup], initial=True)
+except BrowserGate: pass
+else: raise AssertionError('Startup allowance survived document commit')
 assert run([{'url': '${url}', 'loader': 'old'}, new])['ready']
 assert run([old, {**new, 'title': 'Just a moment...'}, {**new, 'loader': 'after-challenge'}])['ready']
 # A fast passive reload can finish between polls, so observe a different committed
@@ -275,5 +294,36 @@ except BrowserGate: pass
 else: raise AssertionError('Certificate failure did not stop the browser')
 print('Navigation state assertions passed')`;
   const result = spawnSync('python3', ['-c', program, fileURLToPath(new URL('./flaresolverr/webview_page.py', import.meta.url))], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test('only exact benign startup tabs may pass the initial check; real security/CAPTCHA markers still stop', () => {
+  const program = `import ast, pathlib, sys
+from urllib.parse import urlparse
+tree = ast.parse(pathlib.Path(sys.argv[1]).read_text())
+nodes = [n for n in tree.body if (isinstance(n, ast.FunctionDef) and n.name == 'assert_browser_safety') or (isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id in {'CAPTCHA_SCRIPT', 'CHALLENGE_FRAMES'} for t in n.targets))]
+exec(compile(ast.Module(body=nodes, type_ignores=[]), sys.argv[1], 'exec'))
+class BrowserGate(Exception): pass
+class Driver:
+ def __init__(self, url, title='New Tab', body='', captcha=False):
+  self.current_url, self.title, self.page_source, self.captcha = url, title, body, captcha
+ def execute_script(self, script): return self.captcha
+ def find_elements(self, *args): return []
+for url in ['chrome://newtab/', 'chrome://new-tab-page/']:
+ assert_browser_safety(Driver(url), allow_startup=True)
+ try: assert_browser_safety(Driver(url))
+ except BrowserGate: pass
+ else: raise AssertionError('Startup allowance leaked beyond initial navigation')
+ for d in [Driver(url, title='Privacy error'), Driver(url, body='net::ERR_CERT_AUTHORITY_INVALID'), Driver(url, captcha=True)]:
+  try: assert_browser_safety(d, allow_startup=True)
+  except BrowserGate: pass
+  else: raise AssertionError('Startup allowance bypassed actual warning')
+for url in ['chrome://newtab/?x=1', 'chrome://newtab/#x', 'chrome://newtab/unsafe', 'chrome://newtab.evil/', 'chrome://interstitials/', 'chrome-error://chromewebdata/']:
+ try: assert_browser_safety(Driver(url), allow_startup=True)
+ except BrowserGate: pass
+ else: raise AssertionError('Unsafe internal page accepted')
+assert_browser_safety(Driver('about:blank'))
+print('Startup and negative safety assertions passed')`;
+  const result = spawnSync('python3', ['-c', program, fileURLToPath(new URL('./flaresolverr/browser_request.py', import.meta.url))], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
 });

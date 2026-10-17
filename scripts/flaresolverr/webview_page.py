@@ -9,6 +9,7 @@ from bottle import request, response
 from browser_request import BrowserGate, assert_browser_safety, session_driver, session_lock
 
 MAX_JSON = 4 * 1024 * 1024
+NAVIGATED = set()
 
 
 def assert_document_url(value):
@@ -42,7 +43,7 @@ def assert_document(driver, expected):
         raise ValueError('WebView document identity changed')
 
 
-def navigate(driver, url, wait_until, timeout):
+def navigate(driver, url, wait_until, timeout, allow_startup=False):
     assert_document_url(url)
     operation_timeout(timeout)
     if wait_until not in ('domcontentloaded', 'load'):
@@ -50,18 +51,18 @@ def navigate(driver, url, wait_until, timeout):
     # CDP navigation does not impose WebDriver's default full-load wait, which
     # would incorrectly implement the SDK's domcontentloaded option.
     previous = driver.current_url
-    assert_browser_safety(driver)
+    assert_browser_safety(driver, allow_startup=allow_startup)
     previous_loader = driver.execute_cdp_cmd('Page.getFrameTree', {})['frameTree']['frame'].get('loaderId')
     result = driver.execute_cdp_cmd('Page.navigate', {'url': url})
     if result.get('errorText'):
         if re.search(r'ERR_CERT_|ERR_SSL_', result['errorText']):
-            raise BrowserGate('security')
+            raise BrowserGate('security', 'tls-navigation-error')
         assert_browser_safety(driver)
         raise ValueError('WebView navigation failed')
     deadline = time.monotonic() + timeout
     committed = False
     while True:
-        assert_browser_safety(driver)
+        assert_browser_safety(driver, allow_startup=allow_startup and not committed)
         current = driver.current_url
         frame = driver.execute_cdp_cmd('Page.getFrameTree', {})['frameTree']['frame']
         # Once committed, a passive managed check may reload this exact URL
@@ -161,16 +162,25 @@ def register(app):
                 return action(session_driver(payload['session']), payload)
         except BrowserGate as error:
             response.status = 409
-            return {'error': 'Browser requires user action', 'code': error.code}
+            return {'error': 'Browser requires user action', 'code': error.code, 'reason': error.reason}
         except Exception:
             response.status = 502
             # Never expose exception text, page bodies, arguments or credentials.
             return {'error': 'Anonymous WebView operation failed'}
 
+    @app.hook('before_request')
+    def forget_destroyed_session():
+        if request.path == '/v1' and (request.json or {}).get('cmd') == 'sessions.destroy':
+            NAVIGATED.discard((request.json or {}).get('session'))
+
+    def navigate_once(driver, payload):
+        first = payload['session'] not in NAVIGATED
+        NAVIGATED.add(payload['session'])
+        return navigate(driver, payload['url'], payload['waitUntil'], payload['timeout'], allow_startup=first)
+
     @app.post('/webview/goto')
     def goto():
-        return handle({'session', 'url', 'waitUntil', 'timeout'},
-                      lambda driver, p: navigate(driver, p['url'], p['waitUntil'], p['timeout']))
+        return handle({'session', 'url', 'waitUntil', 'timeout'}, navigate_once)
 
     @app.post('/webview/evaluate')
     def run_evaluation():
