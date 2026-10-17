@@ -2,9 +2,12 @@
 // Uses anonymous Chromium, not a WKWebView/iOS emulator. No source imports this.
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
+import { verifyRasterImageBytes } from './mana-test-image-bytes.mjs';
 
 const MAX_JSON = 4 * 1024 * 1024;
 const MAX_IMAGE = 16 * 1024 * 1024;
+const verifiedBrowserImages = new WeakMap();
+export const browserImageProof = response => verifiedBrowserImages.get(response);
 async function boundedHelperText(response, maxBytes, milliseconds) {
   const reader = response.body?.getReader();
   if (!reader) throw new Error('Missing helper response');
@@ -90,6 +93,30 @@ export function jsonBridge(value) {
   return JSON.parse(serialized);
 }
 
+export function safeWebViewDiagnostic(result) {
+  const phase = ['goto', 'evaluate', 'image-capture'].includes(result?.phase) ? result.phase : 'unknown';
+  const reason = ['navigation-timeout', 'operation-timeout', 'document-identity-changed', 'navigation-error', 'evaluation-error',
+    'callback-rejected', 'callback-invalid', 'render-readiness-timeout', 'serialization-error',
+    'invalid-operation', 'driver-timeout', 'driver-element-changed', 'driver-frame-changed', 'driver-window-closed',
+    'driver-session-lost', 'driver-script-error', 'driver-error', 'unexpected-error',
+    'image-invalid-request', 'image-network-evidence-invalid', 'image-network-evidence-limit', 'image-redirect',
+    'image-request-identity', 'image-request-duplicate', 'image-request-provenance', 'image-response-identity',
+    'image-request-method', 'image-request-document', 'image-request-resource-type', 'image-request-fragment',
+    'image-response-resource-type', 'image-response-duplicate', 'image-response-http-status',
+    'image-response-service-worker', 'image-response-mime', 'image-response-metadata', 'image-response-challenge', 'image-response-forbidden',
+    'image-content-type-invalid', 'image-content-type-missing', 'image-content-type-duplicate', 'image-content-type-mismatch',
+    'image-load-failed', 'image-load-completion', 'image-page-challenge', 'image-hero-evidence',
+    'image-hero-identity', 'image-hero-changed', 'image-body-unavailable', 'image-capture-timeout',
+    'image-decode-failed', 'image-decode-timeout', 'image-decode-identity', 'image-decode-not-ready', 'image-decode-evidence'].includes(result?.reason) ? result.reason : 'unknown';
+  const stage = ['setup', 'validation', 'session-acquisition', 'initial-safety', 'network-enable', 'initial-log',
+    'navigation', 'page-safety', 'observation', 'hero', 'decode', 'body-read', 'final-verification', 'body-validation'].includes(result?.stage) ? result.stage : 'unknown';
+  const media = ['jpeg', 'jpg', 'png', 'gif', 'webp', 'avif', 'bmp', 'icon', 'octet-stream', 'binary-octet-stream',
+    'chemical-xyz', 'image-xyz', 'application-xyz', 'application-x-xyz', 'text', 'html', 'json', 'other', 'missing', 'duplicate', 'invalid'];
+  const cdpMimeCategory = media.includes(result?.cdpMimeCategory) ? result.cdpMimeCategory : 'unknown';
+  const contentTypeCategory = media.includes(result?.contentTypeCategory) ? result.contentTypeCategory : 'unknown';
+  return { phase, reason, stage, cdpMimeCategory, contentTypeCategory };
+}
+
 export function createManaTestWebView({ solverURL = process.env.FLARESOLVERR_URL, fetchImpl = globalThis.fetch } = {}) {
   let solver;
   if (solverURL) {
@@ -115,13 +142,12 @@ export function createManaTestWebView({ solverURL = process.env.FLARESOLVERR_URL
         const reason = ['insecure-capability', 'internal-page', 'certificate-marker', 'tls-navigation-error'].includes(result.reason) ? ` (${result.reason})` : '';
         stopped = new Error(`Browser security warning${reason}; WebView live checks stopped`);
       }
-      const phase = ['goto', 'evaluate'].includes(result?.phase) ? result.phase : 'unknown';
-      const reason = ['navigation-timeout', 'operation-timeout', 'document-identity-changed', 'navigation-error', 'evaluation-error',
-        'callback-rejected', 'callback-invalid', 'render-readiness-timeout', 'serialization-error',
-        'invalid-operation', 'driver-timeout', 'driver-element-changed', 'driver-frame-changed', 'driver-window-closed',
-        'driver-session-lost', 'driver-script-error', 'driver-error', 'unexpected-error'].includes(result?.reason) ? result.reason : 'unknown';
-      const diagnostic = result?.code === 'operation' ? ` (${phase}: ${reason})` : '';
-      throw stopped ?? new Error(`Live-test WebView operation failed${diagnostic}; no upstream details are logged`);
+      const safe = safeWebViewDiagnostic(result), { phase, reason, stage, cdpMimeCategory, contentTypeCategory } = safe;
+      const diagnostic = result?.code === 'operation' ? ` (${phase}: ${reason}${phase === 'image-capture' ? `; stage: ${stage}; mime: ${cdpMimeCategory}; content-type: ${contentTypeCategory}` : ''})` : '';
+      if (stopped) throw stopped;
+      const failure = new Error(`Live-test WebView operation failed${diagnostic}; no upstream details are logged`);
+      if (result?.code === 'operation') Object.defineProperty(failure, 'liveTestDiagnostic', { value: safe });
+      throw failure;
     }
     return result;
   }
@@ -208,16 +234,18 @@ export function createManaTestWebView({ solverURL = process.env.FLARESOLVERR_URL
           if (closed || stopped) throw stopped ?? new Error('Live-test WebView host is closed');
           const result = await command('/webview/image-response', { session, url, timeout: 30 }, 30, Math.ceil(MAX_IMAGE * 4 / 3) + 2048);
           if (closed || stopped) throw stopped ?? new Error('Live-test WebView host is closed');
-          if (Object.keys(result).sort().join(',') !== 'body,contentType,encoding,status,url'
-              || result.url !== url || result.status !== 200 || result.encoding !== 'base64'
-              || typeof result.contentType !== 'string' || !/^image\/[a-z0-9][a-z0-9.+-]*$/i.test(result.contentType)
+          if (Object.keys(result).sort().join(',') !== 'body,contentType,decoded,encoding,status,url'
+              || result.url !== url || result.status !== 200 || result.encoding !== 'base64' || result.decoded !== true
+              || typeof result.contentType !== 'string' || (!/^image\/[a-z0-9][a-z0-9.+-]*$/i.test(result.contentType) && result.contentType !== 'application/octet-stream')
               || typeof result.body !== 'string' || result.body.length > 4 * Math.ceil(MAX_IMAGE / 3)) {
             throw new Error('Browser-context cover response lacks exact identity, status or image bytes');
           }
           const bytes = Buffer.from(result.body, 'base64');
           if (!bytes.length || bytes.length > MAX_IMAGE || bytes.toString('base64') !== result.body) throw new Error('Browser-context cover bytes are invalid');
+          const raster = result.contentType === 'application/octet-stream' ? verifyRasterImageBytes(bytes) : undefined;
           const response = new Response(bytes, { status: result.status, headers: { 'content-type': result.contentType } });
           Object.defineProperty(response, 'url', { value: url });
+          if (raster) verifiedBrowserImages.set(response, Object.freeze({ url, contentType: result.contentType, ...raster }));
           return response;
         } finally {
           // Destroy even if creation's reply was lost, and never retry a capture.

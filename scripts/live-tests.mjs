@@ -7,7 +7,8 @@ import { testKagane } from './kagane-live-tests.mjs';
 import { testHijala } from './hijala-live-tests.mjs';
 import { createManaTestTransport } from './mana-test-browser.mjs';
 import { createManaTestWebView } from './mana-test-webview.mjs';
-import { fetchTestImage } from './mana-test-images.mjs';
+import { fetchTestImage, resolvedBrowserImageProof } from './mana-test-images.mjs';
+import { verifyRasterImageBytes } from './mana-test-image-bytes.mjs';
 import { failedSources } from './test-sources.mjs';
 import { readSelection } from './changed-sources.mjs';
 import { testMangaSushi, coverDimensions } from './mangasushi-live-tests.mjs';
@@ -63,7 +64,16 @@ async function image(source, imageUrl) {
   assert(response.ok, `Image HTTP ${response.status}: ${redactURL(requestedURL)}`);
   const octetCover = source.info.id === 'VortexScans' && new URL(requestedURL).hostname === 'storage.vortexscans.org'
     && response.headers.get('content-type')?.split(';')[0] === 'application/octet-stream';
-  assert(response.headers.get('content-type')?.startsWith('image/') || octetCover, 'Response is not an image');
+  const proof = resolvedBrowserImageProof(response);
+  const verifiedMarumaruCover = source.info.id === 'Marumaru' && proof?.url === requestedURL
+    && response.url === requestedURL && response.headers.get('content-type') === 'application/octet-stream';
+  assert(response.headers.get('content-type')?.startsWith('image/') || octetCover || verifiedMarumaruCover, 'Response is not an image');
+  if (verifiedMarumaruCover) {
+    const raster = verifyRasterImageBytes(new Uint8Array(await response.arrayBuffer()));
+    assert.deepEqual(raster, { format: proof.format, width: proof.width, height: proof.height });
+    console.log(`IMAGE browser-decoded ${raster.format} ${raster.width}x${raster.height} application/octet-stream`);
+    return;
+  }
   const reader = response.body.getReader();
   try {
     const { value } = await reader.read();

@@ -651,9 +651,12 @@ navigates directly to the image, exports cookies, substitutes URLs, or treats an
 ordinary denial as a challenge. Source authorization is checked again before bytes
 are accepted. Logs distinguish the original direct HTTP response from the
 browser-context result; this is not proof that raw Node or physical iOS succeeds.
-Reader images remain on the direct transport, and HTTP/content-type/nonempty-byte
-assertions are unchanged. No diagnostic-only workflow or skipped check is used by
-the full suite.
+Reader images remain on the direct transport. The observed Marumaru cover MIME
+`application/octet-stream` is preserved, not rewritten: only a verified browser
+capture can accept it, after the same hero's bounded `image.decode()` succeeds
+and its complete JPEG/PNG/WebP body passes independent container checks. The live
+assertion rechecks those full bytes. Other source and reader MIME/byte guards are
+unchanged. No diagnostic-only workflow or skipped check is used by the full suite.
 Without FLARESOLVERR_URL, local network checks use ordinary direct requests,
 challenges fail visibly, and WebView-dependent checks report a missing real browser
 rather than being skipped or receiving substitute data. New sources must support the exercised contract; unsupported host

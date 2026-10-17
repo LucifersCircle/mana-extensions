@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { fetchTestImage, interceptImageResponse } from './mana-test-images.mjs';
-import { assertCoverImageURL, createManaTestWebView } from './mana-test-webview.mjs';
+import { fetchTestImage, interceptImageResponse, resolvedBrowserImageProof } from './mana-test-images.mjs';
+import { assertCoverImageURL, createManaTestWebView, safeWebViewDiagnostic } from './mana-test-webview.mjs';
 
 const url = 'https://images.example.invalid/public-cover';
 function response(body, status = 200, headers = { 'content-type': 'image/png' }) {
@@ -132,11 +132,30 @@ function helperFixture(result = {}) {
   const fetchImpl = async (target, config) => {
     const payload = JSON.parse(config.body), path = new URL(target).pathname; calls.push({ path, ...payload });
     return Response.json(path === '/v1' ? { status: 'ok' } : {
-      url: cover, status: 200, contentType: 'image/webp', body: Buffer.from([0, 255, 128, 2]).toString('base64'), encoding: 'base64', ...result,
+      url: cover, status: 200, decoded: true, contentType: 'image/webp', body: Buffer.from([0, 255, 128, 2]).toString('base64'), encoding: 'base64', ...result,
     });
   };
   return { calls, host: createManaTestWebView({ solverURL: 'http://127.0.0.1:8191', fetchImpl }) };
 }
+
+test('image failures expose only approved capture stage/reason enums and close without retries', async () => {
+  assert.deepEqual(safeWebViewDiagnostic({ phase: 'secret-phase', stage: 'secret-stage', reason: 'secret-token' }),
+    { phase: 'unknown', stage: 'unknown', reason: 'unknown', cdpMimeCategory: 'unknown', contentTypeCategory: 'unknown' });
+  for (const stage of ['setup', 'validation', 'session-acquisition', 'initial-safety', 'network-enable',
+    'initial-log', 'navigation', 'page-safety', 'observation', 'hero', 'body-read', 'final-verification', 'body-validation']) {
+    const { host, calls } = helperFixture({ error: 'SECRET BODY', code: 'operation', phase: 'image-capture',
+      stage, reason: 'image-response-http-status', cdpMimeCategory: 'octet-stream', contentTypeCategory: 'SECRET-header' });
+    await assert.rejects(host.captureCoverImage(cover), error => {
+      assert(!error.message.includes('SECRET'));
+      assert(error.message.includes(`image-capture: image-response-http-status; stage: ${stage}`));
+      assert.equal(error.liveTestDiagnostic.cdpMimeCategory, 'octet-stream');
+      assert.equal(error.liveTestDiagnostic.contentTypeCategory, 'unknown');
+      return true;
+    });
+    assert.deepEqual(calls.map(call => call.cmd ?? call.path), ['sessions.create', '/webview/image-response', 'sessions.destroy']);
+    await host.close();
+  }
+});
 
 test('browser capture bridge accepts only exact public cover responses and always destroys its session', async () => {
   const { calls, host } = helperFixture();
@@ -145,7 +164,7 @@ test('browser capture bridge accepts only exact public cover responses and alway
   assert.equal(result.url, cover);
   assert.deepEqual(calls.map(call => call.cmd ?? call.path), ['sessions.create', '/webview/image-response', 'sessions.destroy']);
   assert.equal(new Set(calls.map(call => call.session)).size, 1); await host.close();
-  for (const malformed of [{ url: cover + '?changed' }, { status: 403 }, { contentType: 'text/html' }, { body: '!!!!' }, { body: '' }, { headers: { 'set-cookie': 'secret' } }]) {
+  for (const malformed of [{ url: cover + '?changed' }, { status: 403 }, { decoded: false }, { contentType: 'text/html' }, { body: '!!!!' }, { body: '' }, { headers: { 'set-cookie': 'secret' } }]) {
     const test = helperFixture(malformed); await assert.rejects(test.host.captureCoverImage(cover));
     assert.equal(test.calls.at(-1).cmd, 'sessions.destroy'); await test.host.close();
   }
@@ -182,4 +201,23 @@ test('helper response byte limit cancels oversized streams without exposing thei
   } });
   await assert.rejects(host.captureCoverImage(cover), /helper failed/);
   assert.equal(cancelled, true); await host.close();
+});
+
+
+test('only a decoded exact browser capture carries octet-stream image proof after source reauthorization', async () => {
+  const body = "iVBORw0KGgoAAAANSUhEUgAAAAMAAAAECAIAAADETxJQAAAAF0lEQVR4nGO0yWtiYGBgYGBgYoABbCwALQoBNAc+s50AAAAASUVORK5CYII=";
+  const { host } = helperFixture({ contentType: 'application/octet-stream', body });
+  const result = await fetchTestImage(sourceFixture(), cover, { fetchImpl: async () => challenge(), captureCoverImage: host.captureCoverImage });
+  assert.equal(result.headers.get('content-type'), 'application/octet-stream');
+  assert.deepEqual(resolvedBrowserImageProof(result), { url: cover, contentType: 'application/octet-stream', format: 'PNG', width: 3, height: 4 });
+  assert.equal(Buffer.from(await result.arrayBuffer()).toString('base64'), body);
+  await host.close();
+  const native = await fetchTestImage(sourceFixture(), cover, { fetchImpl: async () => coverResponse(200, { 'content-type': 'application/octet-stream' }, Buffer.from(body, 'base64')) });
+  assert.equal(resolvedBrowserImageProof(native), undefined, 'Native bytes must not claim browser decode');
+  const forged = await fetchTestImage(sourceFixture(), cover, { fetchImpl: async () => challenge(), captureCoverImage: async () => coverResponse(200, { 'content-type': 'application/octet-stream' }, Buffer.from(body, 'base64')) });
+  assert.equal(resolvedBrowserImageProof(forged), undefined, 'An arbitrary capture Response must not forge host proof');
+  for (const change of [{ body: Buffer.from('<html>denied</html>').toString('base64') }, { body: Buffer.from(body, 'base64').subarray(0, -2).toString('base64') }, { decoded: false }, { contentType: 'binary/octet-stream' }]) {
+    const { host } = helperFixture({ contentType: 'application/octet-stream', body, ...change });
+    await assert.rejects(host.captureCoverImage(cover)); await host.close();
+  }
 });
