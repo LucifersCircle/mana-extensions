@@ -50,6 +50,8 @@ export function parseCatalog(html: string, currentURL: string): {items: Card[]; 
 export function parseDetail(html: string, workId: string): Detail {
     id(workId); const $=cheerio.load(html), title=$('.hero-v2-title').text().trim()
     if (!title) throw new Error('Marumaru rendered detail unavailable; no title was returned')
+    const count=$('.ep-section-count'),rawTotal=count.text().trim(),total=Number(rawTotal)
+    if(count.length!==1||!/^[1-9]\d*$/.test(rawTotal)||!Number.isSafeInteger(total)||total>10000)throw new Error('Marumaru complete chapter count unavailable')
     const chapters: Episode[]=[], seen=new Set<string>()
     $('a.ep-row-v2-link').each((_,element)=>{
         const node=$(element), target=route(node.attr('href') ?? '')
@@ -63,11 +65,11 @@ export function parseDetail(html: string, workId: string): Detail {
         if(seen.has(target.episodeId)){const previous=chapters.find(c=>c.id===target.episodeId)!;if(previous.sourceNumber!==sourceNumber||previous.title!==label||previous.date.getTime()!==date.getTime())throw new Error('Conflicting Marumaru chapter metadata');return}
         seen.add(target.episodeId); chapters.push({id:target.episodeId,workId,sourceNumber,title:label,date})
     })
-    if (!chapters.length) throw new Error('Marumaru chapter list unavailable')
+    if (chapters.length!==total) throw new Error('Marumaru chapter inventory differs from its advertised count')
     const rawScore=$('.cs-rating-num strong').text().trim(), rawCount=$('.cs-rating-cnt strong').text().trim()
-    const score=Number(rawScore), count=Number(rawCount)
+    const score=Number(rawScore), ratingCount=Number(rawCount)
     const max=$('.cs-rating-max').text().trim()
-    const rating=rawScore!==''&&/^[1-9]\d*$/.test(rawCount)&&Number.isSafeInteger(count)&&count>0&&max==='/5.0'&&Number.isFinite(score)&&score>=0&&score<=5?score/5:undefined
+    const rating=rawScore!==''&&/^[1-9]\d*$/.test(rawCount)&&Number.isSafeInteger(ratingCount)&&ratingCount>0&&max==='/5.0'&&Number.isFinite(score)&&score>=0&&score<=5?score/5:undefined
     return {id:workId,title,cover:cover($('.hero-v2-thumb img').attr('src'),workId),genres:$('.hero-v2-tag').map((_,e)=>$(e).text().trim()).get().filter(Boolean),author:$('.hero-v2-author').text().trim(),summary:$('.hero-v2-desc').text().trim(),chapters,rating,explicitlyAdult:$('.hero-v2-adult').text().trim()==='19'}
 }
 export function parseReader(html: string, episodeId: string): string[] {

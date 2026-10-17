@@ -29,8 +29,8 @@ try {
   vm.runInContext(readFileSync('dist/sources/Marumaru.mana', 'utf8'), context, { timeout: 10_000 });
   const source = host.wrapSource(new context.Target());
   await check('Built Mana bundle and source metadata', async () => {
-    assert.equal(manifest.sources.find(item => item.id === 'Marumaru')?.version, '0.0.1-alpha.4');
-    assert.equal(source.info.id, 'Marumaru'); assert.equal(source.info.version, '0.0.1-alpha.4');
+    assert.equal(manifest.sources.find(item => item.id === 'Marumaru')?.version, '0.0.1-alpha.5');
+    assert.equal(source.info.id, 'Marumaru'); assert.equal(source.info.version, '0.0.1-alpha.5');
   });
   await testMarumaru({ source, check, renderedDetail: () => html,
     searchResult: result => {

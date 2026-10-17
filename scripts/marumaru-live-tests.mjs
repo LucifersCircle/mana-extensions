@@ -42,6 +42,8 @@ export async function testMarumaru({ source, check, searchResult, image, rendere
     }).reverse();
     assert(reference.length > 1, 'Rendered reference has no usable chapter inventory');
     assert.equal(new Set(reference.map(c => c.chapterId)).size, reference.length, 'Reference repeats a chapter identity');
+    assert.equal($('.ep-section-count').length, 1, 'Rendered reference has no unique advertised chapter count');
+    assert.equal(Number($('.ep-section-count').text().trim()), reference.length, 'Rendered reference is not the complete advertised chapter inventory');
     const endpoint = selector => {
       const link = $(selector);
       assert.equal(link.length, 1, 'Rendered chapter endpoint is missing or ambiguous');
