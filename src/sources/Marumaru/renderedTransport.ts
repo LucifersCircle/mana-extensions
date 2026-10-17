@@ -31,9 +31,11 @@ async function render(url:string):Promise<string>{
                     return hero.outerHTML+rows.map(r=>r.outerHTML).join('')+(document.querySelector('.cs-rating-card')?.outerHTML??'')
                 }
                 if(location.pathname==='/search'){
-                    const grid=document.querySelector('.search-results-grid'),count=document.querySelector('.count'),input=document.querySelector('input[name="q"]')
-                    if(!count||!input||!grid?.children.length)return null
-                    return (grid?.outerHTML??'')+count.outerHTML+input.outerHTML+[...document.querySelectorAll('a.pager-btn')].map(a=>a.outerHTML).join('')
+                    const grid=document.querySelector('.search-results-grid'),count=document.querySelector('.count'),forms=document.querySelectorAll('form.search-page-form')
+                    const form=forms[0]
+                    // The header has its own empty q input; only the result-page form identifies this search.
+                    if(!count||forms.length!==1||!form||form.querySelectorAll('input[name="q"]').length!==1||!grid?.children.length)return null
+                    return grid.outerHTML+count.outerHTML+form.outerHTML+[...document.querySelectorAll('a.pager-btn')].map(a=>a.outerHTML).join('')
                 }
                 const cards=[...document.querySelectorAll('a[data-work-card]')]
                 return cards.length?cards.map(c=>c.outerHTML).join('')+[...document.querySelectorAll('a.pager-btn')].map(a=>a.outerHTML).join(''):null

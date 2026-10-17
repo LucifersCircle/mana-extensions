@@ -91,7 +91,8 @@ export function parseSearch(html:string,currentURL:string):{items:Card[];next?:s
     const current=documentParts(currentURL)
     if(current.path!=='/search'||current.query.kind!=='manhwa'||!current.query.q)throw new Error('Unsupported Marumaru search scope')
     const $=cheerio.load(html),items:Card[]=[],seen=new Set<string>()
-    if($('input[name="q"]').attr('value')!==current.query.q)throw new Error('Marumaru rendered search query mismatch')
+    const forms=$('form.search-page-form'),queryInput=forms.find('input[name="q"]')
+    if(forms.length!==1||queryInput.length!==1||queryInput.attr('value')!==current.query.q)throw new Error('Marumaru rendered search query mismatch')
     $('.search-results-grid a.card').each((_,element)=>{
         const node=$(element),target=route(node.attr('href')??'')
         if(!target||target.episodeId)throw new Error('Marumaru search returned another content category')

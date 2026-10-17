@@ -35,7 +35,7 @@ import { accessPolicy,
     rating,
     visible } from './MarumaruPolicy'
 export class Target implements ChapterSource, ImageRequestHandler, PageLinkResolver {
-    readonly info:SourceInfo={id:'Marumaru',name:'Marumaru',version:'0.0.1-alpha.1',website:DOMAIN,rating:CatalogRating.MIXED,supportedLanguages:['ko_KR'],badges:['Manga'],developers:[{name:'Lucifers Circle',github:'https://github.com/LucifersCircle'}],description:'Korean manga catalog and reader through ordinary rendered website pages. Unclassified titles use a Suggestive compatibility fallback, not a source age rating. Explicit 19 labels are preserved. WebView device validation is required before release.'};
+    readonly info:SourceInfo={id:'Marumaru',name:'Marumaru',version:'0.0.1-alpha.2',website:DOMAIN,rating:CatalogRating.MIXED,supportedLanguages:['ko_KR'],badges:['Manga'],developers:[{name:'Lucifers Circle',github:'https://github.com/LucifersCircle'}],description:'Korean manga catalog and reader through ordinary rendered website pages. Unclassified titles use a Suggestive compatibility fallback, not a source age rating. Explicit 19 labels are preserved. WebView device validation is required before release.'};
     readonly config={owningLinks:['marumaru105.com']};
     private readonly service=new MarumaruService(renderedHTML);
     private revision=-1;
