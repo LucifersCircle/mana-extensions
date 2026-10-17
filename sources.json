@@ -30,7 +30,7 @@
       "path": "Hijala",
       "environment": "source",
       "intents": 6298637,
-      "hash": "08490c7008490c7008490c7008490c7008490c7008490c7008490c7008490c70"
+      "hash": "34fc5af734fc5af734fc5af734fc5af734fc5af734fc5af734fc5af734fc5af7"
     },
     {
       "id": "Kagane",
@@ -59,7 +59,7 @@
       "path": "Kagane",
       "environment": "source",
       "intents": 6298637,
-      "hash": "370d4c8f370d4c8f370d4c8f370d4c8f370d4c8f370d4c8f370d4c8f370d4c8f"
+      "hash": "06381e0706381e0706381e0706381e0706381e0706381e0706381e0706381e07"
     },
     {
       "id": "MangaStash",
@@ -86,7 +86,7 @@
       "path": "MangaStash",
       "environment": "source",
       "intents": 6298637,
-      "hash": "2df2ccbb2df2ccbb2df2ccbb2df2ccbb2df2ccbb2df2ccbb2df2ccbb2df2ccbb"
+      "hash": "6b3837e76b3837e76b3837e76b3837e76b3837e76b3837e76b3837e76b3837e7"
     },
     {
       "id": "MangaSushi",
@@ -111,7 +111,7 @@
       "path": "MangaSushi",
       "environment": "source",
       "intents": 6298637,
-      "hash": "4c798e5e4c798e5e4c798e5e4c798e5e4c798e5e4c798e5e4c798e5e4c798e5e"
+      "hash": "0f34236b0f34236b0f34236b0f34236b0f34236b0f34236b0f34236b0f34236b"
     },
     {
       "id": "ManhwaNex",
@@ -138,7 +138,31 @@
       "path": "ManhwaNex",
       "environment": "source",
       "intents": 6298637,
-      "hash": "7135f3d77135f3d77135f3d77135f3d77135f3d77135f3d77135f3d77135f3d7"
+      "hash": "5184a0de5184a0de5184a0de5184a0de5184a0de5184a0de5184a0de5184a0de"
+    },
+    {
+      "id": "Marumaru",
+      "name": "Marumaru",
+      "version": "0.0.1-alpha.1",
+      "website": "https://marumaru105.com",
+      "rating": 1,
+      "supportedLanguages": [
+        "ko_KR"
+      ],
+      "badges": [
+        "Manga"
+      ],
+      "developers": [
+        {
+          "name": "Lucifers Circle",
+          "github": "https://github.com/LucifersCircle"
+        }
+      ],
+      "description": "Korean manga catalog and reader through ordinary rendered website pages. Unclassified titles use a Suggestive compatibility fallback, not a source age rating. Explicit 19 labels are preserved. WebView device validation is required before release.",
+      "path": "Marumaru",
+      "environment": "source",
+      "intents": 2098188,
+      "hash": "67f5ea0e67f5ea0e67f5ea0e67f5ea0e67f5ea0e67f5ea0e67f5ea0e67f5ea0e"
     },
     {
       "id": "VortexScans",
@@ -165,7 +189,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 6298636,
-      "hash": "7be58c6a7be58c6a7be58c6a7be58c6a7be58c6a7be58c6a7be58c6a7be58c6a"
+      "hash": "46d50b5946d50b5946d50b5946d50b5946d50b5946d50b5946d50b5946d50b59"
     }
   ]
 }
