@@ -4,7 +4,7 @@
   "sources": [
     {
       "id": "Hijala",
-      "version": "0.0.1-alpha.6",
+      "version": "0.0.1-alpha.7",
       "name": "Hijala",
       "thumbnail": "Hijala.png",
       "website": "https://en-hijala.com",
@@ -29,12 +29,12 @@
       ],
       "path": "Hijala",
       "environment": "source",
-      "intents": 6298637,
-      "hash": "5c510e985c510e985c510e985c510e985c510e985c510e985c510e985c510e98"
+      "intents": 106961929,
+      "hash": "2080c0bb2080c0bb2080c0bb2080c0bb2080c0bb2080c0bb2080c0bb2080c0bb"
     },
     {
       "id": "Kagane",
-      "version": "0.0.1-alpha.17",
+      "version": "0.0.1-alpha.18",
       "name": "Kagane",
       "description": "Kagane with current API support, grouped tags and global four-category content settings.",
       "thumbnail": "Kagane.png",
@@ -58,12 +58,12 @@
       ],
       "path": "Kagane",
       "environment": "source",
-      "intents": 6298637,
-      "hash": "2d8cd1482d8cd1482d8cd1482d8cd1482d8cd1482d8cd1482d8cd1482d8cd148"
+      "intents": 106961929,
+      "hash": "121b8860121b8860121b8860121b8860121b8860121b8860121b8860121b8860"
     },
     {
       "id": "MangaStash",
-      "version": "0.0.1-alpha.4",
+      "version": "0.0.1-alpha.5",
       "name": "MangaStash",
       "thumbnail": "MangaStash.png",
       "rating": 1,
@@ -85,12 +85,12 @@
       ],
       "path": "MangaStash",
       "environment": "source",
-      "intents": 6298637,
-      "hash": "6d7317bb6d7317bb6d7317bb6d7317bb6d7317bb6d7317bb6d7317bb6d7317bb"
+      "intents": 106961929,
+      "hash": "5f2c4c425f2c4c425f2c4c425f2c4c425f2c4c425f2c4c425f2c4c425f2c4c42"
     },
     {
       "id": "MangaSushi",
-      "version": "0.0.1-alpha.11",
+      "version": "0.0.1-alpha.12",
       "name": "MangaSushi",
       "description": "MangaSushi with native discovery, search filters and Mana content-rating policy.",
       "thumbnail": "MangaSushi.png",
@@ -110,12 +110,12 @@
       ],
       "path": "MangaSushi",
       "environment": "source",
-      "intents": 6298637,
-      "hash": "18208cee18208cee18208cee18208cee18208cee18208cee18208cee18208cee"
+      "intents": 106961929,
+      "hash": "40b07d9e40b07d9e40b07d9e40b07d9e40b07d9e40b07d9e40b07d9e40b07d9e"
     },
     {
       "id": "ManhwaNex",
-      "version": "0.0.1-alpha.9",
+      "version": "0.0.1-alpha.10",
       "name": "ManhwaNex",
       "description": "ManhwaNex with native discovery, search filters and Mana content-rating policy.",
       "thumbnail": "ManhwaNex.png",
@@ -137,13 +137,13 @@
       ],
       "path": "ManhwaNex",
       "environment": "source",
-      "intents": 6298637,
-      "hash": "2a2ff0bf2a2ff0bf2a2ff0bf2a2ff0bf2a2ff0bf2a2ff0bf2a2ff0bf2a2ff0bf"
+      "intents": 106961929,
+      "hash": "13d4d47313d4d47313d4d47313d4d47313d4d47313d4d47313d4d47313d4d473"
     },
     {
       "id": "Marumaru",
       "name": "Marumaru",
-      "version": "0.0.1-alpha.5",
+      "version": "0.0.1-alpha.6",
       "website": "https://marumaru105.com",
       "rating": 1,
       "supportedLanguages": [
@@ -161,12 +161,12 @@
       "description": "Korean manga catalog and reader through ordinary rendered website pages. Unclassified titles use a Suggestive compatibility fallback, not a source age rating. Explicit 19 labels are preserved. WebView device validation is required before release.",
       "path": "Marumaru",
       "environment": "source",
-      "intents": 2098188,
-      "hash": "6e7800156e7800156e7800156e7800156e7800156e7800156e7800156e780015"
+      "intents": 102761480,
+      "hash": "1052e80d1052e80d1052e80d1052e80d1052e80d1052e80d1052e80d1052e80d"
     },
     {
       "id": "VortexScans",
-      "version": "0.0.1-alpha.12",
+      "version": "0.0.1-alpha.13",
       "name": "VortexScans",
       "description": "Read manga, manhwa, and manhua from VortexScans.",
       "thumbnail": "VortexScans.png",
@@ -188,8 +188,8 @@
       ],
       "path": "VortexScans",
       "environment": "source",
-      "intents": 6298636,
-      "hash": "1f8058361f8058361f8058361f8058361f8058361f8058361f8058361f805836"
+      "intents": 106961928,
+      "hash": "2384d04c2384d04c2384d04c2384d04c2384d04c2384d04c2384d04c2384d04c"
     }
   ]
 }
