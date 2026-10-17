@@ -4,6 +4,29 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 
 const MAX_JSON = 4 * 1024 * 1024;
+const MAX_IMAGE = 16 * 1024 * 1024;
+async function boundedHelperText(response, maxBytes, milliseconds) {
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('Missing helper response');
+  const parts = []; let size = 0, reads = 0, timer;
+  const expires = performance.now() + milliseconds;
+  const deadline = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Helper response timeout')), milliseconds); });
+  try {
+    for (;;) {
+      if (++reads > 65536 || performance.now() >= expires) throw new Error('Helper response read limit');
+      const { done, value } = await Promise.race([reader.read(), deadline]);
+      if (done) break;
+      size += value.byteLength;
+      if (size > maxBytes) throw new Error('Oversized helper response');
+      parts.push(Buffer.from(value));
+    }
+    return Buffer.concat(parts).toString('utf8');
+  } finally { clearTimeout(timer); void reader.cancel().catch(() => {}); reader.releaseLock(); }
+}
+export function assertCoverImageURL(value) {
+  if (typeof value !== 'string' || !/^https:\/\/peer\.storagewebtoon\.store\/(?:manhwa|webtoon)\/[1-9]\d*\/[A-Za-z0-9._-]+$/.test(value)
+      || /\/(?:\.|\.\.)$/.test(value)) throw new Error('Live-test browser rejects unsupported cover image');
+}
 // Only SDK entrypoints own a WebView lifetime. Test probes also call internal
 // synchronous helpers (URL builders, classifiers, parsers); never promise-wrap
 // those helpers or change their return types/identity.
@@ -74,15 +97,14 @@ export function createManaTestWebView({ solverURL = process.env.FLARESOLVERR_URL
     if (solver.protocol !== 'http:' || solver.hostname !== '127.0.0.1' || solver.username || solver.password
         || solver.pathname !== '/' || solver.search || solver.hash) throw new Error('Live-test WebView requires a loopback HTTP browser helper');
   }
-  const scope = new AsyncLocalStorage(), pages = new Set();
+  const scope = new AsyncLocalStorage(), pages = new Set(), imageOperations = new Set();
   let stopped, closed = false;
-  async function command(path, payload, seconds = 30) {
+  async function command(path, payload, seconds = 30, maxBytes = MAX_JSON + 1024) {
     let response, result;
     try {
       response = await fetchImpl(solver.origin + path, { method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify(payload), signal: AbortSignal.timeout(Math.ceil((seconds + 5) * 1000)) });
-      const text = await response.text();
-      if (Buffer.byteLength(text) > MAX_JSON + 1024) throw new Error('Oversized response');
+      const text = await boundedHelperText(response, maxBytes, Math.ceil((seconds + 5) * 1000));
       result = JSON.parse(text);
     } catch {
       throw new Error('Live-test WebView helper failed; upstream bodies and credentials are not logged');
@@ -169,6 +191,37 @@ export function createManaTestWebView({ solverURL = process.env.FLARESOLVERR_URL
   };
   return {
     WebViewPage,
+    async captureCoverImage(url) {
+      assertCoverImageURL(url);
+      if (!solver) throw new Error('Browser-context image resolution requires the real Chromium helper');
+      if (closed || stopped) throw stopped ?? new Error('Live-test WebView host is closed');
+      const session = randomUUID();
+      const operation = (async () => {
+        try {
+          await command('/v1', { cmd: 'sessions.create', session });
+          if (closed || stopped) throw stopped ?? new Error('Live-test WebView host is closed');
+          const result = await command('/webview/image-response', { session, url, timeout: 30 }, 30, Math.ceil(MAX_IMAGE * 4 / 3) + 2048);
+          if (closed || stopped) throw stopped ?? new Error('Live-test WebView host is closed');
+          if (Object.keys(result).sort().join(',') !== 'body,contentType,encoding,status,url'
+              || result.url !== url || result.status !== 200 || result.encoding !== 'base64'
+              || typeof result.contentType !== 'string' || !/^image\/[a-z0-9][a-z0-9.+-]*$/i.test(result.contentType)
+              || typeof result.body !== 'string' || result.body.length > 4 * Math.ceil(MAX_IMAGE / 3)) {
+            throw new Error('Browser-context cover response lacks exact identity, status or image bytes');
+          }
+          const bytes = Buffer.from(result.body, 'base64');
+          if (!bytes.length || bytes.length > MAX_IMAGE || bytes.toString('base64') !== result.body) throw new Error('Browser-context cover bytes are invalid');
+          const response = new Response(bytes, { status: result.status, headers: { 'content-type': result.contentType } });
+          Object.defineProperty(response, 'url', { value: url });
+          return response;
+        } finally {
+          // Destroy even if creation's reply was lost, and never retry a capture.
+          await command('/v1', { cmd: 'sessions.destroy', session });
+        }
+      })();
+      imageOperations.add(operation);
+      try { return await operation; }
+      finally { imageOperations.delete(operation); }
+    },
     wrapSource(source) {
       const owner = { page: undefined };
       return new Proxy(source, {
@@ -185,7 +238,7 @@ export function createManaTestWebView({ solverURL = process.env.FLARESOLVERR_URL
     },
     async close() {
       closed = true;
-      const results = await Promise.allSettled([...pages].map(page => page.close()));
+      const results = await Promise.allSettled([...pages].map(page => page.close()).concat([...imageOperations]));
       const failure = results.find(result => result.status === 'rejected');
       if (failure) throw failure.reason;
     },

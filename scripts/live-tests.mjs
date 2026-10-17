@@ -7,6 +7,7 @@ import { testKagane } from './kagane-live-tests.mjs';
 import { testHijala } from './hijala-live-tests.mjs';
 import { createManaTestTransport } from './mana-test-browser.mjs';
 import { createManaTestWebView } from './mana-test-webview.mjs';
+import { fetchTestImage } from './mana-test-images.mjs';
 import { failedSources } from './test-sources.mjs';
 import { readSelection } from './changed-sources.mjs';
 import { testMangaSushi, coverDimensions } from './mangasushi-live-tests.mjs';
@@ -52,15 +53,15 @@ async function assertVortexGenres(contentId, content) {
 }
 
 async function image(source, imageUrl) {
-  const request = await source.willRequestImage(imageUrl);
-  url(request.url);
-  const response = await testTransport.fetch(request.url, {
-    headers: request.headers,
-    signal: AbortSignal.timeout(30_000),
+  const response = await fetchTestImage(source, imageUrl, {
+    fetchImpl: testTransport.fetch,
+    captureCoverImage: testWebViews.captureCoverImage,
+    log: (transport, status, target) => console.log(`IMAGE ${transport} ${status} ${redactURL(target)}`),
   });
-  console.log(`IMAGE ${response.status} ${redactURL(request.url)}`);
-  assert(response.ok, `Image HTTP ${response.status}: ${redactURL(request.url)}`);
-  const octetCover = source.info.id === 'VortexScans' && new URL(request.url).hostname === 'storage.vortexscans.org'
+  const requestedURL = response.requestedImageURL;
+  url(requestedURL);
+  assert(response.ok, `Image HTTP ${response.status}: ${redactURL(requestedURL)}`);
+  const octetCover = source.info.id === 'VortexScans' && new URL(requestedURL).hostname === 'storage.vortexscans.org'
     && response.headers.get('content-type')?.split(';')[0] === 'application/octet-stream';
   assert(response.headers.get('content-type')?.startsWith('image/') || octetCover, 'Response is not an image');
   const reader = response.body.getReader();
@@ -73,7 +74,7 @@ async function image(source, imageUrl) {
         || bytes.subarray(0, 3).toString('hex') === 'ffd8ff'
         || (bytes.subarray(0, 4).toString() === 'RIFF' && bytes.subarray(8, 12).toString() === 'WEBP'), 'Octet-stream cover lacks a valid image signature');
     }
-    if (new URL(request.url).hostname === 'kagane.org') {
+    if (new URL(requestedURL).hostname === 'kagane.org') {
       const bytes = Buffer.from(value), signature = bytes.subarray(0, 12).toString('hex');
       assert(signature.startsWith('ffd8ff') || signature.startsWith('89504e470d0a1a0a')
         || signature.startsWith('47494638') || signature.startsWith('ff0a')

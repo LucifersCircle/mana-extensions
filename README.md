@@ -642,6 +642,18 @@ loading runs in the real browser, and first/last native image-byte assertions st
 unchanged on the direct transport. `evaluateScript` is explicitly unsupported by
 this minimal host. Passing Chromium checks is not proof of physical-device or
 WKWebView equivalence.
+Image response transformers now run before HTTP validation, including Mana's
+existing `CloudflareError` contract. Only a positively identified challenge on an
+authorized Marumaru cover can use browser-context resolution: the helper loads its
+ordinary public title page, verifies the exact advertised hero image, and captures
+that same completed network response's status, MIME and real bytes. It never
+navigates directly to the image, exports cookies, substitutes URLs, or treats an
+ordinary denial as a challenge. Source authorization is checked again before bytes
+are accepted. Logs distinguish the original direct HTTP response from the
+browser-context result; this is not proof that raw Node or physical iOS succeeds.
+Reader images remain on the direct transport, and HTTP/content-type/nonempty-byte
+assertions are unchanged. No diagnostic-only workflow or skipped check is used by
+the full suite.
 Without FLARESOLVERR_URL, local network checks use ordinary direct requests,
 challenges fail visibly, and WebView-dependent checks report a missing real browser
 rather than being skipped or receiving substitute data. New sources must support the exercised contract; unsupported host
