@@ -611,23 +611,46 @@ Upstream attribution is retained in [Attribution and license](#attribution-and-l
 
 ## Live test coverage
 
-The runner executes the actual `.mana` bundle built by `@mana-app/dev`, using a
-small Node host adapter for the official `@mana-app/types@0.1.0` HTTP runtime and real website responses. It
-checks catalog search and pagination, title search, genre inclusion/exclusion,
-available filter/sort options, all published home sections, details, chapters, chapter-page URLs, cover/page image
-responses and deep links. Request logs, individual assertions, counts, timestamps
-and the tested commit are retained as workflow artifacts and in the run summary.
-Missing, malformed or empty source reports are errors, never passing checks. Each
-discovered source needs an explicit live contract; an unimplemented source fails
-closed. MangaSushi additionally checks all native orders and filters, setting
-persistence and in-flight invalidation, exact home order/continuation, explicit and
-unknown exclusions, editorial notices, malformed markup and reader identity/page
-integrity against freshly fetched live responses. Kagane additionally checks all
-four rating selections and an empty selection, grouped live tags and matching,
-supported search orders and home rows, exact identity, a real 200-plus-chapter index/cursor
-traversal, complete native chapter metadata, first/last chapter reader image bytes,
-data saver, bulk request reuse, explicit English-title metadata, cross-series rejection
-and setting invalidation.
+The CI runner executes the actual `.mana` bundle built by `@mana-app/dev` through
+its installed official `@mana-app/types@0.1.0` HTTP runtime and real website
+responses. Every source uses the same small native-method contract:
+
+1. Initialization, version identity and advertised methods.
+2. Discovery definitions and one representative content section.
+3. Catalog search, one offered continuation, and exact title/ID lookup.
+4. Content identity, metadata, complete cover image bytes and optional deep links.
+5. The complete available chapter inventory, source IDs and native ordering.
+6. One reader manifest and the first/last unique image's complete bytes.
+7. Advertised search, sort and preference forms plus one representative filter.
+8. Native policy and image-origin rejection before provider network activity.
+
+A capability that is not advertised is recorded in `notApplicable`, not counted
+as a passing test. Marumaru has no custom controls and therefore has seven rather
+than eight contracts. Missing advertised methods, blocked requests, incomplete
+inventories and unsupported native host operations remain failures. A successful
+Node/Chromium check is not a physical-device test.
+
+Image checks consume the full response body and validate PNG/JPEG/WebP container
+boundaries and dimensions. Other formats fail as unverified rather than passing
+from a file signature alone; these checks are not native pixel-rendering proof.
+
+The default budget is 12 document/API requests and three image transfers per
+source. Failed transport attempts count too. Kagane has a documented 20-document
+budget for native taxonomy, editions, its complete multi-page chapter inventory
+and reader bootstrap. Requests stop before exceeding the limit; chapter lists
+are never truncated to make a budget pass. The report retains measured request
+counts and the reason for any exception. Method outputs, native source caches
+and the exact consumed responses are reused; no duplicate reference fetches,
+per-card detail sweeps, all-section loops or automatic retry loops are added.
+
+Layout, exact section counts, all-sort/filter permutations and broader regression
+sweeps are developer-only diagnostics, available separately with `npm run
+test:local`. That command refuses CI and writes `bundles/local-test-results.json`,
+not the CI report. Static checks, existing native policy/transport guards and
+report/discovery infrastructure tests are separate from the live source counts.
+The CI report preserves individual pass/fail results, timestamps and the exact
+tested commit. Missing, malformed or incomplete reports still fail closed;
+changed-source PR runs do not become full-source history entries.
 
 Mana's official [development CLI](https://github.com/Mana-iOS/mana-dev) provides
 build/serve commands, not a dedicated live source test suite. Its build-time
@@ -676,8 +699,7 @@ and Kagane’s exact public search, uploader-list and reader bootstrap/manifest 
 routes. Other POST operations fail closed. Ephemeral reader tokens are redacted
 from retained logs; browser cookies, integrity tokens and reader responses are not
 logged. Reader image requests, including kstatic.to, stay direct and their real
-first/last image bytes are checked. Its small process-local ObjectStore exercises
-preference callbacks and new source instances, not iOS persistence. No new offline fixtures or permanent
+first/last image bytes are checked. Its small process-local ObjectStore supports native preference reads, not proof of iOS persistence. Broader callback/revocation regressions remain available in local diagnostics and the existing zero-network infrastructure guards. No new offline fixtures or permanent
 parser tests are added.
 
 Run the same checks locally with Node 24:

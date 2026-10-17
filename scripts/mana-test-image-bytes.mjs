@@ -53,21 +53,47 @@ export function verifyRasterImageBytes(input) {
     return result(...dimensions, 'WEBP');
   }
   assert(bytes.length >= 4 && bytes.readUInt16BE(0) === 0xffd8 && bytes.readUInt16BE(bytes.length - 2) === 0xffd9, 'Cover is not complete JPEG bytes');
-  // Bound the SOF scan and validate segment lengths, not filename/HTML dimensions.
-  let offset = 2;
-  for (let count = 0; count < 1024 && offset + 3 < bytes.length; count += 1) {
+  // Walk every segment and scan through EOI. SOF dimensions alone are not an
+  // image: header-only JPEGs and truncated scans must fail, too.
+  let offset = 2, dimensions, components, inScan = false, scans = 0, entropyBytes = 0;
+  for (let count = 0; count < 65536 && offset < bytes.length; count += 1) {
+    if (inScan) {
+      while (offset < bytes.length) {
+        if (bytes[offset] !== 0xff) { entropyBytes++; offset++; continue; }
+        const next = bytes[offset + 1];
+        if (next === 0x00) { entropyBytes++; offset += 2; continue; }
+        if (next >= 0xd0 && next <= 0xd7) { offset += 2; continue; }
+        break;
+      }
+      inScan = false;
+    }
+    assert(offset + 1 < bytes.length, 'Truncated JPEG scan');
     assert.equal(bytes[offset++], 0xff, 'Malformed JPEG marker');
-    while (bytes[offset] === 0xff) offset += 1;
+    while (offset < bytes.length && bytes[offset] === 0xff) offset += 1;
+    assert(offset < bytes.length, 'Truncated JPEG marker');
     const marker = bytes[offset++];
-    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
-    assert(marker !== 0xda && marker !== 0xd9, 'JPEG has no SOF dimensions');
+    if (marker === 0xd9) {
+      assert(offset === bytes.length && dimensions && scans > 0 && entropyBytes > 0, 'JPEG has no complete image scan');
+      return result(...dimensions, 'JPEG');
+    }
+    assert(marker !== 0x00 && marker !== 0xd8 && !(marker >= 0xd0 && marker <= 0xd7), 'Invalid JPEG marker outside scan');
+    if (marker === 0x01) continue;
+    assert(offset + 2 <= bytes.length, 'Truncated JPEG segment');
     const size = bytes.readUInt16BE(offset);
     assert(size >= 2 && offset + size <= bytes.length, 'Malformed JPEG segment length');
     if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
-      assert(size >= 8, 'Truncated JPEG SOF');
-      return result(bytes.readUInt16BE(offset + 5), bytes.readUInt16BE(offset + 3), 'JPEG');
+      assert(size >= 8 && !dimensions, 'Truncated or repeated JPEG SOF');
+      components = bytes[offset + 7];
+      assert(components > 0 && components <= 4 && size === 8 + 3 * components, 'Invalid JPEG SOF component table');
+      dimensions = [bytes.readUInt16BE(offset + 5), bytes.readUInt16BE(offset + 3)];
+      result(...dimensions, 'JPEG');
+    } else if (marker === 0xda) {
+      assert(dimensions && size >= 6, 'JPEG scan has no frame');
+      const selected = bytes[offset + 2];
+      assert(selected > 0 && selected <= components && size === 6 + 2 * selected, 'Invalid JPEG scan component table');
+      scans++; inScan = true;
     }
     offset += size;
   }
-  assert.fail('JPEG SOF dimensions missing or beyond the bounded scan');
+  assert.fail('JPEG image scan missing or beyond the bounded segment limit');
 }

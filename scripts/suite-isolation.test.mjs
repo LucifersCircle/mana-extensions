@@ -22,7 +22,7 @@ for (const [aborted, partial] of [['Kagane', false], ['ManhwaNex', true]]) {
     try {
       // Exercise the real dispatcher and reporter with no provider content or network access.
       for (const file of ['live-tests.mjs', 'test-status.mjs', 'test-sources.mjs',
-        'changed-sources.mjs', 'source-dependencies.mjs', 'mana-runtime.mjs', 'mana-http-host.mjs', 'mana-test-webview.mjs', 'mana-test-images.mjs', 'mana-test-image-bytes.mjs']) {
+        'changed-sources.mjs', 'source-dependencies.mjs', 'mana-runtime.mjs', 'mana-http-host.mjs', 'mana-test-webview.mjs', 'mana-test-images.mjs', 'mana-test-image-bytes.mjs', 'native-contract-sources.mjs']) {
         mkdirSync(join(dir, 'scripts'), { recursive: true });
         copyFileSync(join(scripts, file), join(dir, 'scripts', file));
       }
@@ -40,19 +40,18 @@ for (const [aborted, partial] of [['Kagane', false], ['ManhwaNex', true]]) {
           async getSectionsForPage() { throw new Error('Invalid Mana content-rating policy'); }
           async resolvePageSection() { throw new Error('Invalid Mana content-rating policy'); }
         };`);
-        if (name === 'VortexScans') continue;
-        const body = name === aborted ? `${partial ? `
-          await check('executed pass', () => {});
-          await check('executed failure', () => { throw new Error('checked failure'); });` : ''}
-          throw new TypeError('uncaught suite failure');
-          await check('unrun after abort', () => {});` : `await check('completed source contract', () => {});`;
-        put(`scripts/${name.toLowerCase()}-live-tests.mjs`, `export async function test${name}({ check }) { ${body} }
-          ${name === 'MangaSushi' ? 'export function coverDimensions() { throw new Error("No image requests in infrastructure test"); }' : ''}`);
       }
-      put('scripts/vortexscans-live-tests.mjs', `
-        export function getVortexContentWithSynopsis() { throw new Error('No provider content in infrastructure test'); }
-        export async function testVortexSynopsis({ check }) { await check('later synopsis contract', () => {}); }
-        export async function testVortexRatings({ check }) { await check('later ratings contract', () => {}); }
+      put('scripts/native-contracts.mjs', `
+        export function createContractTransport() { return { stats: () => ({ documents: 0, images: 0 }) }; }
+        export async function testNativeContract({ name, check, notApplicable }) {
+          await check('Native initialization and advertised capabilities', () => {});
+          notApplicable.push({ capability: 'optional control', reason: 'Not advertised' });
+          if (name === ${JSON.stringify(aborted)}) {
+            ${partial ? "await check('executed pass', () => {}); await check('executed failure', () => { throw new Error('checked failure'); });" : ''}
+            throw new TypeError('uncaught suite failure');
+          }
+          await check('completed source contract', () => {});
+        }
       `);
       put('dist/sources.json', JSON.stringify({ sources: names.map((id) => ({ id, version: 'test' })) }));
       const selection = allSelection(names, 'Infrastructure test', { testedSha: sha });
@@ -70,28 +69,27 @@ for (const [aborted, partial] of [['Kagane', false], ['ManhwaNex', true]]) {
       assert.match(report[aborted].error, /TypeError: uncaught suite failure/);
       assert.match(reportIssues(report, names)[aborted], /remaining checks were not run/);
       assert.deepEqual(report[aborted].tests.map(({ name, status }) => ({ name, status })), [
-        { name: 'Built Mana bundle and source metadata', status: 'pass' },
-        { name: 'Malformed native rating contexts fail closed before provider I/O', status: 'pass' },
+        { name: 'Native initialization and advertised capabilities', status: 'pass' },
         ...(partial ? [{ name: 'executed pass', status: 'pass' }, { name: 'executed failure', status: 'fail' }] : []),
       ]);
-      assert.equal(report[aborted].summary.total, partial ? 4 : 2);
-      assert.equal(report[aborted].summary.passed, partial ? 3 : 2);
+      assert.equal(report[aborted].summary.total, partial ? 3 : 1);
+      assert.equal(report[aborted].summary.passed, partial ? 2 : 1);
       assert.equal(report[aborted].summary.failed, partial ? 1 : 0);
-      assert.equal(report.Hijala.summary.passed, 3, 'earlier completed source must survive');
+      assert.equal(report.Hijala.summary.passed, 2, 'earlier completed source must survive');
       assert.equal(report.VortexScans.error, undefined, 'later source must reach its own completion');
-      assert.equal(report.VortexScans.tests.at(-1).name, 'later ratings contract');
-      assert.equal(report.VortexScans.summary.total, 19);
-      assert.equal(report.VortexScans.summary.failed, 15);
-      assert.deepEqual(failedSources(report, names), [aborted, 'VortexScans']);
+      assert.equal(report.VortexScans.tests.at(-1).name, 'completed source contract');
+      assert.equal(report.VortexScans.summary.total, 2);
+      assert.equal(report.VortexScans.summary.failed, 0);
+      assert.deepEqual(failedSources(report, names), [aborted]);
       assert.equal(invoke('test-status.mjs', 'capture').status, 1);
       const snapshot = json('bundles/live-status/snapshot.json');
       assert.equal(snapshot.sources[aborted].status, 'error');
-      assert.equal(snapshot.sources[aborted].total, partial ? 4 : 2);
+      assert.equal(snapshot.sources[aborted].total, partial ? 3 : 1);
       assert.equal(snapshot.sources[aborted].failed, partial ? 1 : 0);
       assert.equal(snapshot.sources.Hijala.status, 'pass');
-      assert.equal(snapshot.sources.VortexScans.status, 'fail');
+      assert.equal(snapshot.sources.VortexScans.status, 'pass');
       assert.deepEqual(snapshot.sourceCounts, { available: names.length, selected: names.length,
-        completed: names.length - 1, passed: names.length * 3 + (partial ? 1 : 0), failed: partial ? 16 : 15, total: names.length * 3 + (partial ? 17 : 15) });
+        completed: names.length - 1, passed: (names.length - 1) * 2 + (partial ? 2 : 1), failed: partial ? 1 : 0, total: (names.length - 1) * 2 + (partial ? 3 : 1) });
       assert.match(readFileSync(join(dir, 'summary.md'), 'utf8'), /remaining checks were not run/);
       assert.ok(!snapshot.sources[aborted].tests.some(({ name }) => name === 'unrun after abort'));
       // A changed-source run remains non-publishable even when it reports its abort truthfully.

@@ -30,3 +30,17 @@ test('PNG and WebP cannot hide missing image data or malformed later chunks', ()
   const headerOnly = Buffer.alloc(30); headerOnly.write('RIFF'); headerOnly.writeUInt32LE(22, 4); headerOnly.write('WEBPVP8X', 8); headerOnly.writeUInt32LE(10, 16);
   assert.throws(() => verifyRasterImageBytes(headerOnly), /frame/);
 });
+
+test('JPEG requires a complete scan, not just dimensions and an ending marker', () => {
+  const jpeg = Buffer.from(samples.JPEG, 'base64');
+  const scan = jpeg.indexOf(Buffer.from([0xff, 0xda]));
+  const entropy = scan + 2 + jpeg.readUInt16BE(scan + 2);
+  assert(scan > 0 && entropy < jpeg.length - 2);
+  const ending = Buffer.from([0xff, 0xd9]);
+  for (const malformed of [
+    Buffer.from('ffd8ffc00008080001000101ffd9', 'hex'),
+    Buffer.concat([jpeg.subarray(0, scan), ending]),
+    Buffer.concat([jpeg.subarray(0, entropy), ending]),
+    Buffer.concat([jpeg.subarray(0, entropy), Buffer.from([0xff, 0xe1, 0xff, 0xff]), ending]),
+  ]) assert.throws(() => verifyRasterImageBytes(malformed));
+});

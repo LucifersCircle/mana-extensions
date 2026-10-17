@@ -15,7 +15,8 @@
     "test:report": "node --test scripts/*.test.mjs",
     "test:extensions": "node scripts/live-tests.mjs",
     "update:test-status": "node scripts/test-status.mjs publish",
-    "verify:bundles": "node scripts/verify-bundles.mjs"
+    "verify:bundles": "node scripts/verify-bundles.mjs",
+    "test:local": "node scripts/local-live-tests.mjs"
   },
   "author": {
     "name": "Lucifers Circle",
