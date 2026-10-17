@@ -610,7 +610,7 @@ Upstream attribution is retained in [Attribution and license](#attribution-and-l
 ## Live test coverage
 
 The runner executes the actual `.mana` bundle built by `@mana-app/dev`, using a
-small Node host adapter for Mana's network API and real website responses. It
+small Node host adapter for the official `@mana-app/types@0.1.0` HTTP runtime and real website responses. It
 checks catalog search and pagination, title search, genre inclusion/exclusion,
 available filter/sort options, all published home sections, details, chapters, chapter-page URLs, cover/page image
 responses and deep links. Request logs, individual assertions, counts, timestamps
@@ -629,7 +629,7 @@ and setting invalidation.
 
 Mana's official [development CLI](https://github.com/Mana-iOS/mana-dev) provides
 build/serve commands, not a dedicated live source test suite. Its build-time
-emulator mocks HTTP, so it is not used for these live checks. This adapter is not
+emulator rejects network access, so it is not used as live-test evidence. The live host supplies the official HTTP runtime with operation-scoped body storage, cancellation, and constrained real transport; it does not reimplement HttpClient. This adapter is not
 the iOS app: it does not validate native UI rendering, persistent cookies/stores,
 WKWebView-specific behavior or interactive Cloudflare/vShield resolution. CI explicitly opts into a test-only
 Chromium transport for Kagane's exact public API routes and cover images, using an
@@ -640,7 +640,7 @@ security warning stops the test. TLS verification stays enabled. The native sour
 still uses Mana's built-in CloudflareError flow; no helper is bundled in extensions.
 For Marumaru, the same CI helper also executes the built source's actual
 `WebViewPage.create/goto/evaluate/close` calls in an isolated anonymous Chromium
-page. It preserves JSON arguments/results, seconds-based operation timeouts,
+page. Compiled callbacks carry the serialized-function helpers from their own source bundle into an isolated browser scope. It preserves JSON arguments/results, seconds-based operation timeouts,
 `domcontentloaded`/`load` navigation, single-page source lifetime and automatic
 cleanup. Only the currently supported public Marumaru catalog, search, detail and
 reader document routes are allowed. Document redirects, explicit CAPTCHA controls,
@@ -650,8 +650,7 @@ loading runs in the real browser, and first/last native image-byte assertions st
 unchanged on the direct transport. `evaluateScript` is explicitly unsupported by
 this minimal host. Passing Chromium checks is not proof of physical-device or
 WKWebView equivalence.
-Image response transformers now run before HTTP validation, including Mana's
-existing `CloudflareError` contract. Only a positively identified challenge on an
+Cover and page images use separate SDK transport factories and the official image dispatcher. Async request/response interceptors preserve source authorization; the SDK identifies Cloudflare challenges before response interceptors, and HTTP status validation precedes image-body acceptance. Only a positively identified challenge on an
 authorized Marumaru cover can use browser-context resolution: the helper loads its
 ordinary public title page, verifies the exact advertised hero image, and captures
 that same completed network response's status, MIME and real bytes. It never
@@ -686,6 +685,7 @@ npm test
 npm run typecheck
 npm run lint
 npm run build -- --output dist
+npm run verify:bundles
 npm run test:extensions
 ```
 
@@ -701,6 +701,14 @@ The helper port is bound only to 127.0.0.1. CI does not retain browser logs or
 response bodies.
 
 ## Development
+
+This repository pairs `@mana-app/dev@0.2.0` with `@mana-app/types@0.1.0`.
+Its rebuilt extensions use the new HTTP/image transport contract, not the legacy
+NetworkClient/image-hook API. Use the corresponding new Mana app build; the SDK
+release does not document a minimum app version, so no guessed version gate is
+published. Chromium/Node results do not establish physical-device compatibility.
+CI independently verifies the full source inventory, bundle versions and both
+cover/page intent bits after every build; a successful CLI exit alone is insufficient.
 
 ```sh
 npm install

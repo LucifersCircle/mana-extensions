@@ -73,7 +73,7 @@ export async function testMarumaru({ source, check, searchResult, image, rendere
   });
   await check('Rendered detail cover returns authorized actual image bytes', async () => {
     assert(detail?.cover, 'Detail cover prerequisite failed');
-    await image(source, detail.cover);
+    await image(source, detail.cover, 'cover');
   });
   await check('Native chapter indexes preserve ascending inventory and exact source numbers', async () => {
     assert(detail, 'Detail prerequisite failed'); chapters = await source.getChapters('17155');
@@ -87,6 +87,6 @@ export async function testMarumaru({ source, check, searchResult, image, rendere
     assert(result.pages?.length > 8, 'Reader stopped at the initial eight mounted images');
     assert.equal(new Set(result.pages.map(p => p.url)).size, result.pages.length);
     result.pages.forEach((p, i) => assert.equal(p.url, `https://peer.storagewebtoon.store/api/media/episode/${readerChapter.chapterId}/${i + 1}.webp`));
-    for (const page of [result.pages[0], result.pages.at(-1)]) await image(source, page.url);
+    for (const page of [result.pages[0], result.pages.at(-1)]) await image(source, page.url, 'page');
   });
 }

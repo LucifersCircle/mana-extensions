@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
+import vm from 'node:vm';
 import { load } from 'cheerio';
-import { assertReadOnlyManhwaNexPost, createManaRuntime } from './mana-runtime.mjs';
+import { assertReadOnlyManhwaNexPost, createManaRuntime, installManaHTTP } from './mana-runtime.mjs';
+import { runTestOperation, authorizeTestImage, fetchTestImage } from './mana-test-images.mjs';
+import { verifyRasterImageBytes } from './mana-test-image-bytes.mjs';
 
 const domain = 'https://manhwanex.com';
 const blocked = new Set(['adult', 'mature', 'smut', 'hentai', 'erotica', 'ecchi']);
@@ -11,9 +14,8 @@ async function html(url, options) {
   assert(response.ok, `Reference HTTP ${response.status}`);
   return load(await response.text());
 }
-async function imageBytes(source, url) {
-  const request = await source.willRequestImage(url);
-  const response = await fetch(request.url, { headers: request.headers, signal: AbortSignal.timeout(30_000) });
+async function imageBytes(source, url, origin) {
+  const response = await fetchTestImage(source, url, { origin, fetchImpl: fetch });
   assert(response.ok, `Image HTTP ${response.status}`);
   assert(response.headers.get('content-type')?.startsWith('image/'));
   const bytes = Buffer.from(await response.arrayBuffer());
@@ -26,43 +28,9 @@ async function imageBytes(source, url) {
   return bytes;
 }
 function imageDimensions(bytes) {
-  if (bytes.subarray(0, 8).toString('hex') === '89504e470d0a1a0a') {
-    assert(bytes.length >= 45, 'Truncated PNG');
-    assert.equal(bytes.readUInt32BE(8), 13, 'Invalid PNG IHDR length');
-    assert.equal(bytes.subarray(12, 16).toString(), 'IHDR', 'PNG has no initial IHDR');
-    const dimensions = [bytes.readUInt32BE(16), bytes.readUInt32BE(20)];
-    assert(dimensions.every((value) => value > 0 && value <= 0x7fffffff), 'Invalid PNG dimensions');
-    let imageData = false;
-    for (let offset = 8; offset < bytes.length;) {
-      assert(offset + 12 <= bytes.length, 'Truncated PNG chunk');
-      const size = bytes.readUInt32BE(offset), kind = bytes.subarray(offset + 4, offset + 8).toString();
-      assert(size <= bytes.length - offset - 12, 'Truncated PNG chunk data');
-      assert(offset === 8 || kind !== 'IHDR', 'Duplicate PNG IHDR');
-      if (kind === 'IDAT') imageData = true;
-      offset += size + 12;
-      if (kind === 'IEND') {
-        assert(size === 0 && imageData && offset === bytes.length, 'PNG has no image data or is incomplete');
-        return dimensions;
-      }
-    }
-    assert.fail('PNG has no IEND');
-  }
-  assert(bytes.length >= 26, 'Truncated WebP');
-  assert.equal(bytes.subarray(0, 4).toString(), 'RIFF');
-  assert.equal(bytes.subarray(8, 12).toString(), 'WEBP');
-  assert.equal(bytes.readUInt32LE(4) + 8, bytes.length, 'WebP is incomplete');
-  for (let offset = 12; offset < bytes.length;) {
-    assert(offset + 8 <= bytes.length, 'Truncated WebP chunk');
-    const size = bytes.readUInt32LE(offset + 4);
-    assert(size + (size % 2) <= bytes.length - offset - 8, 'Truncated WebP chunk data');
-    offset += 8 + size + (size % 2);
-  }
-  assert(bytes.readUInt32LE(16) >= (bytes.subarray(12, 16).toString() === 'VP8L' ? 5 : 10), 'Truncated WebP dimensions');
-  const kind = bytes.subarray(12, 16).toString();
-  if (kind === 'VP8X') return [1 + bytes.readUIntLE(24, 3), 1 + bytes.readUIntLE(27, 3)];
-  if (kind === 'VP8L') { const n = bytes.readUInt32LE(21); return [(n & 0x3fff) + 1, ((n >>> 14) & 0x3fff) + 1]; }
-  assert.equal(kind, 'VP8 '); assert.equal(bytes.subarray(23, 26).toString('hex'), '9d012a');
-  return [bytes.readUInt16LE(26) & 0x3fff, bytes.readUInt16LE(28) & 0x3fff];
+  const { width, height } = verifyRasterImageBytes(bytes);
+  assert([width, height].every((value) => value <= 0x7fffffff), 'Invalid image dimensions');
+  return [width, height];
 }
 
 function advertisedCover(image) {
@@ -108,7 +76,7 @@ export async function testManhwaNexHomeCovers({ source, home, homeHTML, freshSou
     assert.equal(card.length, 1, 'Cover provenance must be one exact native section card');
     const image = card.find('img').first(), expected = advertisedCover(image);
     assert.equal(item.cover, expected.url, 'Cover is not the largest valid image advertised by this exact card');
-    const dimensions = imageDimensions(await imageBytes(source, item.cover));
+    const dimensions = imageDimensions(await imageBytes(source, item.cover, 'cover'));
     assert(dimensions.every((value) => Number.isInteger(value) && value > 0), 'Invalid intrinsic cover dimensions');
     if (expected.width !== undefined) assert.equal(dimensions[0], expected.width, 'Actual image width differs from its native advertisement');
     if (expected.height !== undefined) assert.equal(dimensions[1], expected.height, 'Actual image height differs from its advertised derivative');
@@ -128,7 +96,7 @@ export async function testManhwaNexHomeCovers({ source, home, homeHTML, freshSou
       cold.api.text = async (url, method = 'GET') => {
         assert.equal(url, `${domain}/`); assert.equal(method, 'GET'); reads += 1; return page.html();
       };
-      const parsed = await cold.home(false), items = section === 'popular' ? parsed.popular : parsed.latest.items;
+      const parsed = await runTestOperation(cold, () => cold.home(false)), items = section === 'popular' ? parsed.popular : parsed.latest.items;
       assert.equal(items.find((entry) => entry.id === item.id)?.cover, current, 'Invalid or missing source advertisement must not promote or guess a cover');
       assert.equal(reads, 1); assert.equal(requests.length, before, 'Response-derived cover control added provider requests');
     }
@@ -206,8 +174,8 @@ export async function testManhwaNexNativeRatings({ source, check, requests, fres
     const chapters = await allowed.getChapters(id);
     assert(chapters.length);
     const reader = await allowed.getChapterData(id, chapters.at(-1).chapterId);
-    await imageBytes(allowed, reader.pages[0].url);
-    await imageBytes(allowed, details.cover);
+    await imageBytes(allowed, reader.pages[0].url, 'page');
+    await imageBytes(allowed, details.cover, 'cover');
   });
   await check('Native singleton policy skips excluded-only physical pages and never caches a reader policy', async () => {
     const cold = freshSource(), original = cold.api.text.bind(cold.api);
@@ -518,10 +486,10 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
       const baseline = await cold.search({ page: 1, listId: probe.listId === 'popular' ? 'popular' : 'latest' });
       let baselineID = baseline.results[0].id, sourceTitle = baseline.results[0].title, overlapCard, firstArchiveIDs;
       if (probe.listId === 'genre:action') {
-        const $ = load(await original(`${domain}/manga-genre/action/`)), homeIDs = new Set(ids(baseline.results)), laterIDs = new Set();
+        const $ = load(await runTestOperation(cold, () => original(`${domain}/manga-genre/action/`))), homeIDs = new Set(ids(baseline.results)), laterIDs = new Set();
         firstArchiveIDs = new Set($('.page-item-detail.manga').toArray().map((node) => canonicalID($(node).find('.post-title a').attr('href'))));
         if (probe.overlap) {
-          const next = load(await original(`${domain}/manga-genre/action/page/2/`));
+          const next = load(await runTestOperation(cold, () => original(`${domain}/manga-genre/action/page/2/`)));
           for (const node of next('.page-item-detail.manga').toArray()) laterIDs.add(canonicalID(next(node).find('.post-title a').attr('href')));
         }
         const node = $('.page-item-detail.manga').toArray().find((node) => {
@@ -539,7 +507,7 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
       let verifiedQuery, verifiedQueryURL, postWarningSearch;
       for (const candidate of candidates) {
         const url = `${domain}/?${new URLSearchParams({ s: candidate, post_type: 'wp-manga', adult: '0' })}`;
-        const $ = load(await original(url));
+        const $ = load(await runTestOperation(cold, () => original(url)));
         if ($('.c-tabs-item__content').toArray().some((node) => canonicalID($(node).find('.post-title a').attr('href')) === baselineID)) {
           verifiedQuery = candidate; verifiedQueryURL = url; break;
         }
@@ -630,7 +598,7 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
       assert(nativeSearch('.c-tabs-item__content').toArray().some((node) => canonicalID(nativeSearch(node).find('.post-title a').attr('href')) === target), 'Post-warning native search no longer contains the selected canonical probe');
       assert(!ids(safeSearch.results).includes(target), 'A later safe search row erased the observed adult warning');
       assert.equal(cold.metadata.get(`true:${target}`).at, observedAt, 'A contrary safe row extended the warning lifetime');
-      for (const operation of [() => cold.getContent(target), () => cold.getChapters(target), () => cold.getChapterData(target, cachedChapters.at(-1).chapterId), () => cold.willRequestImage(cachedDetail.cover), () => cold.willRequestImage(cachedReader.pages[0].url)]) {
+      for (const operation of [() => cold.getContent(target), () => cold.getChapters(target), () => cold.getChapterData(target, cachedChapters.at(-1).chapterId), () => authorizeTestImage(cold, cachedDetail.cover, { origin: 'cover' }), () => authorizeTestImage(cold, cachedReader.pages[0].url, { origin: 'page' })]) {
         await assert.rejects(operation, /excluded|classification/);
       }
       assert.equal(cold.metadata.get(`true:${target}`).at, observedAt, 'Reusing the warning extended its lifetime');
@@ -720,10 +688,10 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
     assert.deepEqual(tagSections.flatMap((section) => Array.from(section.items, (tag) => tag.title)),
       reference('.tab-summary .tags-content a').toArray().map((node) => reference(node).text().trim()));
     assert.equal((await cold.handleURL(content.webUrl)).content.id, sample);
-    await imageBytes(cold, content.cover);
+    await imageBytes(cold, content.cover, 'cover');
     const largeReference = await html(large.webUrl);
     assert.equal(large.cover, largeReference('meta[property="og:image"]').attr('content'));
-    assert.deepEqual(imageDimensions(await imageBytes(cold, large.cover)), [1087, 1447]);
+    assert.deepEqual(imageDimensions(await imageBytes(cold, large.cover, 'cover')), [1087, 1447]);
     const largeTags = Array.from(large.additionalInfo).filter((section) => /^source-tags(?:-\d+)?$/.test(section.id));
     assert(largeTags.every((section) => section.items.length <= 10));
     assert(largeTags.flatMap((section) => Array.from(section.items)).some((tag) => /%[a-f0-9]{2}/i.test(tag.id)), 'Encoded Unicode source tag IDs were not retained');
@@ -758,21 +726,21 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
       await writer.getContent(globalID);
       await staleReader.getContent(globalID);
       const issued = await replay().getContent(sample);
-      assert.equal((await replay().willRequestImage(issued.cover)).url, issued.cover);
-      assert.equal((await staleReader.willRequestImage(issued.cover)).url, issued.cover, 'A stale reader lost another instance\'s source-issued image');
+      assert.equal((await authorizeTestImage(replay(), issued.cover, { origin: 'cover' })).url, issued.cover);
+      assert.equal((await authorizeTestImage(staleReader, issued.cover, { origin: 'cover' })).url, issued.cover, 'A stale reader lost another instance\'s source-issued image');
       await writer.getContent(globalID);
-      assert.equal((await replay().willRequestImage(issued.cover)).url, issued.cover, 'A stale cached writer removed another instance\'s image');
+      assert.equal((await authorizeTestImage(replay(), issued.cover, { origin: 'cover' })).url, issued.cover, 'A stale cached writer removed another instance\'s image');
 
       await nativeStore.set(key, []);
-      await assert.rejects(() => staleReader.willRequestImage(issued.cover), /image was not issued by this source/, 'A stale reader authorized an evicted image');
+      await assert.rejects(() => authorizeTestImage(staleReader, issued.cover, { origin: 'cover' }), /image was not issued by this source/, 'A stale reader authorized an evicted image');
       await nativeStore.set(key, [[issued.cover, '../bad'], [issued.cover], [issued.cover, null], ['https://example.com/not-issued.png', sample]]);
-      await assert.rejects(() => staleReader.willRequestImage(issued.cover), /image was not issued by this source/, 'Malformed persisted entries authorized an image');
+      await assert.rejects(() => authorizeTestImage(staleReader, issued.cover, { origin: 'cover' }), /image was not issued by this source/, 'Malformed persisted entries authorized an image');
       await nativeStore.set(key, [[issued.cover, sample]]);
-      assert.equal((await replay().willRequestImage(issued.cover)).url, issued.cover, 'Valid legacy persisted entries stopped working');
+      assert.equal((await authorizeTestImage(replay(), issued.cover, { origin: 'cover' })).url, issued.cover, 'Valid legacy persisted entries stopped working');
 
       await nativeStore.set(key, []);
       const pair = await Promise.all([replay().getContent(sample), replay().getContent(globalID)]);
-      for (const item of pair) assert.equal((await replay().willRequestImage(item.cover)).url, item.cover, 'Concurrent native writers lost an image');
+      for (const item of pair) assert.equal((await authorizeTestImage(replay(), item.cover, { origin: 'cover' })).url, item.cover, 'Concurrent native writers lost an image');
 
       let failWrite = true;
       nativeStore.set = async (name, value) => {
@@ -782,16 +750,16 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
       await assert.rejects(() => replay().getContent(sample), /Intentional image-registry write failure/);
       nativeStore.set = originalSet;
       await replay().getContent(globalID);
-      assert.equal((await replay().willRequestImage(pair[0].cover)).url, pair[0].cover, 'A failed store write poisoned later image operations');
+      assert.equal((await authorizeTestImage(replay(), pair[0].cover, { origin: 'cover' })).url, pair[0].cover, 'A failed store write poisoned later image operations');
 
       let failRead = true;
       nativeStore.get = async (name) => {
         if (name === key && failRead) { failRead = false; throw new Error('Intentional image-registry read failure'); }
         return originalGet.call(nativeStore, name);
       };
-      await assert.rejects(() => replay().willRequestImage(pair[0].cover), /Intentional image-registry read failure/);
+      await assert.rejects(() => authorizeTestImage(replay(), pair[0].cover, { origin: 'cover' }), /Intentional image-registry read failure/);
       nativeStore.get = originalGet;
-      assert.equal((await replay().willRequestImage(pair[0].cover)).url, pair[0].cover, 'A failed store read poisoned later image operations');
+      assert.equal((await authorizeTestImage(replay(), pair[0].cover, { origin: 'cover' })).url, pair[0].cover, 'A failed store read poisoned later image operations');
       assert.equal(requests.length, before, 'Response-derived image-registry checks added provider requests');
     } finally {
       nativeStore.get = originalGet; nativeStore.set = originalSet;
@@ -844,8 +812,21 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
     const $ = await html(chapter.webUrl);
     const expected = $('.reading-content img.wp-manga-chapter-img').toArray().map((node) => ($(node).attr('data-src') || $(node).attr('src')).trim());
     assert.deepEqual(pages, expected);
-    await imageBytes(cold, pages[0]);
-    if (pages.length > 1) await imageBytes(cold, pages.at(-1));
+    await imageBytes(cold, pages[0], 'page');
+    const snapshot = await nativeStore.get('ManhwaNex.issuedImages');
+    for (const [url, origin, factory, nativeOrigin] of [[content.cover, 'cover', 'getCoverTransport', 1], [pages[0], 'page', 'getPageTransport', 2]]) {
+      const client = cold[factory]({ url, origin: nativeOrigin });
+      assert(client && typeof client.then !== 'function', 'Image transport factories must be synchronous');
+      let outgoing = 0;
+      try {
+        await assert.rejects(fetchTestImage(cold, url, { origin, fetchImpl: async () => {
+          outgoing += 1; await nativeStore.set('ManhwaNex.issuedImages', []);
+          return new Response('This controlled body must never escape revoked image policy', { status: 200 });
+        } }), /image was not issued/);
+        assert.equal(outgoing, 1, 'Revocation test must reach exactly one authorized image transport');
+      } finally { await nativeStore.set('ManhwaNex.issuedImages', snapshot); }
+    }
+    if (pages.length > 1) await imageBytes(cold, pages.at(-1), 'page');
     console.log(`READER ${chapter.chapterId}: ${pages.length} pages`);
   });
   await check('A second live title completes details, chapters, reader and both image endpoints', async () => {
@@ -853,8 +834,8 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
     const detail = await cold.getContent(id), list = await cold.getChapters(id);
     assert(detail.title && list.length);
     const result = await cold.getChapterData(id, list.at(-1).chapterId, list.at(-1));
-    await imageBytes(cold, result.pages[0].url);
-    if (result.pages.length > 1) await imageBytes(cold, result.pages.at(-1).url);
+    await imageBytes(cold, result.pages[0].url, 'page');
+    if (result.pages.length > 1) await imageBytes(cold, result.pages.at(-1).url, 'page');
   });
   await check('Explicit opt-out persists and per-search adult filtering cannot widen global exclusion', async () => {
     await preference(false);
@@ -868,9 +849,9 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
     const narrowed = await source.search({ page: 1, filters: { adult: { id: '1' } } });
     assert.equal(narrowed.results.length, 0); assert.equal(narrowed.isLastPage, true);
     const knownImage = home.latest.items[0].cover;
-    const persisted = freshSource(); await persisted.willRequestImage(knownImage);
+    const persisted = freshSource(); await authorizeTestImage(persisted, knownImage, { origin: 'cover' });
     const resumed = freshSource(), before = requests.length;
-    await Promise.all(Array.from({ length: 12 }, () => resumed.willRequestImage(content.cover)));
+    await Promise.all(Array.from({ length: 12 }, () => authorizeTestImage(resumed, content.cover, { origin: 'cover' })));
     assert.equal(requests.length - before, 2, 'Concurrent persisted image callbacks reintroduced per-image metadata N+1');
   });
   await check('Unknown and explicit classifications fail closed without treating BL/demographics as adult labels', async () => {
@@ -879,7 +860,7 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
     assert.equal(source.allowed({ ...raw, classified: false }), false);
     assert.equal(source.allowed({ ...raw, classified: true, explicit: true }), false);
     assert.equal(source.allowed({ ...raw, classified: true, explicit: false, genres: [{ id: 'boys-love', title: 'Boys Love' }] }), true);
-    assert.equal((await source.highlights([{ ...raw, id: 'unverified-live-probe', classified: false }], true)).length, 0);
+    assert.equal((await runTestOperation(source, () => source.highlights([{ ...raw, id: 'unverified-live-probe', classified: false }], true))).length, 0);
     for (const mutation of ['foreign', 'broken', 'missing-label', 'encoded-separator']) {
       const gated = freshSource(), original = gated.api.text.bind(gated.api);
       gated.api.text = async (...args) => {
@@ -893,7 +874,7 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
         if (mutation === 'encoded-separator') target.attr('href', `${domain}/manga-genre/action%2fadult/`);
         return $.html();
       };
-      for (const operation of [() => gated.getContent(sample), () => gated.getChapters(sample), () => gated.getChapterData(sample, 'chapter-360'), () => gated.willRequestImage(content.cover)]) {
+      for (const operation of [() => gated.getContent(sample), () => gated.getChapters(sample), () => gated.getChapterData(sample, 'chapter-360'), () => authorizeTestImage(gated, content.cover, { origin: 'cover' })]) {
         await assert.rejects(operation, /taxonomy/i);
       }
       await assert.rejects(() => gated.search({ page: 1 }), /taxonomy/i);
@@ -904,13 +885,13 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
       await assert.rejects(() => gated.getContent(sample), /excluded|classification/i);
       await assert.rejects(() => gated.getChapters(sample), /excluded|classification/i);
       await assert.rejects(() => gated.getChapterData(sample, 'chapter-360'), /excluded|classification/i);
-      await assert.rejects(() => gated.willRequestImage(content.cover), /excluded|classification/i);
+      await assert.rejects(() => authorizeTestImage(gated, content.cover, { origin: 'cover' }), /excluded|classification/i);
     }
   });
   await check('IDs, image origins and exact read-only POST routes reject unsafe inputs', async () => {
     const before = requests.length;
     for (const id of ['../bad', 'bad%2fother', 'bad\\other', 'bad?x', 'bad#x']) await assert.rejects(() => source.getChapters(id));
-    for (const url of ['https://example.com/a.png', `${domain}/wp-content/uploads/%2fother.png`, 'https://cdn.manhwanex.com/manga_test/a.png?token=bad']) await assert.rejects(() => source.willRequestImage(url));
+    for (const url of ['https://example.com/a.png', `${domain}/wp-content/uploads/%2fother.png`, 'https://cdn.manhwanex.com/manga_test/a.png?token=bad']) await assert.rejects(() => authorizeTestImage(source, url, { origin: 'page' }));
     assert.equal(requests.length, before, 'Rejected input made an outgoing request');
     const allowed = { url: `${domain}/manga/${sample}/ajax/chapters/?t=1`, method: 'POST' };
     assert.doesNotThrow(() => assertReadOnlyManhwaNexPost(allowed));
@@ -922,14 +903,16 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
     assert.doesNotThrow(() => assertReadOnlyManhwaNexPost(metadata));
     let outgoing = 0;
     const runtime = createManaRuntime({ fetchImpl: async () => { outgoing += 1; throw new Error('Unexpected outgoing request'); }, logger: () => {} });
-    const client = new runtime.NetworkClient();
+    const context = vm.createContext(runtime), host = installManaHTTP(context);
+    const client = new context.ManaHTTP.HttpClient();
     for (const invalid of [
       { ...metadata, body: `${body}&toString=bad` }, { ...metadata, body: `${body}&__proto__=bad` },
       { ...metadata, body: `${body}&action=madara_load_more` }, { ...metadata, body: body.replace('madara_load_more', 'delete') },
       { ...metadata, body: body.replace('posts_per_page%5D=1', 'posts_per_page%5D=65') },
       { ...metadata, url: `${domain}/wp-admin/delete.php` },
       { ...allowed, params: { t: 2 } }
-    ]) await assert.rejects(() => client.request(invalid));
+    ]) await assert.rejects(() => host.runOperation(() => client.request({ url: invalid.url, method: context.ManaHTTP.HttpMethod.Post,
+      body: invalid.body === undefined ? undefined : context.ManaHTTP.Body.text(invalid.body, 'application/x-www-form-urlencoded; charset=UTF-8') }, { params: invalid.params })));
     assert.equal(outgoing, 0, 'Rejected POST made an outgoing request');
 
   });

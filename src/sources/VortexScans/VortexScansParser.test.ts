@@ -1,6 +1,9 @@
 import {
     ContentRating,
     ContentType,
+    HttpHeaders,
+    HttpMethod,
+    HttpResponse,
     PublicationStatus,
     ReadingMode
 } from '@mana-app/types'
@@ -202,26 +205,15 @@ describe('VortexScans chapter parsing', () => {
 })
 
 describe('VortexScans challenge detection', () => {
-    test('detects Cloudflare headers and vShield HTML', () => {
-        const request = { url: 'https://vortexscans.org/series/title' }
+    test('detects Cloudflare headers and vShield HTML through asynchronous bodies', async () => {
+        const request = { url: 'https://vortexscans.org/series/title', method: HttpMethod.Get, headers: new HttpHeaders() }
+        const response = (body: string, headers: Record<string, string> = {}, status = 200): HttpResponse => new HttpResponse(request,
+            { bodyID: 'fixture', sessionID: 'fixture', status, url: request.url, headers }, new TextEncoder().encode(body))
 
-        expect(isVortexChallenge({
-            request,
-            status: 200,
-            headers: { 'CF-Mitigated': 'challenge' },
-            data: ''
-        })).toBe(true)
-        expect(isVortexChallenge({
-            request,
-            status: 200,
-            headers: {},
-            data: '<html>vShield verification</html>'
-        })).toBe(true)
-        expect(isVortexChallenge({
-            request,
-            status: 200,
-            headers: {},
-            data: '<html>series page</html>'
-        })).toBe(false)
+        await expect(isVortexChallenge(response('', { 'CF-Mitigated': 'challenge' }))).resolves.toBe(true)
+        await expect(isVortexChallenge(response('<html>vShield verification</html>'))).resolves.toBe(true)
+        await expect(isVortexChallenge(response('<html>series page</html>'))).resolves.toBe(false)
+        await expect(isVortexChallenge(response('', {}, 403))).resolves.toBe(true)
+        await expect(isVortexChallenge(response('', {}, 503))).resolves.toBe(true)
     })
 })

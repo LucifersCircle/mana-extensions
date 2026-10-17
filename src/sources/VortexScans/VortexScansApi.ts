@@ -1,7 +1,9 @@
 import {
-    NetworkClientBuilder,
-    NetworkRequest,
-    NetworkResponse
+    CloudflareError,
+    HttpClient,
+    HttpMethod,
+    HttpRequest,
+    HttpResponse
 } from '@mana-app/types'
 import {
     VORTEX_API_URL,
@@ -18,25 +20,18 @@ import {
 import { buildVortexApiUrl } from './VortexScansUtils'
 
 export class VortexScansApi {
-    private readonly client: NetworkClient
+    private readonly client: HttpClient
 
-    constructor(client?: NetworkClient) {
-        this.client = client ?? new NetworkClientBuilder()
-            .setRateLimit(4, 1)
-            .setTimeout(30_000)
-            .setStatusValidator((status) =>
-                status === 403
-                || status === 404
-                || status === 503
-                || (status >= 200 && status < 300)
-            )
+    constructor(client?: HttpClient) {
+        this.client = client ?? new HttpClient()
+            .setRateLimit(4, 1000)
+            .setTimeoutMs(30_000)
             .addHeader(
                 'Accept',
                 'application/json,text/html,application/xhtml+xml;q=0.9,*/*;q=0.8'
             )
             .addHeader('Referer', `${VORTEX_DOMAIN}/`)
             .addHeader('Origin', VORTEX_DOMAIN)
-            .build()
     }
 
     getPost(postId: string): Promise<VortexPostResponse> {
@@ -94,10 +89,10 @@ export class VortexScansApi {
     async getText(url: string): Promise<string> {
         const response = await this.client.request({
             url,
-            method: 'GET'
+            method: HttpMethod.Get
         })
-        this.checkResponse(response)
-        return response.data
+        await this.checkResponse(response)
+        return response.text()
     }
 
     private async getJson<T>(
@@ -107,19 +102,19 @@ export class VortexScansApi {
         const url = buildVortexApiUrl(path, parameters)
         const response = await this.client.request({
             url,
-            method: 'GET'
+            method: HttpMethod.Get
         })
-        this.checkResponse(response)
+        await this.checkResponse(response)
 
         try {
-            return JSON.parse(response.data) as T
+            return await response.json<T>()
         } catch {
             throw new Error(`VortexScans returned invalid JSON from ${url}`)
         }
     }
 
-    private checkResponse(response: NetworkResponse): void {
-        if (isVortexChallenge(response)) {
+    private async checkResponse(response: HttpResponse): Promise<void> {
+        if (await isVortexChallenge(response)) {
             // Resolve the exact host which served the challenge. vShield can
             // protect api.vortexscans.org independently from vortexscans.org.
             throw new CloudflareError(response.request.url)
@@ -136,19 +131,17 @@ export class VortexScansApi {
     }
 }
 
-export function isVortexChallenge(response: NetworkResponse): boolean {
-    const challengeHeader = Object.entries(response.headers ?? {})
-        .find(([key]) => key.toLowerCase() === 'cf-mitigated')?.[1]
+export async function isVortexChallenge(response: HttpResponse): Promise<boolean> {
+    const challengeHeader = response.headers.get('cf-mitigated')
 
     return response.status === 403
         || response.status === 503
         || `${challengeHeader ?? ''}`.toLowerCase() === 'challenge'
         || (isVortexUrl(response.request)
-            && typeof response.data === 'string'
-            && response.data.includes('vShield'))
+            && (await response.text()).includes('vShield'))
 }
 
-function isVortexUrl(request: NetworkRequest): boolean {
+function isVortexUrl(request: HttpRequest): boolean {
     return request.url.startsWith(VORTEX_DOMAIN)
         || request.url.startsWith(VORTEX_API_URL)
 }

@@ -1,7 +1,17 @@
 import assert from 'node:assert/strict';
 import { decode } from 'html-entities';
-import { assertPublicKaganeRequest, assertReadOnlyKaganePost, createManaRuntime, redactURL, redactText } from './mana-runtime.mjs';
+import { readFileSync } from 'node:fs';
+import { createContext, runInContext } from 'node:vm';
+import { assertPublicKaganeRequest, assertReadOnlyKaganePost, createManaRuntime, installManaHTTP, redactURL, redactText } from './mana-runtime.mjs';
 import { createManaTestTransport } from './mana-test-browser.mjs';
+import { authorizeTestImage, createHttpResponse, fetchTestImage, runTestOperation, withSourceTransport } from './mana-test-images.mjs';
+
+export function createKaganeHTTPFixture(fetchImpl) {
+  const context = createContext(createManaRuntime({ logger: () => {}, fetchImpl }));
+  runInContext(readFileSync(new URL('../node_modules/@mana-app/types/dist/runtime/http.generated.js', import.meta.url), 'utf8'), context);
+  const host = installManaHTTP(context);
+  return { sdk: context.ManaHTTP, host };
+}
 
 // Host-transport regressions belong to the existing live-contract guard, not a
 // separate fixture/parser suite. This can also run without touching the network.
@@ -27,11 +37,12 @@ export async function assertKaganeHostGuards({ freshSource } = {}) {
     recorded.push({ url: String(url), ...init });
     return new Response('{}', { headers: { 'content-type': 'application/json' } });
   };
-  const guarded = new (createManaRuntime({ logger: () => {}, fetchImpl: directFetch }).NetworkClient)();
-  await assert.rejects(guarded.request({ method: 'POST', url: `${api}/books/id?is_datasaver=false`, params: { purchase: true }, body: {} }), /unsupported/i);
-  await assert.rejects(guarded.request({ method: 'POST', url: `${api}/books/id?is_datasaver=false`, params: { is_datasaver: true }, body: {} }), /unsupported/i);
+  const { sdk, host } = createKaganeHTTPFixture(directFetch);
+  const guarded = new sdk.HttpClient();
+  await assert.rejects(host.runOperation(() => guarded.request({ method: sdk.HttpMethod.Post, url: `${api}/books/id?is_datasaver=false`, body: sdk.Body.json({}) }, { params: { purchase: true } })), /unsupported/i);
+  await assert.rejects(host.runOperation(() => guarded.request({ method: sdk.HttpMethod.Post, url: `${api}/books/id?is_datasaver=false`, body: sdk.Body.json({}) }, { params: { is_datasaver: true } })), /unsupported/i);
   assert.equal(recorded.length, 0, 'Rejected finalized URLs reached the network');
-  await guarded.request({ method: 'POST', url: `${api}/search/series`, params: { page: 0, size: 50 }, body: { title: 'JSON café' } });
+  await host.runOperation(() => guarded.request({ method: sdk.HttpMethod.Post, url: `${api}/search/series`, body: sdk.Body.json({ title: 'JSON café' }) }, { params: { page: 0, size: 50 } }).then(response => response.text()));
   assert.equal(recorded[0].body, JSON.stringify({ title: 'JSON café' }));
   assert.equal(new URL(recorded[0].url).searchParams.get('size'), '50');
   assert.equal(createManaTestTransport({ solverURL: '', fetchImpl: directFetch }).fetch, directFetch, 'Browser transport must be opt-in');
@@ -71,9 +82,7 @@ export async function assertKaganeHostGuards({ freshSource } = {}) {
     assert.equal(await remainingChallenge.text(), 'Just a moment');
     if (freshSource) {
       const challenged = freshSource();
-      const runtime = createManaRuntime({ logger: () => {}, fetchImpl: browser.fetch });
-      challenged.api.client = new runtime.NetworkClient({ statusValidator: () => true });
-      await assert.rejects(challenged.api.series('host-cloudflare-probe'), (error) => error.name === 'CloudflareError');
+      await assert.rejects(withSourceTransport(challenged, browser.fetch, () => challenged.getContent('host-cloudflare-probe')), (error) => error.name === 'CloudflareError');
     }
     await assert.rejects(browser.fetch(`${domain}/api/account`), /unsupported/i);
     await assert.rejects(browser.fetch(`${api}/genres/list`, { headers: { authorization: 'not-an-account-token' } }), /credentials/i);
@@ -90,9 +99,8 @@ export async function assertKaganeHostGuards({ freshSource } = {}) {
   }
   if (freshSource) {
     const challenged = freshSource();
-    const runtime = createManaRuntime({ logger: () => {}, fetchImpl: async () => new Response('Just a moment', { status: 403, headers: { 'cf-mitigated': 'challenge', 'content-type': 'text/html' } }) });
-    challenged.api.client = new runtime.NetworkClient({ statusValidator: () => true });
-    await assert.rejects(challenged.api.series('host-cloudflare-probe'), (error) => error.name === 'CloudflareError');
+    const challengeFetch = async () => new Response('Just a moment', { status: 403, headers: { 'cf-mitigated': 'challenge', 'content-type': 'text/html' } });
+    await assert.rejects(withSourceTransport(challenged, challengeFetch, () => challenged.getContent('host-cloudflare-probe')), (error) => error.name === 'CloudflareError');
   }
   assert(!redactText(`NetworkError: ${api}/books/page/book/image.jxl?token=not-a-live-token`).includes('not-a-live-token'));
   assert(!redactURL(`${api}/books/page/book/image.jxl?token=not-a-live-token&is_datasaver=false`).includes('not-a-live-token'));
@@ -100,7 +108,7 @@ export async function assertKaganeHostGuards({ freshSource } = {}) {
 
 // A failed preference-menu load is not cached. A separate later caller may
 // recover once; only a validated success can satisfy the shared-cache contract.
-export async function assertKaganeTaxonomyCache({ source, requests, logger = console.log }) {
+export async function assertKaganeTaxonomyCache({ source, requests, logger = console.log, runOperation = callback => callback() }) {
   for (const method of ['genres', 'tags', 'sources']) {
     const path = `/api/v2/${method}/list`;
     const attempts = requests.filter((request) => new URL(request.url).pathname === path);
@@ -114,7 +122,7 @@ export async function assertKaganeTaxonomyCache({ source, requests, logger = con
         || (typeof failed.error === 'string' && failed.error.trim()), `Missing failed taxonomy attempt evidence: ${path}`);
     }
     const before = requests.length;
-    const cached = await source.api[method]();
+    const cached = await runOperation(() => source.api[method]());
     assert(Array.isArray(cached) && cached.length, `No validated cached public taxonomy: ${path}`);
     assert.equal(requests.length, before, `Public taxonomy cache read fetched again: ${path}`);
     if (failed) logger(`RECOVERED public taxonomy ${path}: ${failed.status ?? 'ERROR'}${failed.error ? ` (${redactText(failed.error)})` : ''} before successful cached load`);
@@ -722,24 +730,21 @@ export async function testKagane({ source, check, highlights, searchResult, imag
     return response.json();
   };
   async function readerImage(url) {
-    const request = await source.willRequestImage(url);
     let response;
-    try { response = await fetch(request.url, { headers: request.headers, signal: AbortSignal.timeout(30_000) }); }
-    catch (error) { throw new Error(`Reader image fetch failed (${error.cause?.code ?? error.name}): ${redactURL(request.url)}`); }
-    assert(response.ok, `Reader image HTTP ${response.status}: ${redactURL(request.url)}`);
+    try { response = await fetchTestImage(source, url, { origin: 'page', fetchImpl: fetch }); }
+    catch (error) { throw new Error(`Reader image fetch failed (${error.cause?.code ?? error.name}): ${redactURL(response?.requestedImageURL ?? url)}`); }
+    assert(response.ok, `Reader image HTTP ${response.status}: ${redactURL(response?.requestedImageURL ?? url)}`);
     assert(response.headers.get('content-type')?.startsWith('image/'), 'Reader response is not an image');
-    const reader = response.body.getReader();
-    let head;
-    try { head = (await reader.read()).value; } finally { await reader.cancel(); }
-    assert(head?.length > 12, 'Reader image has no usable bytes');
-    const bytes = Buffer.from(head), signature = bytes.subarray(0, 12).toString('hex');
+    const bytes = Buffer.from(await response.arrayBuffer());
+    assert(bytes.length > 12, 'Reader image has no usable bytes');
+    const signature = bytes.subarray(0, 12).toString('hex');
     const known = signature.startsWith('ffd8ff') || signature.startsWith('89504e470d0a1a0a')
       || signature.startsWith('47494638') || signature.startsWith('ff0a')
       || signature === '0000000c4a584c200d0a870a'
       || (bytes.subarray(0, 4).toString() === 'RIFF' && bytes.subarray(8, 12).toString() === 'WEBP')
       || bytes.subarray(4, 8).toString() === 'ftyp';
     assert(known, `Unrecognized reader image bytes: ${signature}`);
-    console.log(`READER IMAGE ${response.status} ${response.headers.get('content-type')} ${redactURL(request.url)}`);
+    console.log(`READER IMAGE ${response.status} ${response.headers.get('content-type')} ${redactURL(response?.requestedImageURL ?? url)}`);
   }
   let catalog, form, chapterList, index, content, blocked, readerData, safeBody;
   await check('Never-saved source categories follow native policy and explicit source selection persists', async () => {
@@ -822,7 +827,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
     assert.deepEqual(content.summary.split('\n\n').filter((line) => line.startsWith('Upload status: ')), upload ? [`Upload status: ${upload}`] : [], 'Upload progress must remain explicitly labelled');
     assert.equal(new URL(content.webUrl).pathname, `/series/${item.id}`);
     assert(content.tags?.length); assert(content.webUrl.startsWith(`${domain}/series/`));
-    await image(source, content.cover);
+    await image(source, content.cover, 'cover');
     assert.equal((await source.handleURL(content.webUrl))?.content?.id, item.id);
     assert.equal(await source.handleURL(`https://example.com/series/${item.id}`), null);
   });
@@ -912,7 +917,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   await check('Unknown malformed and stale tags fail before search; valid native payloads remain exact', async () => {
     const group = fields(form).find(field => field.id?.startsWith('tags:') && field.options.some(option => option.id.includes('+')));
     assert(group, 'Need an actual legacy composite tag option');
-    const args = { freshSource, tags: await source.api.tags(), response: searches[0].response };
+    const args = { freshSource, tags: await runTestOperation(source, () => source.api.tags()), response: searches[0].response };
     await assertKaganeTagFilters({ ...args, option: group.options.find(option => option.id.includes('+')), groupId: group.id });
     // The rotating live title may legitimately have no narrative tags or aliases.
     const detailGroup = content.additionalInfo.find(section => section.type === 5 && section.items.length);
@@ -921,7 +926,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   await check('Native numeric ranges serialize strictly before taxonomy and preserve policies, discovery and cached continuation', async () => {
     const sample = seen.get(catalog.results[0].id);
     const response = searches.find((entry) => entry.response.content.some((row) => row.series_id === sample.series_id))?.response;
-    await assertKaganeNumericRanges({ freshSource, response, tags: await source.api.tags(), sample });
+    await assertKaganeNumericRanges({ freshSource, response, tags: await runTestOperation(source, () => source.api.tags()), sample });
   });
   await check('Live chapter-count and start-year bounds constrain consumed bulk rows without changing native identity or order', async () => {
     const original = source.api.search;
@@ -1008,7 +1013,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
     for (const section of sections) {
       const result = await source.resolvePageSection({ id: 'home' }, section.id); assert(Array.isArray(result.items));
       const sorts = { popular: 'total_views', trending_month: 'avg_views_month', trending_week: 'avg_views_week', trending_today: 'avg_views_today', latest_updates: 'updated_at', recently_added: 'created_at' };
-      const raw = await originalSearch(safeBody, 1, 50, `${sorts[section.id]},desc`, false);
+      const raw = await runTestOperation(source, () => originalSearch(safeBody, 1, 50, `${sorts[section.id]},desc`, false));
       const expected = Array.from(raw.content).filter((item) => isSafe(item) && item.cover_image_id?.trim()).map((item) => item.series_id);
       assert.deepEqual(Array.from(result.items, (item) => item.id), expected);
       if (!raw.last) assert.equal(result.viewMoreLink?.request?.listId, section.id);
@@ -1037,7 +1042,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
     }
   });
   await check('Current live series translation and unknown language preserve native chapter identity', async () => {
-    await assertKaganeChapterLanguages({ freshSource, id: sample, detail: details.get(sample), books: books.get(sample), sources: await source.api.sources() });
+    await assertKaganeChapterLanguages({ freshSource, id: sample, detail: details.get(sample), books: books.get(sample), sources: await runTestOperation(source, () => source.api.sources()) });
   });
   await check('Repeated chapter/detail calls reuse bulk data instead of N-plus-one requests', async () => {
     await source.getContent(sample);
@@ -1056,7 +1061,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
       for (const page of data.pages) {
         const target = new URL(page.url); assert(target.pathname.includes(`/books/page/${chapter.chapterId}/`));
         assert(target.searchParams.get('token')); assert.equal(target.searchParams.get('is_datasaver'), 'false');
-        const request = await source.willRequestImage(page.url);
+        const request = await authorizeTestImage(source, page.url, { origin: 'page' });
         assert.equal(request.headers.referer ?? request.headers.Referer, `${domain}/`);
       }
       await readerImage(data.pages[0].url); await readerImage(data.pages.at(-1).url);
@@ -1072,7 +1077,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
     console.log(`Reader token: ${payload ? 'JWT' : 'opaque'}, remaining lifetime ${payload?.exp ? Math.round(payload.exp - Date.now() / 1000) : 'not published'} seconds`);
     session.expiry = Date.now() - 1;
     const before = requests.filter((request) => new URL(request.url).pathname === `/api/v2/books/${chapter.chapterId}`).length;
-    const [first, last] = await Promise.all([source.willRequestImage(data.pages[0].url), source.willRequestImage(data.pages.at(-1).url)]);
+    const [first, last] = await Promise.all([authorizeTestImage(source, data.pages[0].url, { origin: 'page' }), authorizeTestImage(source, data.pages.at(-1).url, { origin: 'page' })]);
     const after = requests.filter((request) => new URL(request.url).pathname === `/api/v2/books/${chapter.chapterId}`).length;
     assert.equal(after - before, 1, 'Expired chapter should share one manifest refresh');
     assert.equal(new URL(first.url).pathname, new URL(data.pages[0].url).pathname);
@@ -1113,7 +1118,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
     assert(mixed.results.every((item) => ['safe', 'pornographic'].includes(rating(seen.get(item.id)))));
     const narrowed = await source.search({ page: 1, filters: { content_rating: [{ id: 'Erotica' }] } });
     assert.equal(narrowed.results.length, 0); assert.equal(narrowed.isLastPage, true);
-    // SAFE is 0 in pinned @mana-app/types 0.0.27; do not rely on a newer host policy.
+    // SAFE is 0 in pinned @mana-app/types 0.1.0; do not rely on a newer host policy.
     const host = await source.search({ page: 1, context: { allowedContentRatings: [0] } }); searchResult(host);
     assert(host.results.every((item) => rating(seen.get(item.id)) === 'safe'));
     const none = await source.search({ page: 1, context: { allowedContentRatings: [] } });
@@ -1123,7 +1128,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   await check('Previously issued reader URLs cannot evade changed rating settings', async () => {
     assert(readerData?.pages?.length, 'No live reader data was established');
     await preference('contentRatings', ['Safe']);
-    await assert.rejects(source.willRequestImage(readerData.pages[0].url), /reopen|settings|authoriz/i);
+    await assert.rejects(authorizeTestImage(source, readerData.pages[0].url, { origin: 'page' }), /reopen|settings|authoriz/i);
     await preference('contentRatings', defaultRatings);
   });
   await check('Setting persistence and explicit content exclusion apply even to title search', async () => {
@@ -1214,7 +1219,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
     const raw = searches.find((entry) => entry.response.content.length)?.response; assert(raw);
     const target = freshSource();
     const original = target.api.response;
-    target.api.response = async () => ({ status: 200, headers: {}, data: JSON.stringify({ ...raw, last: undefined }) });
+    target.api.response = async () => createHttpResponse(target, { status: 200, url: `${api}/search/series?page=0&size=50`, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...raw, last: undefined }) });
     try { await assert.rejects(target.search({ page: 1, query: 'malformed-search-probe' }), /pagination|invalid|missing/i); }
     finally { target.api.response = original; }
     const reader = freshSource(); reader.api.series = async () => details.get(sample); reader.api.books = async () => books.get(sample);
@@ -1224,7 +1229,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   });
   await check('Test host permits only exact public Kagane operations and redacts reader tokens', async () => {
     await assertKaganeHostGuards({ freshSource });
-    await assertKaganeTaxonomyCache({ source, requests });
+    await assertKaganeTaxonomyCache({ source, requests, runOperation: callback => runTestOperation(source, callback) });
     assert(!requests.some((request) => request.url.includes('token=') && !request.url.includes('redacted')));
   });
   source.search = nativeSearch;

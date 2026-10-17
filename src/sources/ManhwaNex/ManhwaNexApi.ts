@@ -1,4 +1,7 @@
-import { NetworkClientBuilder } from '@mana-app/types'
+import { Body,
+    CloudflareError,
+    HttpClient,
+    HttpMethod } from '@mana-app/types'
 import { load } from 'cheerio'
 import { DOMAIN,
     formEncode,
@@ -9,21 +12,21 @@ import { DOMAIN,
     validId } from './ManhwaNexParser'
 
 export class ManhwaNexApi {
-    private readonly client = new NetworkClientBuilder()
-        .setRateLimit(3, 1)
-        .setTimeout(30_000)
-        .setStatusValidator((status) => status === 403 || status === 503 || (status >= 200 && status < 300))
+    private readonly client = new HttpClient()
+        .setRateLimit(3, 1000)
+        .setTimeoutMs(30_000)
         .addHeader('Referer', `${DOMAIN}/`)
         .addHeader('Accept', 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8')
-        .build()
 
     async text(url: string, method: 'GET' | 'POST' = 'GET', body?: string): Promise<string> {
         const target = new URL(url)
         if (target.origin !== DOMAIN || target.username || target.password || target.hash) throw new Error('Invalid ManhwaNex request target')
-        const response = await this.client.request({ url, method, body,
-            headers: body === undefined ? {} : { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' } })
-        if (response.status === 403 || response.status === 503 || /cf-chl-|Just a moment\.\.\./i.test(response.data)) throw new CloudflareError(url)
-        return response.data
+        const response = await this.client.request({ url, method: method === 'GET' ? HttpMethod.Get : HttpMethod.Post,
+            body: body === undefined ? undefined : Body.text(body, 'application/x-www-form-urlencoded; charset=UTF-8') })
+        const text = await response.text()
+        if (response.status === 403 || response.status === 503 || /cf-chl-|Just a moment\.\.\./i.test(text)) throw new CloudflareError(url)
+        if (!response.ok) throw new Error(`ManhwaNex request failed (HTTP ${response.status})`)
+        return text
     }
 
     async chapters(id: string): Promise<string> {

@@ -6,8 +6,11 @@ import {
     ContentSource,
     DeepLinkContext,
     Highlight,
-    ImageRequestHandler,
-    NetworkRequest,
+    CoverRequestHandler,
+    HttpClient,
+    ImageRequest,
+    PageRequestHandler,
+    RequestOrigin,
     Option,
     PagedSearchResult,
     PageLink,
@@ -102,10 +105,11 @@ const SORT_OPTIONS: SortOption[] = [
 export class Target implements
     ContentSource,
     PageLinkResolver,
-    ImageRequestHandler {
+    CoverRequestHandler,
+    PageRequestHandler {
     readonly info: SourceInfo = {
         id: 'VortexScans',
-        version: '0.0.1-alpha.12',
+        version: '0.0.1-alpha.13',
         name: 'VortexScans',
         description: 'Read manga, manhwa, and manhua from VortexScans.',
         thumbnail: 'VortexScans.png',
@@ -329,14 +333,23 @@ export class Target implements
             : null
     }
 
-    async willRequestImage(url: string): Promise<NetworkRequest> {
-        return {
-            url,
-            headers: {
-                Referer: `${VORTEX_DOMAIN}/`,
-                Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5'
-            }
-        }
+    getCoverTransport(request: ImageRequest): HttpClient {
+        return this.imageTransport(request, RequestOrigin.Cover)
+    }
+
+    getPageTransport(request: ImageRequest): HttpClient {
+        return this.imageTransport(request, RequestOrigin.Page)
+    }
+
+    private imageTransport(image: ImageRequest, origin: RequestOrigin.Cover | RequestOrigin.Page): HttpClient {
+        const imageURL = image.url, imageOrigin = image.origin
+        return new HttpClient()
+            .addHeader('Referer', `${VORTEX_DOMAIN}/`)
+            .addHeader('Accept', 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5')
+            .addRequestInterceptor((request, context) => {
+                if (imageOrigin !== origin || context.origin !== origin || request.url !== imageURL) throw new Error('Invalid VortexScans image origin')
+                return request
+            })
     }
 
     private async searchCatalog(

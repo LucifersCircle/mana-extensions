@@ -33,7 +33,9 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - name: Build GitHub Pages artifact
-        run: npm run build -- --output dist
+        run: |
+          npm run build -- --output dist
+          npm run verify:bundles
       - name: Add custom domain
         run: cp CNAME dist/CNAME
 

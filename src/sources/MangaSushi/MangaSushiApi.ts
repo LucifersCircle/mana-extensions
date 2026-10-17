@@ -1,29 +1,31 @@
-import { NetworkClientBuilder } from '@mana-app/types'
+import { Body,
+    CloudflareError,
+    HttpClient,
+    HttpMethod } from '@mana-app/types'
 import { DOMAIN,
     formEncode,
     Listing,
     parseListing } from './MangaSushiParser'
 
 export class MangaSushiApi {
-    private readonly client = new NetworkClientBuilder()
-        .setRateLimit(3, 1)
-        .setTimeout(30_000)
-        .setStatusValidator((status) => status === 403 || status === 503 || (status >= 200 && status < 300))
+    private readonly client = new HttpClient()
+        .setRateLimit(3, 1000)
+        .setTimeoutMs(30_000)
         .addHeader('Referer', `${DOMAIN}/`)
         .addHeader('Accept', 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8')
-        .build()
 
     async text(url: string, body?: string): Promise<string> {
         const response = await this.client.request({
             url,
-            method: body === undefined ? 'GET' : 'POST',
-            body,
-            headers: body === undefined ? {} : { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' }
+            method: body === undefined ? HttpMethod.Get : HttpMethod.Post,
+            body: body === undefined ? undefined : Body.text(body, 'application/x-www-form-urlencoded; charset=UTF-8')
         })
-        if (response.status === 403 || response.status === 503 || /cf-chl-|Just a moment\.\.\./i.test(response.data)) {
+        const text = await response.text()
+        if (response.status === 403 || response.status === 503 || /cf-chl-|Just a moment\.\.\./i.test(text)) {
             throw new CloudflareError(url)
         }
-        return response.data
+        if (!response.ok) throw new Error(`MangaSushi request failed (HTTP ${response.status})`)
+        return text
     }
 
     async more(next: NonNullable<Listing['next']>, page: number, selector: string): Promise<Listing> {

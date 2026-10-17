@@ -14,7 +14,8 @@
     "lint": "eslint 'src/**/*.ts'",
     "test:report": "node --test scripts/*.test.mjs",
     "test:extensions": "node scripts/live-tests.mjs",
-    "update:test-status": "node scripts/test-status.mjs publish"
+    "update:test-status": "node scripts/test-status.mjs publish",
+    "verify:bundles": "node scripts/verify-bundles.mjs"
   },
   "author": {
     "name": "Lucifers Circle",
@@ -22,7 +23,7 @@
   },
   "license": "GPL-3.0-or-later",
   "devDependencies": {
-    "@mana-app/dev": "0.1.14",
+    "@mana-app/dev": "0.2.0",
     "@tsconfig/recommended": "^1.0.1",
     "@types/jest": "^29.2.4",
     "@typescript-eslint/eslint-plugin": "^5.1.0",
@@ -37,7 +38,7 @@
     "typescript": "^4.9.5"
   },
   "dependencies": {
-    "@mana-app/types": "0.0.27",
+    "@mana-app/types": "0.1.0",
     "cheerio": "1.0.0-rc.12",
     "html-entities": "^2.5.2"
   },

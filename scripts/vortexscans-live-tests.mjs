@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { load } from 'cheerio';
+import { fetchTestImage } from './mana-test-images.mjs';
 
 // Observe the parsed public detail response already consumed by the native call.
 // Do not make a second provider request or require a provider-authored synopsis.
@@ -311,7 +312,7 @@ export async function testVortexRatings({ source, check, freshSource, requests }
       readerSeed = { inventory, response, chapter };
     } finally { source.api.getChapters = originalInventory; source.api.getChapter = originalReader; }
     for (const page of [pages[0], ...(pages.length > 1 ? [pages.at(-1)] : [])]) {
-      const request = await source.willRequestImage(page.url), response = await fetch(request.url, { headers: request.headers, signal: AbortSignal.timeout(30_000), redirect: 'error' });
+      const response = await fetchTestImage(source, page.url, { origin: 'page', fetchImpl: fetch });
       assert(response.ok); assert(response.headers.get('content-type')?.startsWith('image/'));
       const bytes = Buffer.from(await response.arrayBuffer()); assert(bytes.length > 100);
       assert(bytes.subarray(0, 3).toString('hex') === 'ffd8ff' || bytes.subarray(0, 8).toString('hex') === '89504e470d0a1a0a' || (bytes.subarray(0, 4).toString() === 'RIFF' && bytes.subarray(8, 12).toString() === 'WEBP'));

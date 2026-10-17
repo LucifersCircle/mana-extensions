@@ -8,8 +8,12 @@ import {
     DeepLinkContext,
     Form,
     Highlight,
-    ImageRequestHandler,
-    NetworkRequest,
+    CoverRequestHandler,
+    HttpClient,
+    HttpMethod,
+    ImageRequest,
+    PageRequestHandler,
+    RequestOrigin,
     Option,
     PagedSearchResult,
     PageLink,
@@ -79,10 +83,10 @@ type Filters = { genres?: Option[], condition?: Option, author?: string, artist?
 type CacheEntry<T> = { at: number, value: T }
 class ExcludedContentError extends Error {}
 
-export class Target implements ContentSource, PageLinkResolver, ImageRequestHandler, SourcePreferenceProvider {
+export class Target implements ContentSource, PageLinkResolver, CoverRequestHandler, PageRequestHandler, SourcePreferenceProvider {
     readonly info: SourceInfo = {
         id: 'MangaSushi',
-        version: '0.0.1-alpha.11',
+        version: '0.0.1-alpha.12',
         name: 'MangaSushi',
         description: 'MangaSushi with native discovery, search filters and Mana content-rating policy.',
         thumbnail: 'MangaSushi.png',
@@ -304,12 +308,28 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
         return { content: { id, title: content.title, cover: content.cover, webUrl: content.webUrl, contentRating: content.contentRating } }
     }
 
-    async willRequestImage(url: string): Promise<NetworkRequest> {
-        const revision = this.settingsRevision, exclude = await this.excludeNSFW()
-        await authorizeImage(url, await this.imageContext(exclude), exclude)
-        if (revision !== this.settingsRevision) throw new Error('MangaSushi settings changed; refresh to continue')
-        return { url, headers: { Referer: `${DOMAIN}/`, Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5' } }
+    private imageTransport(image: ImageRequest, origin: RequestOrigin.Cover | RequestOrigin.Page): HttpClient {
+        const url = image.url, requestedOrigin = image.origin
+        const policies = new Map<string, { revision: number, exclude: boolean, key: string }>()
+        return new HttpClient().addRequestInterceptor(async (request, context) => {
+            if (requestedOrigin !== origin || context.origin !== origin || request.url !== url || request.method !== HttpMethod.Get) throw new Error('Invalid MangaSushi image request')
+            const revision = this.settingsRevision, exclude = await this.excludeNSFW(), key = await this.imageContext(exclude)
+            await authorizeImage(request.url, key, exclude)
+            if (revision !== this.settingsRevision) throw new Error('MangaSushi settings changed; refresh to continue')
+            policies.set(context.requestId, { revision, exclude, key })
+            request.headers.setAll({ Referer: `${DOMAIN}/`, Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5' })
+            return request
+        }).addResponseInterceptor(async (response, context) => {
+            const policy = policies.get(context.requestId)
+            policies.delete(context.requestId)
+            if (!policy) throw new Error('MangaSushi image authorization is missing')
+            await authorizeImage(response.request.url, policy.key, policy.exclude)
+            if (policy.revision !== this.settingsRevision) throw new Error('MangaSushi settings changed; refresh to continue')
+            return response
+        })
     }
+    getCoverTransport(request: ImageRequest): HttpClient { return this.imageTransport(request, RequestOrigin.Cover) }
+    getPageTransport(request: ImageRequest): HttpClient { return this.imageTransport(request, RequestOrigin.Page) }
 
     private async excludeNSFW(): Promise<boolean> { return (await ObjectStore.boolean(SETTING)) === true }
 

@@ -8,8 +8,12 @@ import { CatalogRating,
     DeepLinkContext,
     Form,
     Highlight,
-    ImageRequestHandler,
-    NetworkRequest,
+    CoverRequestHandler,
+    HttpClient,
+    HttpMethod,
+    ImageRequest,
+    PageRequestHandler,
+    RequestOrigin,
     Option,
     PagedSearchResult,
     PageLink,
@@ -85,9 +89,9 @@ let preferenceRevision = 0
 let preferenceWrite: Promise<void> = Promise.resolve()
 const options = (ids: string[]): Option[] => ids.map((id) => ({ id, title: LABELS[id] ?? id }))
 
-export class Target implements ChapterSource, PageLinkResolver, SourcePreferenceProvider, ImageRequestHandler {
+export class Target implements ChapterSource, PageLinkResolver, SourcePreferenceProvider, CoverRequestHandler, PageRequestHandler {
     readonly info: SourceInfo = {
-        id: 'Hijala', version: '0.0.1-alpha.6', name: 'Hijala', thumbnail: 'Hijala.png', website: DOMAIN,
+        id: 'Hijala', version: '0.0.1-alpha.7', name: 'Hijala', thumbnail: 'Hijala.png', website: DOMAIN,
         description: 'Hijala public manga catalog, site filters, complete chapters and public reader. Optional NSFW genre exclusion.',
         rating: CatalogRating.MIXED, supportedLanguages: ['en_US', 'es_ES', 'ru_RU'], badges: ['Manga', 'Manhwa', 'Manhua'],
         developers: [{ name: 'Lucifers Circle', website: 'https://pirate.vodka', github: 'https://github.com/LucifersCircle' }]
@@ -465,7 +469,14 @@ export class Target implements ChapterSource, PageLinkResolver, SourcePreference
         const result = await this.getContent(id)
         return { content: { id, title: result.title, cover: result.cover, webUrl: result.webUrl, contentRating: result.contentRating } }
     }
-    async willRequestImage(url: string): Promise<NetworkRequest> {
-        return { url, headers: { Referer: `${DOMAIN}/`, Origin: DOMAIN, Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5' } }
+    private imageTransport(image: ImageRequest, origin: RequestOrigin.Cover | RequestOrigin.Page): HttpClient {
+        const url = image.url, requestedOrigin = image.origin
+        return new HttpClient().addRequestInterceptor((request, context) => {
+            if (requestedOrigin !== origin || context.origin !== origin || request.url !== url || request.method !== HttpMethod.Get) throw new Error('Invalid Hijala image request')
+            request.headers.setAll({ Referer: `${DOMAIN}/`, Origin: DOMAIN, Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5' })
+            return request
+        })
     }
+    getCoverTransport(request: ImageRequest): HttpClient { return this.imageTransport(request, RequestOrigin.Cover) }
+    getPageTransport(request: ImageRequest): HttpClient { return this.imageTransport(request, RequestOrigin.Page) }
 }

@@ -8,8 +8,12 @@ import {
     DeepLinkContext,
     Form,
     Highlight,
-    ImageRequestHandler,
-    NetworkRequest,
+    CoverRequestHandler,
+    HttpClient,
+    HttpMethod,
+    ImageRequest,
+    PageRequestHandler,
+    RequestOrigin,
     Option,
     PagedSearchResult,
     PageLink,
@@ -66,9 +70,9 @@ type CacheEntry<T> = { at: number, value: T }
 type Home = { popular: Series[], latest: Listing, categories: HomeCategory[] }
 class ExcludedContentError extends Error {}
 
-export class Target implements ContentSource, PageLinkResolver, ImageRequestHandler, SourcePreferenceProvider {
+export class Target implements ContentSource, PageLinkResolver, CoverRequestHandler, PageRequestHandler, SourcePreferenceProvider {
     readonly info: SourceInfo = {
-        id: 'ManhwaNex', version: '0.0.1-alpha.9', name: 'ManhwaNex',
+        id: 'ManhwaNex', version: '0.0.1-alpha.10', name: 'ManhwaNex',
         description: 'ManhwaNex with native discovery, search filters and Mana content-rating policy.',
         thumbnail: 'ManhwaNex.png', rating: CatalogRating.MIXED, website: DOMAIN,
         badges: ['Manhwa', 'Manhua', 'Manga'], supportedLanguages: ['en_US'],
@@ -202,17 +206,36 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
         return { content: { id, title: content.title, cover: content.cover, webUrl: content.webUrl, contentRating: content.contentRating } }
     }
 
-    async willRequestImage(url: string): Promise<NetworkRequest> {
-        let contentId = ''
-        return this.withSettings(async (exclude) => {
-            this.checkImage(url)
-            const id = await this.withIssued((issued) => issued.get(url))
-            if (!id) throw new Error('ManhwaNex image was not issued by this source; refresh the title or reader')
-            contentId = id
-            await this.requireAllowed(id, exclude)
-            return { url, headers: { Referer: `${DOMAIN}/`, Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5' } }
-        }, (exclude) => this.checkAllowed(contentId, exclude))
+    private imageTransport(image: ImageRequest, origin: RequestOrigin.Cover | RequestOrigin.Page): HttpClient {
+        const url = image.url, requestedOrigin = image.origin
+        const policies = new Map<string, { revision: number, exclude: boolean, contentId: string }>()
+        return new HttpClient().addRequestInterceptor(async (request, context) => {
+            if (requestedOrigin !== origin || context.origin !== origin || request.url !== url || request.method !== HttpMethod.Get) throw new Error('Invalid ManhwaNex image request')
+            const revision = this.revision
+            let contentId = ''
+            const policy = await this.withSettings(async (exclude) => {
+                this.checkImage(request.url)
+                const id = await this.withIssued((issued) => issued.get(request.url))
+                if (!id) throw new Error('ManhwaNex image was not issued by this source; refresh the title or reader')
+                contentId = id
+                await this.requireAllowed(id, exclude)
+                return { revision, exclude, contentId }
+            }, (exclude) => this.checkAllowed(contentId, exclude))
+            policies.set(context.requestId, policy)
+            request.headers.setAll({ Referer: `${DOMAIN}/`, Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5' })
+            return request
+        }).addResponseInterceptor(async (response, context) => {
+            const policy = policies.get(context.requestId)
+            policies.delete(context.requestId)
+            if (!policy || await this.withIssued((issued) => issued.get(response.request.url)) !== policy.contentId) throw new Error('ManhwaNex image was not issued by this source; refresh the title or reader')
+            const currentExclude = await this.excludeNSFW()
+            if (policy.revision !== this.revision || policy.exclude !== currentExclude) throw new Error('ManhwaNex settings changed during this request; refresh to continue')
+            this.checkAllowed(policy.contentId, policy.exclude)
+            return response
+        })
     }
+    getCoverTransport(request: ImageRequest): HttpClient { return this.imageTransport(request, RequestOrigin.Cover) }
+    getPageTransport(request: ImageRequest): HttpClient { return this.imageTransport(request, RequestOrigin.Page) }
 
     private checkHome(link: PageLink): void { if (link.id !== 'home') throw new Error('Unknown ManhwaNex page') }
     private async excludeNSFW(): Promise<boolean> { return (await ObjectStore.boolean(SETTING)) === true }
@@ -220,7 +243,8 @@ export class Target implements ContentSource, PageLinkResolver, ImageRequestHand
         const revision = this.revision, exclude = await this.excludeNSFW()
         if (revision !== this.revision) throw new Error('ManhwaNex settings changed during this request; refresh to continue')
         const result = await operation(exclude)
-        if (revision !== this.revision || exclude !== await this.excludeNSFW()) throw new Error('ManhwaNex settings changed during this request; refresh to continue')
+        const currentExclude = await this.excludeNSFW()
+        if (revision !== this.revision || exclude !== currentExclude) throw new Error('ManhwaNex settings changed during this request; refresh to continue')
         validate?.(exclude)
         return result
     }
