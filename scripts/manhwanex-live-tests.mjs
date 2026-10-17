@@ -519,10 +519,10 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
       const baseline = await cold.search({ page: 1, listId: probe.listId === 'popular' ? 'popular' : 'latest' });
       let baselineID = baseline.results[0].id, sourceTitle = baseline.results[0].title, overlapCard, firstArchiveIDs;
       if (probe.listId === 'genre:action') {
-        const $ = load(await original(`${domain}/manga-genre/action/`)), homeIDs = new Set(ids(baseline.results)), laterIDs = new Set();
+        const $ = load(await runTestOperation(cold, () => original(`${domain}/manga-genre/action/`))), homeIDs = new Set(ids(baseline.results)), laterIDs = new Set();
         firstArchiveIDs = new Set($('.page-item-detail.manga').toArray().map((node) => canonicalID($(node).find('.post-title a').attr('href'))));
         if (probe.overlap) {
-          const next = load(await original(`${domain}/manga-genre/action/page/2/`));
+          const next = load(await runTestOperation(cold, () => original(`${domain}/manga-genre/action/page/2/`)));
           for (const node of next('.page-item-detail.manga').toArray()) laterIDs.add(canonicalID(next(node).find('.post-title a').attr('href')));
         }
         const node = $('.page-item-detail.manga').toArray().find((node) => {
@@ -540,7 +540,7 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
       let verifiedQuery, verifiedQueryURL, postWarningSearch;
       for (const candidate of candidates) {
         const url = `${domain}/?${new URLSearchParams({ s: candidate, post_type: 'wp-manga', adult: '0' })}`;
-        const $ = load(await original(url));
+        const $ = load(await runTestOperation(cold, () => original(url)));
         if ($('.c-tabs-item__content').toArray().some((node) => canonicalID($(node).find('.post-title a').attr('href')) === baselineID)) {
           verifiedQuery = candidate; verifiedQueryURL = url; break;
         }

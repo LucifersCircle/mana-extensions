@@ -435,7 +435,7 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
       ['tensei-akuma-no-saikyou-yuusha-ikusei-keikaku', 'Tensei Akuma', 'Reincarnated Devil’s Plan for Raising the Strongest Hero'],
       ['academy-saikyou-no-mob-healer-shinigee-sekai-no-mob-ni-tensei-shita-ore-wa-hazure-job-healer-to-gensaku-chishiki-de-musou-suru', 'Academy Saikyou no Mob Healer', "The Academy's Strongest Mob Healer: Reincarnated as a Mob in a Deadly Game World, I Dominate with the Useless Job [Healer] and My Original Knowledge"]
     ]) {
-      const raw = (await source.firstListing(source.searchURL({ page: 1, query }, true), true)).items.find((item) => item.id === id);
+      const raw = (await runTestOperation(source, () => source.firstListing(source.searchURL({ page: 1, query }, true), true))).items.find((item) => item.id === id);
       assert(raw); assert.notEqual(raw.title, expected);
       for (const title of [raw.title, expected, expected.replace(/[‘’]/g, "'").replace(/'/g, '’').toUpperCase(), expected.replace(/[‘’]/g, "'")]) {
         const results = await source.search({ page: 1, query: title });
@@ -449,11 +449,11 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
       assert.equal(source.highlight({ ...raw, alternatives: raw.alternatives.map((value) => value.replace(expected, '')) }).title, raw.title);
       assert.equal(source.highlight({ ...raw, alternatives: [`Unrelated ${expected} sequel`] }).title, raw.title);
       assert.equal(source.highlight({ ...raw, id: 'unregistered-id', alternatives: [expected] }).title, raw.title);
-      assert.equal(raw.title, (await source.resolveMetadata(id, raw.title, true)).title, 'Display must not replace cached source titles');
+      assert.equal(raw.title, (await runTestOperation(source, () => source.resolveMetadata(id, raw.title, true))).title, 'Display must not replace cached source titles');
     }
   });
   await check('Japanese-only alternatives retain the original title in search and details', async () => {
-    const raw = (await source.firstListing(source.searchURL({ page: 1, query: 'Ken yo' }, true), true)).items.find((item) => item.id === 'ken-yo-kaku-katariki');
+    const raw = (await runTestOperation(source, () => source.firstListing(source.searchURL({ page: 1, query: 'Ken yo' }, true), true))).items.find((item) => item.id === 'ken-yo-kaku-katariki');
     assert(raw); assert(raw.alternatives.some((value) => /[\u3040-\u9fff]/.test(value)));
     const result = await source.search({ page: 1, query: raw.title });
     assert.equal(result.results.find((item) => item.id === raw.id)?.title, raw.title);
