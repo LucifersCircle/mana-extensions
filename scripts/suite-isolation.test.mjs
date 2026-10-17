@@ -22,7 +22,7 @@ for (const [aborted, partial] of [['Kagane', false], ['ManhwaNex', true]]) {
     try {
       // Exercise the real dispatcher and reporter with no provider content or network access.
       for (const file of ['live-tests.mjs', 'test-status.mjs', 'test-sources.mjs',
-        'changed-sources.mjs', 'source-dependencies.mjs', 'mana-runtime.mjs']) {
+        'changed-sources.mjs', 'source-dependencies.mjs', 'mana-runtime.mjs', 'mana-test-webview.mjs', 'mana-test-images.mjs', 'mana-test-image-bytes.mjs']) {
         mkdirSync(join(dir, 'scripts'), { recursive: true });
         copyFileSync(join(scripts, file), join(dir, 'scripts', file));
       }

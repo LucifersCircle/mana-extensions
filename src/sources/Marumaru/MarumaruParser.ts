@@ -19,7 +19,8 @@ function route(value: string): {workId: string; episodeId?: string} | undefined 
 }
 function cover(value: string | undefined, workId: string): string {
     if (!value || /\/(?:\.|\.\.)$/.test(value)) throw new Error('Marumaru cover missing or invalid')
-    if (!new RegExp('^https://peer\\.storagewebtoon\\.store/manhwa/'+id(workId)+'/[A-Za-z0-9._-]+$').test(value))
+    // The manga catalog also advertises legacy /webtoon/<same work ID>/ covers.
+    if (!new RegExp('^https://peer\\.storagewebtoon\\.store/(?:manhwa|webtoon)/'+id(workId)+'/[A-Za-z0-9._-]+$').test(value))
         throw new Error('Marumaru cover identity does not match title')
     return value
 }
@@ -49,6 +50,8 @@ export function parseCatalog(html: string, currentURL: string): {items: Card[]; 
 export function parseDetail(html: string, workId: string): Detail {
     id(workId); const $=cheerio.load(html), title=$('.hero-v2-title').text().trim()
     if (!title) throw new Error('Marumaru rendered detail unavailable; no title was returned')
+    const count=$('.ep-section-count'),rawTotal=count.text().trim(),total=Number(rawTotal)
+    if(count.length!==1||!/^[1-9]\d*$/.test(rawTotal)||!Number.isSafeInteger(total)||total>10000)throw new Error('Marumaru complete chapter count unavailable')
     const chapters: Episode[]=[], seen=new Set<string>()
     $('a.ep-row-v2-link').each((_,element)=>{
         const node=$(element), target=route(node.attr('href') ?? '')
@@ -62,11 +65,11 @@ export function parseDetail(html: string, workId: string): Detail {
         if(seen.has(target.episodeId)){const previous=chapters.find(c=>c.id===target.episodeId)!;if(previous.sourceNumber!==sourceNumber||previous.title!==label||previous.date.getTime()!==date.getTime())throw new Error('Conflicting Marumaru chapter metadata');return}
         seen.add(target.episodeId); chapters.push({id:target.episodeId,workId,sourceNumber,title:label,date})
     })
-    if (!chapters.length) throw new Error('Marumaru chapter list unavailable')
+    if (chapters.length!==total) throw new Error('Marumaru chapter inventory differs from its advertised count')
     const rawScore=$('.cs-rating-num strong').text().trim(), rawCount=$('.cs-rating-cnt strong').text().trim()
-    const score=Number(rawScore), count=Number(rawCount)
+    const score=Number(rawScore), ratingCount=Number(rawCount)
     const max=$('.cs-rating-max').text().trim()
-    const rating=rawScore!==''&&/^[1-9]\d*$/.test(rawCount)&&Number.isSafeInteger(count)&&count>0&&max==='/5.0'&&Number.isFinite(score)&&score>=0&&score<=5?score/5:undefined
+    const rating=rawScore!==''&&/^[1-9]\d*$/.test(rawCount)&&Number.isSafeInteger(ratingCount)&&ratingCount>0&&max==='/5.0'&&Number.isFinite(score)&&score>=0&&score<=5?score/5:undefined
     return {id:workId,title,cover:cover($('.hero-v2-thumb img').attr('src'),workId),genres:$('.hero-v2-tag').map((_,e)=>$(e).text().trim()).get().filter(Boolean),author:$('.hero-v2-author').text().trim(),summary:$('.hero-v2-desc').text().trim(),chapters,rating,explicitlyAdult:$('.hero-v2-adult').text().trim()==='19'}
 }
 export function parseReader(html: string, episodeId: string): string[] {
@@ -91,7 +94,8 @@ export function parseSearch(html:string,currentURL:string):{items:Card[];next?:s
     const current=documentParts(currentURL)
     if(current.path!=='/search'||current.query.kind!=='manhwa'||!current.query.q)throw new Error('Unsupported Marumaru search scope')
     const $=cheerio.load(html),items:Card[]=[],seen=new Set<string>()
-    if($('input[name="q"]').attr('value')!==current.query.q)throw new Error('Marumaru rendered search query mismatch')
+    const forms=$('form.search-page-form'),queryInput=forms.find('input[name="q"]')
+    if(forms.length!==1||queryInput.length!==1||queryInput.attr('value')!==current.query.q)throw new Error('Marumaru rendered search query mismatch')
     $('.search-results-grid a.card').each((_,element)=>{
         const node=$(element),target=route(node.attr('href')??'')
         if(!target||target.episodeId)throw new Error('Marumaru search returned another content category')

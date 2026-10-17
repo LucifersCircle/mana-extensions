@@ -12,6 +12,7 @@ import { PageLink,
     Content,
     ImageRequestHandler,
     NetworkRequest,
+    NetworkResponse,
     PagedSearchResult,
     SearchRequest,
     SourceContext,
@@ -35,7 +36,7 @@ import { accessPolicy,
     rating,
     visible } from './MarumaruPolicy'
 export class Target implements ChapterSource, ImageRequestHandler, PageLinkResolver {
-    readonly info:SourceInfo={id:'Marumaru',name:'Marumaru',version:'0.0.1-alpha.1',website:DOMAIN,rating:CatalogRating.MIXED,supportedLanguages:['ko_KR'],badges:['Manga'],developers:[{name:'Lucifers Circle',github:'https://github.com/LucifersCircle'}],description:'Korean manga catalog and reader through ordinary rendered website pages. Unclassified titles use a Suggestive compatibility fallback, not a source age rating. Explicit 19 labels are preserved. WebView device validation is required before release.'};
+    readonly info:SourceInfo={id:'Marumaru',name:'Marumaru',version:'0.0.1-alpha.5',website:DOMAIN,rating:CatalogRating.MIXED,supportedLanguages:['ko_KR'],badges:['Manga'],developers:[{name:'Lucifers Circle',github:'https://github.com/LucifersCircle'}],description:'Korean manga catalog and reader through ordinary rendered website pages. Unclassified titles use a Suggestive compatibility fallback, not a source age rating. Explicit 19 labels are preserved. WebView device validation is required before release.'};
     readonly config={owningLinks:['marumaru105.com']};
     private readonly service=new MarumaruService(renderedHTML);
     private revision=-1;
@@ -79,5 +80,15 @@ export class Target implements ChapterSource, ImageRequestHandler, PageLinkResol
         const urls=await this.service.reader(work,episode);await check(policy);await issue(work,urls,policy,episode);await accessPolicy(work);await check(policy)
         return {pages:urls.map(url=>({url}))}
     }
-    async willRequestImage(url:string):Promise<NetworkRequest>{const policy=await this.policy();await authorize(url,policy);await check(policy);return {url}}
+    async willRequestImage(url:string):Promise<NetworkRequest>{
+        const policy=await this.policy();await authorize(url,policy);await check(policy)
+        // Covers are embedded by the source page; preserve its origin referrer.
+        if(!/^https:\/\/peer\.storagewebtoon\.store\/(?:manhwa|webtoon)\//.test(url))return {url}
+        return {url,headers:{Referer:DOMAIN+'/'},transformResponse:async(response:NetworkResponse)=>{
+            if(response.request.url!==url)throw new Error('Marumaru image response identity mismatch')
+            await authorize(url,policy);await check(policy)
+            if(Object.entries(response.headers??{}).some(([name,value])=>name.toLowerCase()==='cf-mitigated'&&String(value).toLowerCase()==='challenge'))throw new CloudflareError(url)
+            return response
+        }}
+    }
 }
