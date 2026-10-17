@@ -30,6 +30,7 @@ import { DOMAIN,
 import { chapters,
     content } from './mapping'
 import { accessPolicy,
+    beginAccess,
     grant,
     revoke,
     authorize,
@@ -49,10 +50,10 @@ export class Target implements ChapterSource, CoverRequestHandler, PageRequestHa
     private readonly pageClient = this.imageClient(RequestOrigin.Page)
     private revision=-1;
     private async policy(context?:SourceContext){const policy=await enter(context);if(this.revision!==policy.revision){this.service.clear();this.revision=policy.revision}return policy}
-    private async detail(work:string,policy:Policy):Promise<Detail>{
+    private async detail(work:string,policy:Policy,refresh=false):Promise<Detail>{
         id(work);await check(policy)
         if(policy.allowed?.length===0)throw new Error('Marumaru title excluded by native content policy')
-        const detail=await this.service.detail(work);await check(policy)
+        const detail=await this.service.detail(work,refresh);await check(policy)
         const explicitlyAdult=await observe(work,detail.explicitlyAdult,policy)
         if(!visible(explicitlyAdult,policy))throw new Error('Marumaru title excluded by requested content policy')
         await issue(work,[detail.cover],policy);await check(policy);return {...detail,explicitlyAdult}
@@ -79,8 +80,8 @@ export class Target implements ChapterSource, CoverRequestHandler, PageRequestHa
         if(listing.items.length&&!results.length)throw new Error('Marumaru catalog is excluded by requested content policy; unclassified titles use Suggestive compatibility')
         return {results,isLastPage:listing.nextPage===undefined}
     }
-    async getContent(work:string,context?:SourceContext):Promise<Content>{const policy=await this.policy(context);try{const detail=await this.detail(work,policy);await check(policy);const result=content(detail,{allowedContentRatings:policy.allowed});await grant(work,policy);return result}catch(error){await revoke(work);throw error}}
-    async getChapters(work:string):Promise<Chapter[]>{const policy=await accessPolicy(work);const detail=await this.detail(work,policy);await accessPolicy(work);await check(policy);return chapters(detail)}
+    async getContent(work:string,context?:SourceContext):Promise<Content>{const policy=await beginAccess(work,await this.policy(context));try{const detail=await this.detail(work,policy,true);await check(policy);const result=content(detail,{allowedContentRatings:policy.allowed});await grant(work,policy);return result}catch(error){await revoke(work,policy);throw error}}
+    async getChapters(work:string):Promise<Chapter[]>{const policy=await accessPolicy(work);const detail=await this.detail(work,policy,true);await accessPolicy(work);await check(policy);return chapters(detail)}
     async getChapterData(work:string,episode:string,chapter?:Chapter):Promise<ChapterData>{
         id(work);id(episode);const policy=await accessPolicy(work);const detail=await this.detail(work,policy)
         const selected=detail.chapters.find(item=>item.id===episode)
@@ -100,7 +101,7 @@ export class Target implements ChapterSource, CoverRequestHandler, PageRequestHa
         // Request-local evidence keeps concurrent requests independent on each reusable client.
         const evidence = new WeakMap<Readonly<HttpRequest>, { url: string; policy: Policy }>()
         // Keep the native host's User-Agent and the SDK's CloudflareError flow.
-        const client = new HttpClient().setTimeoutMs(30000)
+        const client = new HttpClient().setTimeoutMs(30000).addHeader('Referer', DOMAIN + '/')
             .addRequestInterceptor(async (request, context) => {
                 this.validateImage({ url: request.url, origin: context.origin as RequestOrigin.Cover | RequestOrigin.Page }, origin)
                 if (request.method !== HttpMethod.Get || request.body !== undefined) throw new Error('Invalid Marumaru image request')
@@ -116,7 +117,6 @@ export class Target implements ChapterSource, CoverRequestHandler, PageRequestHa
                 if (response.headers.get('cf-mitigated')?.toLowerCase() === 'challenge') throw new CloudflareError(issued.url)
                 return response
             })
-        if (origin === RequestOrigin.Cover) client.addHeader('Referer', DOMAIN + '/')
         return client
     }
 }

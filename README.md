@@ -642,14 +642,23 @@ still uses Mana's built-in CloudflareError flow; no helper is bundled in extensi
 Marumaru uses the site's ordinary JSON catalog/search/work APIs and the exact public
 reader API advertised by each work. Metadata, complete chapter inventories and reader
 pages use reusable SDK HTTP clients; no WebView navigation or per-card detail request
-is needed. Native chapter numbers and labels are preserved independently, including
-multipart labels and rows whose reader is not yet ready. Counts and first/last page
-comparisons come from live advertised inventories, not saved provider fixtures.
+is needed. The complete advertised inventory is validated before hiding only chapters with
+`ready === false`; unknown availability remains visible. Native chapter IDs, numbers,
+labels and order are preserved, including multipart labels. Refreshing the chapter
+list rechecks bulk availability without per-chapter requests. Counts and first/last
+page comparisons come from live advertised inventories, not saved provider fixtures.
+
+Title access is persisted separately from catalog/image snapshots so overlapping
+source contexts cannot erase a completed detail grant. Grants retain their native
+rating scope, original one-hour lifetime and revocation generation; positive adult
+evidence cannot be downgraded by a stale catalog snapshot. Missing or expired access
+still requires a successful title refresh with native content-policy context.
 
 Cover and page images use separate reusable SDK clients and synchronous transport
 factories. Async request/response interceptors retain request-local exact-URL,
 origin, issuing-policy and revocation checks. The SDK's native Cloudflare challenge
-handling is unchanged. The source does not replace the native host's User-Agent: the
+handling is unchanged. API and image clients send the Marumaru site origin as Referer;
+X-Site remains limited to the Marumaru site API. The source does not replace the native host's User-Agent: the
 current Mana SDK has no Paperback-style default-UA getter, so a Node-host check
 must not be reported as proof of the iOS host's identity. Marumaru live checks
 exercise direct native HTTP only, without
@@ -682,7 +691,7 @@ npm run verify:bundles
 npm run test:extensions
 ```
 
-To use the same Kagane browser transport and Marumaru WebView host locally:
+To use the same Kagane browser transport and retained test-only WebView host locally:
 
 ```sh
 docker compose up -d --build --wait

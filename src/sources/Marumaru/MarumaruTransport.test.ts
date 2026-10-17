@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 import { BridgeOperation,
     CloudflareError,
+    ContentRating,
     HttpBridge,
     HttpClient,
     imageDispatch,
@@ -12,6 +13,8 @@ import { MarumaruAPI,
     validateAPIURL } from './MarumaruService'
 import { Target } from './index'
 import { enter,
+    accessPolicy,
+    beginAccess,
     grant,
     issue,
     observe,
@@ -61,7 +64,7 @@ describe('Marumaru SDK image transport', () => {
         return response
     }
 
-    test('synchronous factories preserve separate origins and cover-only referrer', async () => {
+    test('synchronous factories preserve separate origins and the site-domain referrer', async () => {
         const source = new Target()
         for (const [url, origin] of [[cover, RequestOrigin.Cover], [page, RequestOrigin.Page]] as const) {
             const request = { url, origin }
@@ -72,7 +75,8 @@ describe('Marumaru SDK image transport', () => {
             expect(sent).toHaveLength(before + 1)
             expect(sent[before]).toMatchObject({ url, origin })
             expect(new Headers(sent[before]?.headers as Record<string, string>).get('referer'))
-                .toBe(origin === RequestOrigin.Cover ? 'https://marumaru105.com/' : null)
+                .toBe('https://marumaru105.com/')
+            expect(new Headers(sent[before]?.headers as Record<string, string>).has('x-site')).toBe(false)
         }
     })
 
@@ -161,6 +165,11 @@ describe('Marumaru SDK image transport', () => {
         expect(sent.every(message => message.origin === RequestOrigin.General && message.method === HttpMethod.Get)).toBe(true)
         expect(new Headers(sent[0]?.headers as Record<string,string>).get('x-site')).toBe('marumaru')
         for (const message of sent.slice(1)) expect(new Headers(message.headers as Record<string,string>).get('x-site')).toBeNull()
+        for (const message of sent) {
+            const headers = new Headers(message.headers as Record<string,string>)
+            expect(headers.get('referer')).toBe('https://marumaru105.com/')
+            expect(headers.get('accept')).toBe('application/json')
+        }
     })
 
     test('API routes reject credentials, cross-origin, tokens and document paths before I/O', async () => {
@@ -217,6 +226,149 @@ describe('Marumaru SDK image transport', () => {
     test('ordinary JSON 406 stays an HTTP failure, not a forged Cloudflare challenge', async () => {
         respond = async () => ({ status: 406, headers: { 'content-type': 'application/json' }, text: '{"status":406,"path":"/seo-gate"}' })
         await expect(new MarumaruAPI().json('https://marumaru105.com/api/works/123')).rejects.toThrow('Marumaru API request failed (HTTP 406)')
+    })
+
+    test('separate runtimes cannot overwrite a newer title grant with a catalog write', async () => {
+        await revoke('123')
+        const key = 'Marumaru.authorization.v1'
+        const initial = await ObjectStore.get(key) as { titles: { id: string }[] }
+        initial.titles = initial.titles.filter(title => title.id !== '123')
+        const values = new Map<string, unknown>([[key, initial]])
+        const clone = (value: unknown) => value === undefined ? undefined : JSON.parse(JSON.stringify(value)) as unknown
+        let release: (() => void) | undefined, started: (() => void) | undefined
+        const waiting = new Promise<void>(resolve => { started = resolve })
+        const held = new Promise<void>(resolve => { release = resolve })
+        let delayed = false
+        globals.ObjectStore = {
+            get: async (name: string) => clone(values.get(name)),
+            set: async (name: string, value: unknown) => {
+                const state = value as { titles?: { id: string }[] }
+                if (name === key && !delayed && state.titles?.some(title => title.id === '789')) {
+                    delayed = true; started?.(); await held
+                }
+                values.set(name, clone(value))
+            }
+        }
+        let catalog!: typeof import('./MarumaruPolicy'), detail!: typeof import('./MarumaruPolicy')
+        jest.isolateModules(() => { catalog = jest.requireActual<typeof import('./MarumaruPolicy')>('./MarumaruPolicy') })
+        jest.isolateModules(() => { detail = jest.requireActual<typeof import('./MarumaruPolicy')>('./MarumaruPolicy') })
+        const pending = catalog.observe('789', false, await catalog.enter())
+        await waiting
+        await detail.observe('123', false, await detail.enter())
+        await detail.grant('123', await detail.enter())
+        release?.(); await pending
+        await expect(accessPolicy('123')).resolves.toMatchObject({ revision: 0 })
+    })
+
+    test('revoked access cannot be restored by an older shared-state snapshot', async () => {
+        const key = 'Marumaru.authorization.v1'
+        const snapshot = JSON.parse(JSON.stringify(await ObjectStore.get(key))) as unknown
+        await revoke('123')
+        await ObjectStore.set(key, snapshot)
+        await expect(accessPolicy('123')).rejects.toThrow(/Refresh Marumaru/)
+        const source = new Target(), request = { url: page, origin: RequestOrigin.Page as const }
+        await expect(dispatch(source.getPageTransport(request), request)).rejects.toThrow(/not issued/)
+        expect(sent).toHaveLength(0)
+    })
+
+    test('separate persisted access keeps its issuing scope and rejects stronger classification', async () => {
+        const policy = await enter({ allowedContentRatings: [ContentRating.SUGGESTIVE] })
+        await grant('123', policy)
+        await expect(accessPolicy('123')).resolves.toMatchObject(policy)
+        const key = 'Marumaru.authorization.v1', older = JSON.parse(JSON.stringify(await ObjectStore.get(key))) as unknown
+        await observe('123', true, await enter())
+        await expect(accessPolicy('123')).rejects.toThrow(/Refresh Marumaru/)
+        await ObjectStore.set(key, older)
+        await expect(accessPolicy('123')).rejects.toThrow(/Refresh Marumaru/)
+    })
+
+    test('expired separate access does not fall back to fresh legacy evidence', async () => {
+        const key = 'Marumaru.access.v2.123'
+        const saved = await ObjectStore.get(key) as Record<string, unknown>
+        await ObjectStore.set(key, { ...saved, at: Date.now() - 3600000 })
+        await expect(accessPolicy('123')).rejects.toThrow(/Refresh Marumaru/)
+        const source = new Target(), request = { url: page, origin: RequestOrigin.Page as const }
+        await expect(dispatch(source.getPageTransport(request), request)).rejects.toThrow(/not issued/)
+        expect(sent).toHaveLength(0)
+    })
+
+    test('missing access remains fail-closed before chapter network requests', async () => {
+        await expect(new Target().getChapterData('789', '456')).rejects.toThrow(/Refresh Marumaru/)
+        expect(sent).toHaveLength(0)
+    })
+
+    test('revocation invalidates a grant already waiting on another runtime write', async () => {
+        const keys = ['Marumaru.authorization.v1', 'Marumaru.access.v2.123', 'Marumaru.access-epoch.v2.123']
+        const values = new Map<string, unknown>()
+        const clone = (value: unknown) => value === undefined ? undefined : JSON.parse(JSON.stringify(value)) as unknown
+        for (const key of keys) values.set(key, clone(await ObjectStore.get(key)))
+        let release: (() => void) | undefined, started: (() => void) | undefined
+        const waiting = new Promise<void>(resolve => { started = resolve })
+        const held = new Promise<void>(resolve => { release = resolve })
+        globals.ObjectStore = {
+            get: async (key: string) => clone(values.get(key)),
+            set: async (key: string, value: unknown) => {
+                if (key === 'Marumaru.access.v2.123') { started?.(); await held }
+                values.set(key, clone(value))
+            }
+        }
+        let first!: typeof import('./MarumaruPolicy'), second!: typeof import('./MarumaruPolicy')
+        jest.isolateModules(() => { first = jest.requireActual<typeof import('./MarumaruPolicy')>('./MarumaruPolicy') })
+        jest.isolateModules(() => { second = jest.requireActual<typeof import('./MarumaruPolicy')>('./MarumaruPolicy') })
+        const policy = await first.beginAccess('123', await first.enter())
+        const pending = first.grant('123', policy)
+        const rejected = expect(pending).rejects.toThrow(/content policy changed/)
+        await waiting
+        await second.revoke('123')
+        release?.(); await rejected
+        await expect(second.accessPolicy('123')).rejects.toThrow(/Refresh Marumaru/)
+    })
+
+    test('an older request cannot overwrite or revoke a newer native rating scope', async () => {
+        const older = await beginAccess('123', await enter())
+        const current = await beginAccess('123', await enter({ allowedContentRatings: [ContentRating.SUGGESTIVE] }))
+        await grant('123', current)
+        await expect(grant('123', older)).rejects.toThrow(/content policy changed/)
+        await revoke('123', older)
+        await expect(accessPolicy('123')).resolves.toEqual(current)
+    })
+
+    test('adult evidence survives stale snapshots while a new access grant is pending', async () => {
+        const policy = await beginAccess('123', await enter({ allowedContentRatings: [ContentRating.SUGGESTIVE] }))
+        const key = 'Marumaru.authorization.v1', older = JSON.parse(JSON.stringify(await ObjectStore.get(key))) as unknown
+        await observe('123', true, await enter())
+        await ObjectStore.set(key, older)
+        await expect(grant('123', policy)).rejects.toThrow(/no allowed access/)
+        await expect(accessPolicy('123')).rejects.toThrow(/Refresh Marumaru/)
+        await expect(observe('123', false, await enter())).resolves.toBe(true)
+        expect(sent).toHaveLength(0)
+    })
+
+    test('a delayed old failure does not revoke a newer successful grant', async () => {
+        const keys = ['Marumaru.authorization.v1', 'Marumaru.access.v2.123', 'Marumaru.access-epoch.v2.123']
+        const values = new Map<string, unknown>()
+        const clone = (value: unknown) => value === undefined ? undefined : JSON.parse(JSON.stringify(value)) as unknown
+        for (const key of keys) values.set(key, clone(await ObjectStore.get(key)))
+        let release: (() => void) | undefined, started: (() => void) | undefined
+        const waiting = new Promise<void>(resolve => { started = resolve })
+        const held = new Promise<void>(resolve => { release = resolve })
+        globals.ObjectStore = {
+            get: async (key: string) => clone(values.get(key)),
+            set: async (key: string, value: unknown) => {
+                if (key.startsWith('Marumaru.revoked.v2.')) { started?.(); await held }
+                values.set(key, clone(value))
+            }
+        }
+        let first!: typeof import('./MarumaruPolicy'), second!: typeof import('./MarumaruPolicy')
+        jest.isolateModules(() => { first = jest.requireActual<typeof import('./MarumaruPolicy')>('./MarumaruPolicy') })
+        jest.isolateModules(() => { second = jest.requireActual<typeof import('./MarumaruPolicy')>('./MarumaruPolicy') })
+        const older = await first.beginAccess('123', await first.enter())
+        const pending = first.revoke('123', older)
+        await waiting
+        const current = await second.beginAccess('123', await second.enter({ allowedContentRatings: [ContentRating.SUGGESTIVE] }))
+        await second.grant('123', current)
+        release?.(); await pending
+        await expect(second.accessPolicy('123')).resolves.toEqual(current)
     })
 
 })

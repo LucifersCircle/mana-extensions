@@ -226,8 +226,10 @@ export function parseDetail(work: WorkResult, value: unknown): APIDetail {
         throw new Error('Marumaru chapter inventory differs from its advertised count')
     const seenIds = new Set<string>()
     const seenNumbers = new Set<number>()
-    const chapters = result.episodes
-        .map((value): Episode => {
+    // Validate the entire advertised inventory before projecting available readers.
+    // Hidden rows must still pass identity, uniqueness, metadata and count checks.
+    const inventory = result.episodes
+        .map((value): { chapter: Episode; ready: boolean | undefined } => {
             const item = record(value, 'chapter')
             const episodeId = sourceId(item.id)
             const number = sourceNumber(item.number)
@@ -239,18 +241,21 @@ export function parseDetail(work: WorkResult, value: unknown): APIDetail {
             }
             if (item.embed_url !== undefined && item.embed_url !== readerURL(work.episodesUrl, work.id, episodeId))
                 throw new Error('Marumaru advertised reader identity mismatch')
-            if (item.ready !== undefined && typeof item.ready !== 'boolean')
-                throw new Error('Invalid Marumaru chapter readiness')
             seenIds.add(episodeId)
             seenNumbers.add(number)
             return {
-                id: episodeId,
-                workId: work.id,
-                sourceNumber: number,
-                title: text(item.title, 'chapter title'),
-                date: publicationDate(item.published_at)
+                chapter: {
+                    id: episodeId,
+                    workId: work.id,
+                    sourceNumber: number,
+                    title: text(item.title, 'chapter title'),
+                    date: publicationDate(item.published_at)
+                },
+                ready: typeof item.ready === 'boolean' ? item.ready : undefined
             }
         })
+    // Missing or unrecognized readiness is not evidence of an unavailable reader.
+    const chapters = inventory.filter(item => item.ready !== false).map(item => item.chapter)
         .sort((a, b) => b.sourceNumber - a.sourceNumber)
     const summary = optionalText(result.synopsis, 'chapter-list synopsis') ?? work.summary
     return {

@@ -27,6 +27,7 @@ export class MarumaruAPI {
         // Mana 0.1 owns native request identity. Unlike Paperback it exposes no
         // default-UA getter: leave the host's User-Agent intact, never impersonate it.
         return new HttpClient().setTimeoutMs(30000).setRateLimit(3, 1000).addHeader('Accept', 'application/json')
+            .addHeader('Referer', DOMAIN + '/')
             .addRequestInterceptor((request, context) => {
                 validateAPIURL(request.url)
                 if (context.origin !== RequestOrigin.General || !request.url.startsWith(origin + '/')) throw new Error('Marumaru API origin mismatch')
@@ -65,8 +66,11 @@ export class MarumaruService {
             throw new Error('Invalid Marumaru search')
         return parseListing(await this.fetchJSON(`${DOMAIN}/api/search?q=${encodeURIComponent(query.trim())}&page=${page - 1}&media=MANHWA&sort=LATEST`), page - 1, true)
     }
-    detail(work: string): Promise<APIDetail> {
+    detail(work: string, refresh = false): Promise<APIDetail> {
         id(work)
+        // A refreshed chapter list must re-evaluate ready flags, including rows
+        // previously hidden as unavailable. Readers can reuse the validated cache.
+        if (refresh) this.cache.delete(work)
         const cached = this.cache.get(work)
         if (cached && Date.now() - cached.at < 60000) return Promise.resolve(cached.detail)
         const running = this.pending.get(work)
