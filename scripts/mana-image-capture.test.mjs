@@ -30,7 +30,7 @@ webview = types.ModuleType('webview_page')
 webview.NAVIGATED = set()
 def assert_document(driver, expected):
  safety(driver)
- if driver.current_url != expected: raise ValueError('document changed')
+ if driver.current_url != expected: raise ValueError('WebView document identity changed')
 webview.assert_document = assert_document
 def navigate(driver, url, wait, timeout, allow_startup=False):
  safety(driver, allow_startup)
@@ -43,6 +43,12 @@ def operation_timeout(value):
  if type(value) not in (int, float) or not math.isfinite(value) or not 0 < value <= 120: raise ValueError('timeout')
  return value
 webview.operation_timeout = operation_timeout
+# Use the real shared fixed-enum classifier without importing Selenium/Bottle.
+import ast
+webview_path = pathlib.Path(sys.argv[1]).with_name('webview_page.py')
+tree = ast.parse(webview_path.read_text())
+classifier = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'operation_failure_reason')
+exec(compile(ast.Module(body=[classifier], type_ignores=[]), str(webview_path), 'exec'), webview.__dict__)
 sys.modules['webview_page'] = webview
 spec = importlib.util.spec_from_file_location('image_capture', sys.argv[1])
 module = importlib.util.module_from_spec(spec)
@@ -250,18 +256,132 @@ for payload in [None, [], {}, {'session': 'test', 'url': url},
  {'session': True, 'url': url, 'timeout': 1}, {'session': 'x/y', 'url': url, 'timeout': 1},
  {'session': 'test', 'url': url, 'timeout': True}, {'session': 'test', 'url': url, 'timeout': 121}]:
  bottle.request.json = payload
- assert endpoint() == {'error': 'Anonymous browser image capture failed'}
+ result = endpoint()
+ assert result['error'] == 'Anonymous browser image capture failed'
+ assert result['code'] == 'operation' and result['phase'] == 'image-capture' and result['stage'] == 'validation'
+ assert result['reason'] in ('image-invalid-request', 'invalid-operation')
+ assert set(result) == {'error', 'code', 'phase', 'stage', 'reason'}
  assert bottle.response.status == 502
 assert active_driver.commands == []
 active_driver = Driver()
 active_driver.body = RuntimeError('SECRET headers cookies upstream-url')
 bottle.request.json = {'session': 'valid', 'url': url, 'timeout': 1}
-assert endpoint() == {'error': 'Anonymous browser image capture failed'}
+assert endpoint() == {'error': 'Anonymous browser image capture failed', 'code': 'operation', 'phase': 'image-capture', 'stage': 'body-read', 'reason': 'unexpected-error'}
 assert bottle.response.status == 502
 active_driver = Driver()
 active_driver.gate = 'captcha'
 bottle.request.json = {'session': 'another', 'url': url, 'timeout': 1}
 assert endpoint() == {'error': 'Browser requires user action', 'code': 'captcha'}
 assert bottle.response.status == 409
+`);
+});
+
+test('Python diagnostics identify each capture stage with fixed enums and never expose driver values', () => {
+  python(String.raw`
+class WebDriverException(Exception): pass
+class App:
+ def __init__(self): self.routes = {}
+ def post(self, path):
+  def register(fn): self.routes[path] = fn; return fn
+  return register
+app = App()
+module.register(app)
+endpoint = app.routes['/webview/image-response']
+def broken(*args, **kwargs): raise WebDriverException('SECRET URL headers cookies raw performance logs')
+original_driver, original_safety = module.session_driver, module.assert_browser_safety
+original_page = module.assert_capture_page
+for index, (stage, expected_reason) in enumerate([
+ ('session-acquisition', 'driver-error'), ('initial-safety', 'driver-error'),
+ ('network-enable', 'driver-error'), ('initial-log', 'driver-error'), ('navigation', 'driver-error'),
+ ('page-safety', 'driver-error'), ('observation', 'driver-error'), ('hero', 'driver-error'),
+ ('body-read', 'driver-error'), ('final-verification', 'document-identity-changed'),
+ ('body-validation', 'image-body-unavailable'),
+]):
+ module.session_driver, module.assert_browser_safety = original_driver, original_safety
+ module.assert_capture_page = original_page
+ active_driver = Driver()
+ if stage == 'session-acquisition': module.session_driver = broken
+ elif stage == 'initial-safety': module.assert_browser_safety = broken
+ elif stage == 'network-enable': active_driver.execute_cdp_cmd = broken
+ elif stage == 'initial-log': active_driver.get_log = broken
+ elif stage == 'navigation': active_driver.navigate_hook = broken
+ elif stage == 'page-safety': module.assert_capture_page = broken
+ elif stage == 'observation':
+  calls = []
+  def log(kind):
+   calls.append(kind)
+   return [] if len(calls) == 1 else broken()
+  active_driver.get_log = log
+ elif stage == 'hero': active_driver.execute_script = broken
+ elif stage == 'body-read': active_driver.body = WebDriverException('SECRET body error')
+ elif stage == 'final-verification': active_driver.body_hook = lambda driver: setattr(driver, 'current_url', page + '?SECRET')
+ elif stage == 'body-validation': active_driver.body = {'body': '', 'base64Encoded': True}
+ bottle.request.json = {'session': 'stage-' + str(index), 'url': url, 'timeout': 1}
+ result = endpoint()
+ assert result == {'error': 'Anonymous browser image capture failed', 'code': 'operation',
+  'phase': 'image-capture', 'stage': stage, 'reason': expected_reason}, result
+ assert bottle.response.status == 502
+ assert 'SECRET' not in json.dumps(result)
+ assert len(active_driver.navigations) <= 1
+ assert len([cmd for cmd, _ in active_driver.commands if cmd == 'Network.getResponseBody']) <= 1
+module.session_driver, module.assert_browser_safety = original_driver, original_safety
+module.assert_capture_page = original_page
+active_driver = Driver([[], []])
+bottle.request.json = {'session': 'timeout', 'url': url, 'timeout': 1}
+result = endpoint()
+assert result['reason'] == 'image-capture-timeout' and result['stage'] in module.CAPTURE_STAGES
+# An explicit safety stop takes priority over the original CDP diagnostic.
+active_driver = Driver()
+active_driver.body = WebDriverException('SECRET body failure')
+active_driver.body_hook = lambda driver: setattr(driver, 'gate', 'captcha')
+bottle.request.json = {'session': 'gate-after-body', 'url': url, 'timeout': 1}
+assert endpoint() == {'error': 'Browser requires user action', 'code': 'captcha'}
+assert bottle.response.status == 409
+`);
+});
+
+test('Python image reason mapping distinguishes response guards and defaults unknown text to safe enums', () => {
+  python(String.raw`
+for text, reason in module.IMAGE_FAILURE_REASONS.items():
+ assert module.image_failure_reason(ValueError(text)) == reason
+assert module.image_failure_reason(ValueError('SECRET arbitrary header status or URL')) == 'invalid-operation'
+assert module.image_failure_reason(RuntimeError('SECRET body or raw logs')) == 'unexpected-error'
+assert module.image_failure_reason(TimeoutError('Browser image capture timed out')) == 'image-capture-timeout'
+assert module.image_failure_reason(json.JSONDecodeError('SECRET rawlog', 'SECRET', 0)) == 'image-network-evidence-invalid'
+for name, reason in [('WebDriverException', 'driver-error'), ('JavascriptException', 'driver-script-error'),
+ ('InvalidSessionIdException', 'driver-session-lost'), ('NoSuchWindowException', 'driver-window-closed'),
+ ('TimeoutException', 'driver-timeout')]:
+ assert module.image_failure_reason(type(name, (Exception,), {})('SECRET driver text')) == reason
+for change, reason in [
+ (lambda p: p['response'].update(status=403), 'image-response-forbidden'),
+ (lambda p: p['response'].update(status=403, headers={'Cf-Mitigated': '  CHALLENGE  '}), 'image-response-challenge'),
+ (lambda p: p['response'].update(status=503), 'image-response-http-status'),
+ (lambda p: p['response'].update(fromServiceWorker=True), 'image-response-service-worker'),
+ (lambda p: p.update(type='Fetch'), 'image-response-resource-type'),
+ (lambda p: p['response'].update(url=url + '?SECRET'), 'image-response-identity'),
+ (lambda p: p['response'].update(headers={}), 'image-content-type-missing'),
+ (lambda p: p['response'].update(headers={'Content-Type': 'image/png'}), 'image-content-type-mismatch'),
+ (lambda p: p['response'].update(headers={'Content-Type': 'image/webp', 'content-type': 'image/webp'}), 'image-content-type-duplicate'),
+]:
+ entries = events()
+ message = json.loads(entries[1]['message'])
+ change(message['message']['params'])
+ entries[1]['message'] = json.dumps(message)
+ try: module.ImageEvidence(url).observe(entries)
+ except ValueError as error: assert module.image_failure_reason(error) == reason
+ else: raise AssertionError('must retain failure')
+for change, reason in [
+ (lambda p: p['request'].update(method='POST'), 'image-request-method'),
+ (lambda p: p['request'].update(urlFragment='#SECRET'), 'image-request-fragment'),
+ (lambda p: p.update(type='Fetch'), 'image-request-resource-type'),
+ (lambda p: p.update(documentURL=page + '?SECRET'), 'image-request-document'),
+]:
+ entries = events()
+ message = json.loads(entries[0]['message'])
+ change(message['message']['params'])
+ entries[0]['message'] = json.dumps(message)
+ try: module.ImageEvidence(url).observe(entries)
+ except ValueError as error: assert module.image_failure_reason(error) == reason
+ else: raise AssertionError('must retain failure')
 `);
 });

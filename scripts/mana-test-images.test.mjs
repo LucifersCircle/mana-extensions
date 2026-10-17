@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { fetchTestImage, interceptImageResponse } from './mana-test-images.mjs';
-import { assertCoverImageURL, createManaTestWebView } from './mana-test-webview.mjs';
+import { assertCoverImageURL, createManaTestWebView, safeWebViewDiagnostic } from './mana-test-webview.mjs';
 
 const url = 'https://images.example.invalid/public-cover';
 function response(body, status = 200, headers = { 'content-type': 'image/png' }) {
@@ -137,6 +137,23 @@ function helperFixture(result = {}) {
   };
   return { calls, host: createManaTestWebView({ solverURL: 'http://127.0.0.1:8191', fetchImpl }) };
 }
+
+test('image failures expose only approved capture stage/reason enums and close without retries', async () => {
+  assert.deepEqual(safeWebViewDiagnostic({ phase: 'secret-phase', stage: 'secret-stage', reason: 'secret-token' }),
+    { phase: 'unknown', stage: 'unknown', reason: 'unknown' });
+  for (const stage of ['setup', 'validation', 'session-acquisition', 'initial-safety', 'network-enable',
+    'initial-log', 'navigation', 'page-safety', 'observation', 'hero', 'body-read', 'final-verification', 'body-validation']) {
+    const { host, calls } = helperFixture({ error: 'SECRET BODY', code: 'operation', phase: 'image-capture',
+      stage, reason: 'image-response-http-status' });
+    await assert.rejects(host.captureCoverImage(cover), error => {
+      assert(!error.message.includes('SECRET'));
+      assert(error.message.includes(`image-capture: image-response-http-status; stage: ${stage}`));
+      return true;
+    });
+    assert.deepEqual(calls.map(call => call.cmd ?? call.path), ['sessions.create', '/webview/image-response', 'sessions.destroy']);
+    await host.close();
+  }
+});
 
 test('browser capture bridge accepts only exact public cover responses and always destroys its session', async () => {
   const { calls, host } = helperFixture();

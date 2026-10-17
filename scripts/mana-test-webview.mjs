@@ -90,6 +90,25 @@ export function jsonBridge(value) {
   return JSON.parse(serialized);
 }
 
+export function safeWebViewDiagnostic(result) {
+  const phase = ['goto', 'evaluate', 'image-capture'].includes(result?.phase) ? result.phase : 'unknown';
+  const reason = ['navigation-timeout', 'operation-timeout', 'document-identity-changed', 'navigation-error', 'evaluation-error',
+    'callback-rejected', 'callback-invalid', 'render-readiness-timeout', 'serialization-error',
+    'invalid-operation', 'driver-timeout', 'driver-element-changed', 'driver-frame-changed', 'driver-window-closed',
+    'driver-session-lost', 'driver-script-error', 'driver-error', 'unexpected-error',
+    'image-invalid-request', 'image-network-evidence-invalid', 'image-network-evidence-limit', 'image-redirect',
+    'image-request-identity', 'image-request-duplicate', 'image-request-provenance', 'image-response-identity',
+    'image-request-method', 'image-request-document', 'image-request-resource-type', 'image-request-fragment',
+    'image-response-resource-type', 'image-response-duplicate', 'image-response-http-status',
+    'image-response-service-worker', 'image-response-mime', 'image-response-metadata', 'image-response-challenge', 'image-response-forbidden',
+    'image-content-type-invalid', 'image-content-type-missing', 'image-content-type-duplicate', 'image-content-type-mismatch',
+    'image-load-failed', 'image-load-completion', 'image-page-challenge', 'image-hero-evidence',
+    'image-hero-identity', 'image-hero-changed', 'image-body-unavailable', 'image-capture-timeout'].includes(result?.reason) ? result.reason : 'unknown';
+  const stage = ['setup', 'validation', 'session-acquisition', 'initial-safety', 'network-enable', 'initial-log',
+    'navigation', 'page-safety', 'observation', 'hero', 'body-read', 'final-verification', 'body-validation'].includes(result?.stage) ? result.stage : 'unknown';
+  return { phase, reason, stage };
+}
+
 export function createManaTestWebView({ solverURL = process.env.FLARESOLVERR_URL, fetchImpl = globalThis.fetch } = {}) {
   let solver;
   if (solverURL) {
@@ -115,12 +134,8 @@ export function createManaTestWebView({ solverURL = process.env.FLARESOLVERR_URL
         const reason = ['insecure-capability', 'internal-page', 'certificate-marker', 'tls-navigation-error'].includes(result.reason) ? ` (${result.reason})` : '';
         stopped = new Error(`Browser security warning${reason}; WebView live checks stopped`);
       }
-      const phase = ['goto', 'evaluate'].includes(result?.phase) ? result.phase : 'unknown';
-      const reason = ['navigation-timeout', 'operation-timeout', 'document-identity-changed', 'navigation-error', 'evaluation-error',
-        'callback-rejected', 'callback-invalid', 'render-readiness-timeout', 'serialization-error',
-        'invalid-operation', 'driver-timeout', 'driver-element-changed', 'driver-frame-changed', 'driver-window-closed',
-        'driver-session-lost', 'driver-script-error', 'driver-error', 'unexpected-error'].includes(result?.reason) ? result.reason : 'unknown';
-      const diagnostic = result?.code === 'operation' ? ` (${phase}: ${reason})` : '';
+      const { phase, reason, stage } = safeWebViewDiagnostic(result);
+      const diagnostic = result?.code === 'operation' ? ` (${phase}: ${reason}${phase === 'image-capture' ? `; stage: ${stage}` : ''})` : '';
       throw stopped ?? new Error(`Live-test WebView operation failed${diagnostic}; no upstream details are logged`);
     }
     return result;
