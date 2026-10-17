@@ -2,9 +2,12 @@
 // Uses anonymous Chromium, not a WKWebView/iOS emulator. No source imports this.
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
+import { verifyRasterImageBytes } from './mana-test-image-bytes.mjs';
 
 const MAX_JSON = 4 * 1024 * 1024;
 const MAX_IMAGE = 16 * 1024 * 1024;
+const verifiedBrowserImages = new WeakMap();
+export const browserImageProof = response => verifiedBrowserImages.get(response);
 async function boundedHelperText(response, maxBytes, milliseconds) {
   const reader = response.body?.getReader();
   if (!reader) throw new Error('Missing helper response');
@@ -103,9 +106,10 @@ export function safeWebViewDiagnostic(result) {
     'image-response-service-worker', 'image-response-mime', 'image-response-metadata', 'image-response-challenge', 'image-response-forbidden',
     'image-content-type-invalid', 'image-content-type-missing', 'image-content-type-duplicate', 'image-content-type-mismatch',
     'image-load-failed', 'image-load-completion', 'image-page-challenge', 'image-hero-evidence',
-    'image-hero-identity', 'image-hero-changed', 'image-body-unavailable', 'image-capture-timeout'].includes(result?.reason) ? result.reason : 'unknown';
+    'image-hero-identity', 'image-hero-changed', 'image-body-unavailable', 'image-capture-timeout',
+    'image-decode-failed', 'image-decode-timeout', 'image-decode-identity', 'image-decode-not-ready', 'image-decode-evidence'].includes(result?.reason) ? result.reason : 'unknown';
   const stage = ['setup', 'validation', 'session-acquisition', 'initial-safety', 'network-enable', 'initial-log',
-    'navigation', 'page-safety', 'observation', 'hero', 'body-read', 'final-verification', 'body-validation'].includes(result?.stage) ? result.stage : 'unknown';
+    'navigation', 'page-safety', 'observation', 'hero', 'decode', 'body-read', 'final-verification', 'body-validation'].includes(result?.stage) ? result.stage : 'unknown';
   const media = ['jpeg', 'jpg', 'png', 'gif', 'webp', 'avif', 'bmp', 'icon', 'octet-stream', 'binary-octet-stream',
     'chemical-xyz', 'image-xyz', 'application-xyz', 'application-x-xyz', 'text', 'html', 'json', 'other', 'missing', 'duplicate', 'invalid'];
   const cdpMimeCategory = media.includes(result?.cdpMimeCategory) ? result.cdpMimeCategory : 'unknown';
@@ -113,7 +117,8 @@ export function safeWebViewDiagnostic(result) {
   return { phase, reason, stage, cdpMimeCategory, contentTypeCategory };
 }
 
-export function createManaTestWebView({ solverURL = process.env.FLARESOLVERR_URL, fetchImpl = globalThis.fetch } = {}) {
+export function createManaTestWebView({ solverURL = process.env.FLARESOLVERR_URL, fetchImpl = globalThis.fetch, onDocument } = {}) {
+  if (onDocument !== undefined && typeof onDocument !== 'function') throw new Error('Invalid WebView document observer');
   let solver;
   if (solverURL) {
     solver = new URL(solverURL);
@@ -188,7 +193,13 @@ export function createManaTestWebView({ solverURL = process.env.FLARESOLVERR_URL
             if (!documentURL) throw new Error('WebView must navigate before evaluating');
             const result = await command('/webview/evaluate', { session, url: documentURL, script, args: values, timeout: seconds }, seconds);
             if (result.url !== documentURL || !Object.hasOwn(result, 'value')) throw new Error('WebView evaluation did not preserve document identity');
-            return jsonBridge(result.value);
+            const value = jsonBridge(result.value);
+            // Observe only the exact public detail HTML already consumed by the
+            // source. No second navigation/evaluation, parser substitute or log.
+            if (onDocument && typeof value === 'string' && /^https:\/\/marumaru105\.com\/manhwa\/[1-9]\d*$/.test(documentURL)) {
+              onDocument(Object.freeze({ url: documentURL, html: value }));
+            }
+            return value;
           });
         },
         evaluateScript() { throw new Error('evaluateScript is not implemented by the minimal test WebView host'); },
@@ -230,16 +241,18 @@ export function createManaTestWebView({ solverURL = process.env.FLARESOLVERR_URL
           if (closed || stopped) throw stopped ?? new Error('Live-test WebView host is closed');
           const result = await command('/webview/image-response', { session, url, timeout: 30 }, 30, Math.ceil(MAX_IMAGE * 4 / 3) + 2048);
           if (closed || stopped) throw stopped ?? new Error('Live-test WebView host is closed');
-          if (Object.keys(result).sort().join(',') !== 'body,contentType,encoding,status,url'
-              || result.url !== url || result.status !== 200 || result.encoding !== 'base64'
-              || typeof result.contentType !== 'string' || !/^image\/[a-z0-9][a-z0-9.+-]*$/i.test(result.contentType)
+          if (Object.keys(result).sort().join(',') !== 'body,contentType,decoded,encoding,status,url'
+              || result.url !== url || result.status !== 200 || result.encoding !== 'base64' || result.decoded !== true
+              || typeof result.contentType !== 'string' || (!/^image\/[a-z0-9][a-z0-9.+-]*$/i.test(result.contentType) && result.contentType !== 'application/octet-stream')
               || typeof result.body !== 'string' || result.body.length > 4 * Math.ceil(MAX_IMAGE / 3)) {
             throw new Error('Browser-context cover response lacks exact identity, status or image bytes');
           }
           const bytes = Buffer.from(result.body, 'base64');
           if (!bytes.length || bytes.length > MAX_IMAGE || bytes.toString('base64') !== result.body) throw new Error('Browser-context cover bytes are invalid');
+          const raster = result.contentType === 'application/octet-stream' ? verifyRasterImageBytes(bytes) : undefined;
           const response = new Response(bytes, { status: result.status, headers: { 'content-type': result.contentType } });
           Object.defineProperty(response, 'url', { value: url });
+          if (raster) verifiedBrowserImages.set(response, Object.freeze({ url, contentType: result.contentType, ...raster }));
           return response;
         } finally {
           // Destroy even if creation's reply was lost, and never retry a capture.

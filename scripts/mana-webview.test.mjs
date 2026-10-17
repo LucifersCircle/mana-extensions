@@ -58,9 +58,9 @@ test('JSON bridge preserves cross-realm values and rejects non-JSON or side-effe
   assert.equal(called, 0);
 });
 
-function harness(override) {
+function harness(override, options = {}) {
   const calls = [];
-  const host = createManaTestWebView({ solverURL: 'http://127.0.0.1:8191', fetchImpl: async (target, init) => {
+  const host = createManaTestWebView({ ...options, solverURL: 'http://127.0.0.1:8191', fetchImpl: async (target, init) => {
     const path = new URL(target).pathname, body = JSON.parse(init.body);
     calls.push({ path, body });
     const response = await override?.(path, body);
@@ -70,6 +70,39 @@ function harness(override) {
   } });
   return { host, calls };
 }
+
+test('detail observation preserves exact consumed HTML with no extra browser command', async () => {
+  const observed = [], html = '<section>generic infrastructure string</section>';
+  const { host, calls } = harness((path, body) => path === '/webview/evaluate'
+    ? Response.json({ url: body.url, value: html }) : undefined,
+  { onDocument: value => { observed.push(value); assert(Object.isFrozen(value)); return 'never a substitute'; } });
+  const source = host.wrapSource({ async getContent(target) {
+    const page = await host.WebViewPage.create(); await page.goto(target);
+    return page.evaluate(() => 'actual source callback');
+  } });
+  assert.equal(await source.getContent(url), html);
+  assert.deepEqual(observed, [{ url, html }]);
+  assert.deepEqual(calls.map(call => call.path), ['/v1', '/webview/goto', '/webview/evaluate', '/v1']);
+  for (const target of [url + '/21331', 'https://marumaru105.com/manhwa', 'https://marumaru105.com/search?q=x&kind=manhwa']) {
+    assert.equal(await source.getContent(target), html);
+  }
+  assert.equal(observed.length, 1, 'Only canonical detail HTML is observed');
+  await host.close();
+});
+
+test('detail observation never receives invalid identity or non-string results', async () => {
+  let observed = 0, wrongURL = false;
+  const { host } = harness((path, body) => path === '/webview/evaluate'
+    ? Response.json({ url: wrongURL ? url + '/21331' : body.url, value: wrongURL ? 'not trusted' : { text: 'not HTML' } }) : undefined,
+  { onDocument: () => { observed++; } });
+  const source = host.wrapSource({ async getContent() {
+    const page = await host.WebViewPage.create(); await page.goto(url); return page.evaluate(() => null);
+  } });
+  assert.deepEqual(await source.getContent(), { text: 'not HTML' });
+  wrongURL = true; await assert.rejects(source.getContent(), /identity/);
+  assert.equal(observed, 0); await host.close();
+  assert.throws(() => createManaTestWebView({ onDocument: true }), /observer/);
+});
 
 test('SDK bridge uses seconds, serializes actual function/JSON arguments, and cleans up', async () => {
   const { host, calls } = harness();

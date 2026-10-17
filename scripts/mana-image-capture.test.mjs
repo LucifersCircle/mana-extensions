@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 
 const helper = fileURLToPath(new URL('./flaresolverr/image_response.py', import.meta.url));
@@ -75,9 +76,19 @@ class Driver:
   self.batches = [[], events()] if batches is None else batches
   self.hero = {'url': url, 'complete': True, 'width': 200, 'height': 300}
   self.body = {'body': body, 'base64Encoded': True}
+  self.decode_result, self.decode_calls, self.decode_hook = {'decoded': True}, 0, None
  def execute_script(self, script):
   assert script == module.HERO_SCRIPT
   return self.hero
+ def set_script_timeout(self, seconds):
+  assert 0 < seconds <= 120
+ def execute_async_script(self, script, payload):
+  assert script == module.DECODE_SCRIPT
+  assert payload['document'] == page and payload['url'] == url and 0 < payload['timeoutMs'] <= 120000
+  self.decode_calls += 1
+  if self.decode_hook: self.decode_hook(self)
+  if isinstance(self.decode_result, Exception): raise self.decode_result
+  return self.decode_result
  def get_log(self, kind):
   assert kind == 'performance'
   return self.batches.pop(0) if self.batches else []
@@ -124,7 +135,7 @@ test('Python capture proves exact title-page hero network body without image nav
   python(String.raw`
 driver = Driver([[], events(headers={'Content-Type': 'image/webp', 'Set-Cookie': 'SECRET', 'X-Secret': 'NEVER EXPORT'})])
 result = capture(driver)
-assert result == {'url': url, 'status': 200, 'contentType': 'image/webp', 'body': body, 'encoding': 'base64'}
+assert result == {'url': url, 'status': 200, 'contentType': 'image/webp', 'body': body, 'encoding': 'base64', 'decoded': True}
 assert driver.navigations == [page]
 assert [command for command, _ in driver.commands] == ['Network.enable', 'Network.getResponseBody']
 assert driver.commands[0][1]['maxResourceBufferSize'] == 16 * 1024 * 1024
@@ -293,7 +304,7 @@ original_page = module.assert_capture_page
 for index, (stage, expected_reason) in enumerate([
  ('session-acquisition', 'driver-error'), ('initial-safety', 'driver-error'),
  ('network-enable', 'driver-error'), ('initial-log', 'driver-error'), ('navigation', 'driver-error'),
- ('page-safety', 'driver-error'), ('observation', 'driver-error'), ('hero', 'driver-error'),
+ ('page-safety', 'driver-error'), ('observation', 'driver-error'), ('hero', 'driver-error'), ('decode', 'driver-error'),
  ('body-read', 'driver-error'), ('final-verification', 'document-identity-changed'),
  ('body-validation', 'image-body-unavailable'),
 ]):
@@ -313,6 +324,7 @@ for index, (stage, expected_reason) in enumerate([
    return [] if len(calls) == 1 else broken()
   active_driver.get_log = log
  elif stage == 'hero': active_driver.execute_script = broken
+ elif stage == 'decode': active_driver.execute_async_script = broken
  elif stage == 'body-read': active_driver.body = WebDriverException('SECRET body error')
  elif stage == 'final-verification': active_driver.body_hook = lambda driver: setattr(driver, 'current_url', page + '?SECRET')
  elif stage == 'body-validation': active_driver.body = {'body': '', 'base64Encoded': True}
@@ -320,7 +332,7 @@ for index, (stage, expected_reason) in enumerate([
  result = endpoint()
  expected = {'error': 'Anonymous browser image capture failed', 'code': 'operation',
   'phase': 'image-capture', 'stage': stage, 'reason': expected_reason}
- if stage in ('hero', 'body-read', 'final-verification', 'body-validation'):
+ if stage in ('hero', 'decode', 'body-read', 'final-verification', 'body-validation'):
   expected.update(cdpMimeCategory='webp', contentTypeCategory='webp')
  assert result == expected, result
  assert bottle.response.status == 502
@@ -418,7 +430,7 @@ module.register(app)
 endpoint = app.routes['/webview/image-response']
 for index, (cdp, headers, expected_cdp, expected_header, expected_reason) in enumerate([
  ('chemical/x-xyz', {'Content-Type': 'chemical/x-xyz'}, 'chemical-xyz', 'chemical-xyz', 'image-response-mime'),
- ('application/octet-stream', {'Content-Type': 'image/jpeg'}, 'octet-stream', 'jpeg', 'image-response-mime'),
+ ('application/octet-stream', {'Content-Type': 'image/jpeg'}, 'octet-stream', 'jpeg', 'image-content-type-mismatch'),
  ('image/jpg', {'Content-Type': 'image/jpg'}, 'jpg', 'jpg', 'image-response-mime'),
  ('image/webp', {}, 'webp', 'missing', 'image-content-type-missing'),
  ('image/webp', {'Content-Type': 'image/png'}, 'webp', 'png', 'image-content-type-mismatch'),
@@ -441,4 +453,97 @@ for index, (cdp, headers, expected_cdp, expected_header, expected_reason) in enu
  assert [cmd for cmd, _ in active_driver.commands] == ['Network.enable']
  assert 'SECRET' not in json.dumps(result)
 `);
+});
+
+test('Python octet-stream success preserves actual MIME and requires one completed hero decode', () => {
+  python(String.raw`
+driver = Driver([[], events(mime='application/octet-stream')])
+result = capture(driver)
+assert result == {'url': url, 'status': 200, 'contentType': 'application/octet-stream',
+ 'body': body, 'encoding': 'base64', 'decoded': True}
+assert driver.decode_calls == 1
+assert driver.navigations == [page]
+assert [cmd for cmd, _ in driver.commands] == ['Network.enable', 'Network.getResponseBody']
+for index, (decode_result, reason) in enumerate([
+ ({'decoded': False, 'reason': 'image-decode-failed'}, 'image-decode-failed'),
+ ({'decoded': False, 'reason': 'image-decode-timeout'}, 'image-decode-timeout'),
+ ({'decoded': False, 'reason': 'image-decode-identity'}, 'image-decode-identity'),
+ ({'decoded': False, 'reason': 'image-decode-not-ready'}, 'image-decode-not-ready'),
+ ({'decoded': False, 'reason': 'SECRET'}, 'image-decode-evidence'),
+ ({'decoded': True, 'extra': 'SECRET'}, 'image-decode-evidence'),
+ ({'decoded': 1}, 'image-decode-evidence'),
+ (None, 'image-decode-evidence'),
+]):
+ driver = Driver([[], events(mime='application/octet-stream')])
+ driver.decode_result = decode_result
+ try: capture(driver, session='decode-' + str(index))
+ except ValueError as error: assert module.image_failure_reason(error) == reason
+ else: raise AssertionError('decode failure must remain failed')
+ assert driver.decode_calls == 1
+ assert [cmd for cmd, _ in driver.commands] == ['Network.enable']
+for index, change in enumerate([
+ lambda d: setattr(d, 'current_url', page + '?SECRET'),
+ lambda d: d.hero.update(url=url + '?SECRET'),
+ lambda d: d.hero.update(complete=False),
+]):
+ driver = Driver([[], events(mime='application/octet-stream')])
+ driver.decode_hook = change
+ fail(lambda: capture(driver, session='decode-change-' + str(index)))
+ assert driver.decode_calls == 1
+ assert [cmd for cmd, _ in driver.commands] == ['Network.enable']
+driver = Driver([[], events(mime='application/octet-stream')])
+driver.decode_hook = lambda d: module.time.sleep(2)
+fail(lambda: capture(driver, session='decode-expired'), TimeoutError)
+assert driver.decode_calls == 1
+assert [cmd for cmd, _ in driver.commands] == ['Network.enable']
+# This is not a generic binary MIME exemption.
+fail(lambda: module.ImageEvidence(url).observe(events(mime='binary/octet-stream')))
+fail(lambda: module.ImageEvidence(url).observe(events(mime='chemical/x-xyz')))
+`);
+});
+
+test('actual hero decode bridge awaits exactly the existing image and rejects timeout, replacement or identity loss', async () => {
+  const extract = spawnSync('python3', ['-c', `import ast,json,pathlib,sys
+tree=ast.parse(pathlib.Path(sys.argv[1]).read_text())
+print(json.dumps(next(n.value.value for n in tree.body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='DECODE_SCRIPT' for t in n.targets))))`, helper], { encoding: 'utf8' });
+  assert.equal(extract.status, 0, extract.stderr);
+  const script = JSON.parse(extract.stdout);
+  assert.doesNotMatch(script, /new\s+Image\b|fetch\s*\(|\.src\s*=/);
+  const documentURL = 'https://marumaru105.com/manhwa/17155';
+  const target = 'https://peer.storagewebtoon.store/manhwa/17155/cover.webp';
+  async function run(change) {
+    let decodeCalls = 0, doneCalls = 0;
+    const location = { href: documentURL };
+    const image = { currentSrc: target, complete: true, naturalWidth: 100, naturalHeight: 200,
+      decode() { decodeCalls++; return Promise.resolve(); } };
+    const images = [image], context = { location, image, images,
+      document: { querySelectorAll(selector) { assert.equal(selector, '.hero-v2-thumb img'); return images; } },
+      payload: { document: documentURL, url: target, timeoutMs: 15 }, setTimeout, clearTimeout };
+    change?.(context, () => { decodeCalls++; });
+    const result = await new Promise(resolve => {
+      context.done = value => { doneCalls++; resolve(value); };
+      runInNewContext(`(function () { ${script} })(payload, done)`, context);
+    });
+    assert.equal(doneCalls, 1);
+    assert.ok(decodeCalls <= 1);
+    return JSON.parse(JSON.stringify(result));
+  }
+  assert.deepEqual(await run(), { decoded: true });
+  assert.deepEqual(await run(context => { context.image.complete = false; }), { decoded: false, reason: 'image-decode-not-ready' });
+  assert.deepEqual(await run(context => { context.location.href += '?changed'; }), { decoded: false, reason: 'image-decode-identity' });
+  for (const mutate of [context => { context.image.currentSrc += '?changed'; },
+    context => { context.location.href += '?changed'; }, context => { context.images[0] = { ...context.image }; }]) {
+    assert.deepEqual(await run((context, count) => {
+      context.image.decode = () => { count(); mutate(context); return Promise.resolve(); };
+    }), { decoded: false, reason: 'image-decode-identity' });
+  }
+  assert.deepEqual(await run((context, count) => {
+    context.image.decode = () => { count(); context.image.complete = false; return Promise.resolve(); };
+  }), { decoded: false, reason: 'image-decode-not-ready' });
+  assert.deepEqual(await run((context, count) => {
+    context.image.decode = () => { count(); return Promise.reject(new Error('SECRET decode failure')); };
+  }), { decoded: false, reason: 'image-decode-failed' });
+  assert.deepEqual(await run((context, count) => {
+    context.image.decode = () => { count(); return new Promise(() => {}); };
+  }), { decoded: false, reason: 'image-decode-timeout' });
 });

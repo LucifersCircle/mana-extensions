@@ -1,7 +1,9 @@
 // Test-only image response interception. Preserve real image bytes and failure
 // status; the SDK's response transformer runs before HTTP status validation.
-import { assertCoverImageURL } from './mana-test-webview.mjs';
+import { assertCoverImageURL, browserImageProof } from './mana-test-webview.mjs';
 const MAX_INTERCEPTED_BYTES = 16 * 1024 * 1024;
+const resolvedBrowserImages = new WeakMap();
+export const resolvedBrowserImageProof = response => resolvedBrowserImages.get(response);
 
 function requestSnapshot(request) {
   const entries = Object.entries(request), headers = Object.entries(request.headers ?? {});
@@ -92,6 +94,8 @@ export async function fetchTestImage(source, url, { fetchImpl, captureCoverImage
     authorizedCoverContract(source, refreshed);
     if (refreshed.url !== originalURL) throw new Error('Source image identity changed during challenge resolution');
     const result = await interceptImageResponse(captured, refreshed);
+    const proof = browserImageProof(captured);
+    if (proof) resolvedBrowserImages.set(result, proof);
     log('browser-context-after-cloudflare-error', result.status, originalURL);
     return finish(result);
   }

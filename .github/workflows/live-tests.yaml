@@ -1,4 +1,4 @@
-name: Temporary Marumaru browser-cover diagnostic (not full suite)
+name: Temporary Marumaru suite evidence (not full release gate)
 
 on:
   schedule:
@@ -142,7 +142,7 @@ jobs:
 
 
   diagnose-cover:
-    name: Diagnose one cover resolution (not full-suite validation)
+    name: Diagnose Marumaru only (not full-suite validation)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -166,7 +166,7 @@ jobs:
           npm run build -- --output dist
       - name: Start the unchanged test-only Chromium host
         run: docker compose up -d --build --wait --wait-timeout 90
-      - name: Diagnose the unchanged native cover resolution once
+      - name: Run the reviewed Marumaru contract once with exact consumed-DOM evidence
         env:
           FLARESOLVERR_URL: http://127.0.0.1:8191
         run: |

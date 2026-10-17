@@ -16,14 +16,54 @@ from webview_page import NAVIGATED, assert_document, navigate, operation_failure
 
 MAX_BYTES = 16 * 1024 * 1024
 MAX_LOG_BYTES = 16 * 1024 * 1024
+# The provider's issued covers use application/octet-stream. It is retained as
+# the actual type, not rewritten: the same hero must decode and the Node caller
+# additionally validates complete JPEG/PNG/WebP bytes for this exact exception.
 IMAGE_MIMES = frozenset({'image/jpeg', 'image/png', 'image/gif', 'image/webp',
-                         'image/avif', 'image/bmp', 'image/x-icon', 'image/vnd.microsoft.icon'})
+                         'image/avif', 'image/bmp', 'image/x-icon', 'image/vnd.microsoft.icon',
+                         'application/octet-stream'})
 HERO_SCRIPT = """
 const images = document.querySelectorAll('.hero-v2-thumb img');
 if (images.length !== 1) return null;
 const image = images[0];
 return {url: image.currentSrc, complete: image.complete,
         width: image.naturalWidth, height: image.naturalHeight};
+"""
+
+
+# Decode only the same existing title-page hero. Never create an Image, assign
+# src, fetch bytes, navigate, or retry. Both sides of the await retain identity.
+DECODE_SCRIPT = """
+const payload = arguments[0], done = arguments[arguments.length - 1];
+let finished = false, timer;
+const finish = result => {
+  if (finished) return;
+  finished = true;
+  clearTimeout(timer);
+  done(result);
+};
+const fail = reason => finish({decoded: false, reason});
+const check = image => {
+  if (location.href !== payload.document) return 'image-decode-identity';
+  const images = document.querySelectorAll('.hero-v2-thumb img');
+  if (!image || images.length !== 1 || images[0] !== image || image.currentSrc !== payload.url)
+    return 'image-decode-identity';
+  if (!image.complete || !(image.naturalWidth > 0) || !(image.naturalHeight > 0))
+    return 'image-decode-not-ready';
+};
+try {
+  const images = document.querySelectorAll('.hero-v2-thumb img');
+  const image = images.length === 1 ? images[0] : null;
+  const before = check(image);
+  if (before) return fail(before);
+  timer = setTimeout(() => fail('image-decode-timeout'), payload.timeoutMs);
+  Promise.resolve(image.decode()).then(() => {
+    if (finished) return;
+    const after = check(image);
+    if (after) return fail(after);
+    finish({decoded: true});
+  }, () => fail('image-decode-failed')).catch(() => fail('image-decode-failed'));
+} catch { fail('image-decode-failed'); }
 """
 
 
@@ -223,6 +263,31 @@ def hero_loaded(driver, target):
                     for key in ('width', 'height')))
 
 
+def decode_hero(driver, document, target, deadline):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError('Browser image capture timed out')
+    driver.set_script_timeout(remaining)
+    result = driver.execute_async_script(DECODE_SCRIPT, {
+        'document': document, 'url': target, 'timeoutMs': max(1, math.floor(remaining * 1000)),
+    })
+    if time.monotonic() >= deadline:
+        raise TimeoutError('Browser image capture timed out')
+    if type(result) is not dict:
+        raise ValueError('Browser image decode evidence unavailable')
+    if set(result) == {'decoded'} and result.get('decoded') is True:
+        return
+    message = {
+        'image-decode-failed': 'Browser hero image decode failed',
+        'image-decode-timeout': 'Browser hero image decode timed out',
+        'image-decode-identity': 'Browser hero image decode identity changed',
+        'image-decode-not-ready': 'Browser hero image decode not ready',
+    }.get(result.get('reason'))
+    if result.get('decoded') is False and message:
+        raise ValueError(message)
+    raise ValueError('Browser image decode evidence unavailable')
+
+
 def capture_image(driver, payload, diagnostic=None):
     diagnostic = diagnostic if diagnostic is not None else {}
     diagnostic['stage'] = 'setup'
@@ -263,6 +328,11 @@ def capture_image(driver, payload, diagnostic=None):
                 diagnostic['stage'] = 'hero'
                 loaded = hero_loaded(driver, target)
             if loaded:
+                diagnostic['stage'] = 'decode'
+                decode_hero(driver, document, target, deadline)
+                assert_capture_page(driver, document)
+                if not hero_loaded(driver, target):
+                    raise ValueError('Browser hero image changed during capture')
                 # This is a single read of the browser's actual completed body,
                 # not a fallback fetch. Evicted/cache-only bodies fail closed.
                 diagnostic['stage'] = 'body-read'
@@ -276,7 +346,7 @@ def capture_image(driver, payload, diagnostic=None):
                     raise TimeoutError('Browser image capture timed out')
                 diagnostic['stage'] = 'body-validation'
                 return {'url': target, 'status': 200, 'contentType': evidence.mime,
-                        'body': canonical_body(result), 'encoding': 'base64'}
+                        'body': canonical_body(result), 'encoding': 'base64', 'decoded': True}
             if time.monotonic() >= deadline:
                 raise TimeoutError('Browser image capture timed out')
             time.sleep(min(0.1, max(0, deadline - time.monotonic())))
@@ -287,7 +357,7 @@ def capture_image(driver, payload, diagnostic=None):
 
 
 CAPTURE_STAGES = frozenset({'setup', 'validation', 'session-acquisition', 'initial-safety', 'network-enable', 'initial-log', 'navigation',
-                            'page-safety', 'observation', 'hero', 'body-read',
+                            'page-safety', 'observation', 'hero', 'decode', 'body-read',
                             'final-verification', 'body-validation'})
 IMAGE_FAILURE_REASONS = {
     'Unsupported browser image payload': 'image-invalid-request',
@@ -321,6 +391,11 @@ IMAGE_FAILURE_REASONS = {
     'Browser hero image identity changed': 'image-hero-identity',
     'Browser hero image changed during capture': 'image-hero-changed',
     'Browser image bytes unavailable': 'image-body-unavailable',
+    'Browser hero image decode failed': 'image-decode-failed',
+    'Browser hero image decode timed out': 'image-decode-timeout',
+    'Browser hero image decode identity changed': 'image-decode-identity',
+    'Browser hero image decode not ready': 'image-decode-not-ready',
+    'Browser image decode evidence unavailable': 'image-decode-evidence',
 }
 
 
