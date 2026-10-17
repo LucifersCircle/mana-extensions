@@ -1,92 +1,118 @@
 import assert from 'node:assert/strict';
-import { load } from 'cheerio';
+import { fetchTestImage, withSourceTransport } from './mana-test-images.mjs';
+import { verifyRasterImageBytes } from './mana-test-image-bytes.mjs';
 
-// Executes the built source. No provider fixtures or substitute HTTP reader path.
-// A host without the official WebViewPage API must fail, never omit this source.
-export async function testMarumaru({ source, check, searchResult, image, renderedDetail }) {
+// Executes the built source through the official SDK's ordinary HTTP dispatcher.
+// Reference data is fetched live; inventory counts and reader URLs are not fixtures.
+export async function testMarumaru({ source, check, searchResult }) {
+  const requests = [], referenceFetch = globalThis.fetch;
+  const execute = callback => withSourceTransport(source, (url, options) => {
+    requests.push(url); return referenceFetch(url, options);
+  }, callback);
+  const domain = 'https://marumaru105.com';
+  const api = 'https://api.storagewebtoon.store/api/v1/reader/A2';
   const context = { allowedContentRatings: [0, 1, 2, 3] };
-  let catalog, detail, chapters, reference, readerChapter;
-  await check('Rendered native catalog returns canonical Korean titles', async () => {
-    catalog = await source.search({ page: 1, context }); searchResult(catalog);
-    for (const item of catalog.results) assert.match(item.id, /^[1-9]\d*$/);
+  let catalog, detail, chapters, reference, work, readerChapter;
+  async function json(url) {
+    const response = await referenceFetch(url, { headers: { Accept: 'application/json',
+      ...(url.startsWith(domain + '/') ? { 'X-Site': 'marumaru' } : {}) }, redirect: 'manual', signal: AbortSignal.timeout(30000) });
+    assert.equal(response.status, 200); assert.equal(response.url, url);
+    assert.match(response.headers.get('content-type') ?? '', /^application\/json(?:;|$)/i);
+    assert.notEqual(response.headers.get('cf-mitigated'), 'challenge');
+    return response.json();
+  }
+  const tuples = rows => Array.from(rows, c => [c.chapterId, c.number, c.title, c.webUrl]);
+  async function referenceDetail(id) {
+    const metadata = await json(`${domain}/api/works/${id}`);
+    assert.equal(String(metadata.work.id), id); assert.equal(metadata.work.mediaType, 'MANHWA');
+    assert.equal(metadata.episodesUrl, `${api}/works/${id}`);
+    const listing = await json(metadata.episodesUrl);
+    assert.equal(listing.ok, true); assert.equal(String(listing.item.id), id);
+    assert.equal(listing.item.episode_count, metadata.work.episodeCount);
+    assert.equal(listing.episodes.length, metadata.work.episodeCount);
+    assert.equal(new Set(listing.episodes.map(c => c.id)).size, listing.episodes.length);
+    return { metadata, listing, rows: listing.episodes.map(c => ({ chapterId: String(c.id), number: c.number,
+      title: c.title, webUrl: `${domain}/manhwa/${id}/${c.id}`, ready: c.ready, embed: c.embed_url })).sort((a, b) => a.number - b.number) };
+  }
+  async function nativeImage(url, origin) {
+    // No captureCoverImage callback: a challenge is a failed native check, not browser proof.
+    const response = await fetchTestImage(source, url, { origin, fetchImpl: referenceFetch,
+      log: (transport, status, target) => console.log(`IMAGE ${transport} ${status} ${target}`) });
+    assert.equal(response.status, 200); assert.equal(response.url, url); assert.equal(response.requestedImageURL, url);
+    const mime = response.headers.get('content-type') ?? '';
+    assert(origin === 'cover' && /^application\/octet-stream(?:;|$)/i.test(mime) || /^image\/(?:jpeg|png|webp)(?:;|$)/i.test(mime));
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    assert(bytes.length > 0 && bytes.length <= 16000000);
+    const raster = verifyRasterImageBytes(bytes);
+    assert(raster.width > 0 && raster.height > 0);
+    console.log('MARUMARU_NATIVE_IMAGE', JSON.stringify({ origin, bytes: bytes.length, ...raster }));
+  }
+  await check('Native API catalog and pagination retain canonical titles without per-card requests', async () => {
+    const before = requests.length;
+    catalog = await execute(() => source.search({ page: 1, context })); searchResult(catalog);
+    assert.equal(requests.length - before, 1);
+    const live = await json(`${domain}/api/works?mediaType=MANHWA&page=0&size=49`);
+    assert.equal(catalog.results.length, live.items.length);
+    assert.deepEqual(Array.from(catalog.results, c => c.id), live.items.map(c => String(c.id)));
+    assert.equal(catalog.isLastPage, live.total <= live.size);
+    if (!catalog.isLastPage) {
+      const second = await execute(() => source.search({ page: 2, context })); searchResult(second);
+      const next = await json(`${domain}/api/works?mediaType=MANHWA&page=1&size=49`);
+      assert.deepEqual(Array.from(second.results, c => c.id), next.items.map(c => String(c.id)));
+    }
   });
-  await check('Rendered native text search retains canonical identity', async () => {
-    const result = await source.search({ page: 1, query: '라멘 아카네코', context }); searchResult(result);
+  await check('Native API text search retains canonical identity and source pagination', async () => {
+    const result = await execute(() => source.search({ page: 1, query: '라멘 아카네코', context })); searchResult(result);
     assert(result.results.some(item => item.id === '17155'));
+    const live = await json(`${domain}/api/search?q=${encodeURIComponent('라멘 아카네코')}&page=0&media=MANHWA&sort=LATEST`);
+    assert.deepEqual(Array.from(result.results, c => c.id), live.items.map(c => String(c.id)));
+    assert.equal(result.isLastPage, live.total <= live.size);
   });
-  await check('Rendered details preserve complete DOM chapter identity and genuine source labels', async () => {
-    detail = await source.getContent('17155', context);
-    assert.equal(detail.title, '라멘 아카네코');
-    assert.equal(detail.webUrl, 'https://marumaru105.com/manhwa/17155');
-    assert(detail.chapters?.length > 1);
-    assert.equal(new Set(detail.chapters.map(c => c.chapterId)).size, detail.chapters.length);
-    // Observe the exact successful WebView result consumed by this source call.
-    // This is an independent DOM oracle, not another fetch or the parsed cache.
-    const html = renderedDetail?.();
-    assert(typeof html === 'string' && html.length > 0, 'Exact rendered detail reference unavailable');
-    const $ = load(html);
-    assert.equal($('.hero-v2-title').length, 1);
-    assert.equal($('.hero-v2-title').text().trim(), detail.title);
-    assert.equal($('.hero-v2-thumb img').attr('src'), detail.cover);
-    reference = $('a.ep-row-v2-link').toArray().map(element => {
-      const row = $(element), href = row.attr('href');
-      const match = /^(?:https:\/\/marumaru105\.com)?\/manhwa\/17155\/([1-9]\d*)$/.exec(href ?? '');
-      assert(match, 'Reference chapter link is not canonical or belongs to another title');
-      assert.equal(row.find('.ep-row-v2-no').length, 1);
-      assert.equal(row.find('.ep-row-v2-title strong').length, 1);
-      const numberText = row.find('.ep-row-v2-no').text().trim();
-      const number = Number(numberText), title = row.find('.ep-row-v2-title strong').text().trim();
-      assert(numberText && Number.isFinite(number) && number > 0 && number <= Number.MAX_SAFE_INTEGER && title,
-        'Reference chapter metadata is incomplete');
-      return { chapterId: match[1], number, title, webUrl: `https://marumaru105.com/manhwa/17155/${match[1]}` };
-    }).reverse();
-    assert(reference.length > 1, 'Rendered reference has no usable chapter inventory');
-    assert.equal(new Set(reference.map(c => c.chapterId)).size, reference.length, 'Reference repeats a chapter identity');
-    assert.equal($('.ep-section-count').length, 1, 'Rendered reference has no unique advertised chapter count');
-    assert.equal(Number($('.ep-section-count').text().trim()), reference.length, 'Rendered reference is not the complete advertised chapter inventory');
-    const endpoint = selector => {
-      const link = $(selector);
-      assert.equal(link.length, 1, 'Rendered chapter endpoint is missing or ambiguous');
-      const match = /^(?:https:\/\/marumaru105\.com)?\/manhwa\/17155\/([1-9]\d*)$/.exec(link.attr('href') ?? '');
-      assert(match, 'Rendered chapter endpoint is not canonical');
-      return match[1];
-    };
-    const firstId = endpoint('.hero-v2-actions-bottom a.cta-ghost');
-    const latestId = endpoint('.hero-v2-actions-bottom a.cta-primary');
-    // Keep the genuine multipart and reader-label coverage without assuming that
-    // provider database IDs are permanent. Numbers come only from the DOM field.
+  await check('Native details preserve complete advertised chapter inventory including unready rows', async () => {
+    const before = requests.length;
+    detail = await execute(() => source.getContent('17155', context));
+    assert.equal(requests.length - before, 2, 'Detail must use one metadata and one complete inventory request');
+    const live = await referenceDetail('17155'); work = live.metadata.work; reference = live.rows;
+    assert.equal(detail.title, work.title); assert.equal(detail.cover, work.thumbUrl || work.coverUrl);
+    assert.equal(detail.webUrl, `${domain}/manhwa/17155`);
+    assert.equal(detail.chapters.length, work.episodeCount);
+    assert.equal(JSON.stringify(tuples(detail.chapters)), JSON.stringify(tuples(reference)));
     const multipart = reference.filter(c => c.title === '라멘 아카네코 1-2화');
-    const reader = reference.filter(c => c.title === '라멘 아카네코 2화');
-    const diagnosticId = value => value.length <= 32 ? value : 'oversized-id';
-    console.log('MARUMARU_DOM_INVENTORY', JSON.stringify({ count: reference.length,
-      oldest: reference.slice(0, 4).map(c => [diagnosticId(c.chapterId), c.number]),
-      newest: reference.slice(-2).map(c => [diagnosticId(c.chapterId), c.number]),
-      firstLink: diagnosticId(firstId), latestLink: diagnosticId(latestId),
-      multipartMatches: multipart.length, readerMatches: reader.length }));
-    assert(firstId === reference[0].chapterId && latestId === reference.at(-1).chapterId,
-      'Rendered chapter rows do not match the same-page first/latest chapter links');
-    const tuples = rows => Array.from(rows, c => [c.chapterId, c.number, c.title, c.webUrl]);
-    assert(JSON.stringify(tuples(detail.chapters)) === JSON.stringify(tuples(reference)), 'Native inventory differs from the exact rendered DOM');
-    if (reader.length === 1) readerChapter = reader[0];
-    assert.equal(multipart.length, 1, 'Rendered DOM no longer contains the genuine multipart chapter label');
-    assert.equal(reader.length, 1, 'Rendered DOM no longer contains the selected genuine reader label');
+    assert.equal(multipart.length, 1, 'Live inventory no longer contains the genuine multipart label');
+    readerChapter = reference.find(c => c.title === '라멘 아카네코 2화' && c.ready === true);
+    assert(readerChapter, 'Live inventory lacks the selected ready reader label');
+    console.log('MARUMARU_API_INVENTORY', JSON.stringify({ count: reference.length, unready: reference.filter(c => !c.ready).length,
+      oldest: reference.slice(0, 3).map(c => [c.chapterId, c.number]), newest: reference.slice(-2).map(c => [c.chapterId, c.number]) }));
   });
-  await check('Rendered detail cover returns authorized actual image bytes', async () => {
-    assert(detail?.cover, 'Detail cover prerequisite failed');
-    await image(source, detail.cover, 'cover');
+  await check('Native direct cover returns exact authorized full image bytes', async () => {
+    assert(detail?.cover, 'Detail prerequisite failed'); await nativeImage(detail.cover, 'cover');
   });
-  await check('Native chapter indexes preserve ascending inventory and exact source numbers', async () => {
-    assert(detail, 'Detail prerequisite failed'); chapters = await source.getChapters('17155');
-    assert(JSON.stringify(chapters.map(c => [c.chapterId, c.number, c.title])) === JSON.stringify(detail.chapters.map(c => [c.chapterId, c.number, c.title])),
-      'Chapter API inventory differs from the native detail inventory');
+  await check('Native chapter indexes reuse the detail inventory and retain exact source numbers', async () => {
+    assert(detail, 'Detail prerequisite failed'); const before = requests.length;
+    chapters = await execute(() => source.getChapters('17155')); assert.equal(requests.length, before);
+    assert.equal(JSON.stringify(tuples(chapters)), JSON.stringify(tuples(reference)));
     chapters.forEach((c, index) => { assert.equal(c.index, index); assert(Number.isFinite(c.number) && c.number > 0); });
   });
-  await check('Rendered reader includes later lazy-loaded cuts and native image bytes', async () => {
-    assert(readerChapter && chapters?.some(c => c.chapterId === readerChapter.chapterId), 'DOM-bound reader chapter prerequisite failed');
-    const result = await source.getChapterData('17155', readerChapter.chapterId);
-    assert(result.pages?.length > 8, 'Reader stopped at the initial eight mounted images');
+  await check('Native second-title inventory preserves every advertised chapter and label', async () => {
+    const id = '21861', result = await execute(() => source.getContent(id, context)), live = await referenceDetail(id);
+    assert.equal(result.chapters.length, live.metadata.work.episodeCount);
+    assert.equal(JSON.stringify(tuples(result.chapters)), JSON.stringify(tuples(live.rows)));
+    assert(result.chapters.some(c => /1-1화$/.test(c.title)), 'Live second title lost its multipart label');
+    console.log('MARUMARU_SECOND_API_INVENTORY', JSON.stringify({ id, count: result.chapters.length }));
+  });
+  await check('Native reader preserves every advertised image and direct first/last bytes', async () => {
+    assert(readerChapter && chapters?.some(c => c.chapterId === readerChapter.chapterId), 'Reader prerequisite failed');
+    assert.equal(readerChapter.embed, `${api}/episodes/${readerChapter.chapterId}`);
+    const before = requests.length, result = await execute(() => source.getChapterData('17155', readerChapter.chapterId));
+    assert.equal(requests.length - before, 1, 'Reader must reuse the validated title inventory');
+    const live = await json(readerChapter.embed); assert.equal(live.ok, true); assert.equal(live.item.ready, true);
+    assert.equal(String(live.item.work_id), '17155'); assert.equal(String(live.item.id), readerChapter.chapterId);
+    assert.equal(live.item.number, readerChapter.number); assert.equal(live.item.title, readerChapter.title);
+    assert.equal(result.pages.length, live.item.body.length);
+    assert(result.pages.length > 8, 'Reader stopped at the former eight mounted-image boundary');
+    assert.deepEqual(Array.from(result.pages, p => p.url), live.item.body.map(p => p.url));
     assert.equal(new Set(result.pages.map(p => p.url)).size, result.pages.length);
-    result.pages.forEach((p, i) => assert.equal(p.url, `https://peer.storagewebtoon.store/api/media/episode/${readerChapter.chapterId}/${i + 1}.webp`));
-    for (const page of [result.pages[0], result.pages.at(-1)]) await image(source, page.url, 'page');
+    for (const page of [result.pages[0], result.pages.at(-1)]) await nativeImage(page.url, 'page');
+    console.log('MARUMARU_NATIVE_READER', JSON.stringify({ pages: result.pages.length }));
   });
 }

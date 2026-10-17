@@ -1,110 +1,299 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2026 Lucifers Circle */
-import * as cheerio from 'cheerio'
-import { DOMAIN,
-    documentParts,
-    continuationURL } from './MarumaruURLs'
-export { DOMAIN } from './MarumaruURLs'
+
+export const DOMAIN = 'https://marumaru105.com'
+
 export type Card = { id: string; title: string; cover: string; genres: string[] };
-export type Episode = { id: string; workId: string; sourceNumber: number; title: string; date: Date };
-export type Detail = Card & { author: string; summary: string; chapters: Episode[]; rating?: number; explicitlyAdult: boolean };
+export type Episode = {
+    id: string;
+    workId: string;
+    sourceNumber: number;
+    title: string;
+    date: Date;
+};
+export type Detail = Card & {
+    author?: string;
+    summary?: string;
+    chapters: Episode[];
+    rating?: number;
+    explicitlyAdult: boolean;
+};
+export type WorkResult = Omit<Detail, 'chapters'> & {
+    episodeCount: number;
+    episodesUrl: string;
+};
+export type APIDetail = Detail & { episodesUrl: string };
+type RecordValue = Record<string, unknown>;
+
+function record(value: unknown, name: string): RecordValue {
+    if (!value || typeof value !== 'object' || Array.isArray(value))
+        throw new Error(`Invalid Marumaru ${name}`)
+    return value as RecordValue
+}
 export function id(value: string): string {
-    if (!/^[1-9]\d*$/.test(value)) throw new Error('Invalid Marumaru canonical ID')
+    if (
+        typeof value !== 'string' ||
+    !/^[1-9]\d*$/.test(value) ||
+    /\s/.test(value) ||
+    !Number.isSafeInteger(Number(value))
+    )
+        throw new Error('Invalid Marumaru canonical ID')
     return value
 }
-function route(value: string): {workId: string; episodeId?: string} | undefined {
-    const path=value.startsWith(DOMAIN+'/')?value.slice(DOMAIN.length):value
-    const match = /^\/manhwa\/([1-9]\d*)(?:\/([1-9]\d*))?\/?$/.exec(path)
-    return match ? { workId: match[1]!, episodeId: match[2] } : undefined
+function sourceId(value: unknown): string {
+    if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0)
+        return id(String(value))
+    if (typeof value === 'string') return id(value)
+    throw new Error('Invalid Marumaru source ID')
 }
-function cover(value: string | undefined, workId: string): string {
-    if (!value || /\/(?:\.|\.\.)$/.test(value)) throw new Error('Marumaru cover missing or invalid')
-    // The manga catalog also advertises legacy /webtoon/<same work ID>/ covers.
-    if (!new RegExp('^https://peer\\.storagewebtoon\\.store/(?:manhwa|webtoon)/'+id(workId)+'/[A-Za-z0-9._-]+$').test(value))
+function text(value: unknown, name: string): string {
+    if (typeof value !== 'string' || !value.trim()) throw new Error(`Missing Marumaru ${name}`)
+    return value
+}
+function optionalText(value: unknown, name: string): string | undefined {
+    if (value === undefined || value === null || value === '') return undefined
+    return text(value, name)
+}
+function integer(value: unknown, name: string, minimum = 0): number {
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < minimum)
+        throw new Error(`Invalid Marumaru ${name}`)
+    return value
+}
+function sourceNumber(value: unknown): number {
+    if (
+        typeof value !== 'number' ||
+    !Number.isFinite(value) ||
+    value <= 0 ||
+    value > Number.MAX_SAFE_INTEGER
+    )
+        throw new Error('Invalid Marumaru chapter number')
+    return value
+}
+function adult(value: unknown): boolean {
+    if (typeof value !== 'boolean') throw new Error('Missing Marumaru source age classification')
+    return value
+}
+function cover(value: unknown, work: string): string {
+    if (
+        typeof value !== 'string' ||
+    /\s/.test(value) ||
+    /\/(?:\.|\.\.)$/.test(value) ||
+    !new RegExp(
+        `^https://peer\\.storagewebtoon\\.store/(?:manhwa|webtoon)/${id(work)}/[A-Za-z0-9._-]+$`
+    ).test(value)
+    )
         throw new Error('Marumaru cover identity does not match title')
     return value
 }
-export function parseCatalog(html: string, currentURL: string): {items: Card[]; next?: string} {
-    const current = documentParts(currentURL)
-    if (current.path !== '/manhwa') throw new Error('Unsupported Marumaru catalog route')
-    const $ = cheerio.load(html), seen = new Set<string>(), items: Card[] = []
-    $('a[data-work-card]').each((_, element) => {
-        const node = $(element), target = route(node.attr('href') ?? '')
-        if (!target || target.episodeId) return
-        const title = node.find('.subject').text().trim()
-        if (!title) throw new Error('Marumaru catalog title missing')
-        if (seen.has(target.workId)) return
-        seen.add(target.workId)
-        items.push({id: target.workId, title, cover: cover(node.find('img[data-card-thumb]').attr('src'), target.workId), genres: node.find('.genre').text().split(',').map(s=>s.trim()).filter(Boolean)})
-    })
-    if (!items.length) throw new Error('Marumaru rendered catalog unavailable; an HTML shell is not a successful empty catalog')
-    const page = Number(current.query.page ?? '1')
-    if (!Number.isSafeInteger(page) || page < 1) throw new Error('Invalid Marumaru page')
-    let next: string | undefined
-    $('a.pager-btn').each((_, element)=>{
-        const node=$(element); if (node.text().trim()!=='›') return
-        next=continuationURL(node.attr('href') ?? '',currentURL)
-    })
-    return {items,next}
+function genres(value: unknown): string[] {
+    if (value === undefined || value === null || value === '') return []
+    if (typeof value !== 'string') throw new Error('Invalid Marumaru genres')
+    return value
+        .split(',')
+        .map((genre) => genre.trim())
+        .filter(Boolean)
 }
-export function parseDetail(html: string, workId: string): Detail {
-    id(workId); const $=cheerio.load(html), title=$('.hero-v2-title').text().trim()
-    if (!title) throw new Error('Marumaru rendered detail unavailable; no title was returned')
-    const count=$('.ep-section-count'),rawTotal=count.text().trim(),total=Number(rawTotal)
-    if(count.length!==1||!/^[1-9]\d*$/.test(rawTotal)||!Number.isSafeInteger(total)||total>10000)throw new Error('Marumaru complete chapter count unavailable')
-    const chapters: Episode[]=[], seen=new Set<string>()
-    $('a.ep-row-v2-link').each((_,element)=>{
-        const node=$(element), target=route(node.attr('href') ?? '')
-        if (!target?.episodeId || target.workId!==workId) throw new Error('Marumaru chapter ownership mismatch')
-        const sourceNumber=Number(node.find('.ep-row-v2-no').text().trim())
-        const label=node.find('.ep-row-v2-title strong').text().trim()
-        const rawDate=node.find('.ep-row-v2-date').text().trim()
-        if (!Number.isFinite(sourceNumber)||sourceNumber<=0||sourceNumber>Number.MAX_SAFE_INTEGER||!label||!/^\d{4}\.\d{2}\.\d{2}$/.test(rawDate)) throw new Error('Incomplete Marumaru chapter metadata')
-        const date=new Date(`${rawDate.replace(/\./g,'-')}T00:00:00Z`)
-        if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0,10)!==rawDate.replace(/\./g,'-')) throw new Error('Invalid Marumaru chapter date')
-        if(seen.has(target.episodeId)){const previous=chapters.find(c=>c.id===target.episodeId)!;if(previous.sourceNumber!==sourceNumber||previous.title!==label||previous.date.getTime()!==date.getTime())throw new Error('Conflicting Marumaru chapter metadata');return}
-        seen.add(target.episodeId); chapters.push({id:target.episodeId,workId,sourceNumber,title:label,date})
-    })
-    if (chapters.length!==total) throw new Error('Marumaru chapter inventory differs from its advertised count')
-    const rawScore=$('.cs-rating-num strong').text().trim(), rawCount=$('.cs-rating-cnt strong').text().trim()
-    const score=Number(rawScore), ratingCount=Number(rawCount)
-    const max=$('.cs-rating-max').text().trim()
-    const rating=rawScore!==''&&/^[1-9]\d*$/.test(rawCount)&&Number.isSafeInteger(ratingCount)&&ratingCount>0&&max==='/5.0'&&Number.isFinite(score)&&score>=0&&score<=5?score/5:undefined
-    return {id:workId,title,cover:cover($('.hero-v2-thumb img').attr('src'),workId),genres:$('.hero-v2-tag').map((_,e)=>$(e).text().trim()).get().filter(Boolean),author:$('.hero-v2-author').text().trim(),summary:$('.hero-v2-desc').text().trim(),chapters,rating,explicitlyAdult:$('.hero-v2-adult').text().trim()==='19'}
+function card(value: unknown): Card & { explicitlyAdult: boolean } {
+    const work = record(value, 'work')
+    const workId = sourceId(work.id)
+    if (work.mediaType !== 'MANHWA') throw new Error('Marumaru returned another content category')
+    // Both supplied image fields must belong to this work. Never fabricate a URL.
+    if (work.coverUrl !== undefined && work.coverUrl !== null && work.coverUrl !== '')
+        cover(work.coverUrl, workId)
+    if (work.thumbUrl !== undefined && work.thumbUrl !== null && work.thumbUrl !== '')
+        cover(work.thumbUrl, workId)
+    return {
+        id: workId,
+        title: text(work.title, 'title'),
+        cover: cover(work.thumbUrl || work.coverUrl, workId),
+        genres: genres(work.genres),
+        explicitlyAdult: adult(work.adult)
+    }
 }
-export function parseReader(html: string, episodeId: string): string[] {
-    id(episodeId); const $=cheerio.load(html), pages=new Map<number,string>()
-    const cuts=$('.vw-cut.theme-viewer-image')
-    if(!cuts.length)throw new Error('Marumaru rendered reader inventory missing')
-    cuts.each((index,element)=>{
-        const cut=$(element)
-        if(cut.attr('data-page')!==String(index)||cut.find('img[src]').length!==1)throw new Error('Incomplete Marumaru reader cut inventory')
-        const url=cut.find('img').attr('src') ?? ''
-        const match=/^https:\/\/peer\.storagewebtoon\.store\/api\/media\/episode\/([1-9]\d*)\/([1-9]\d*)\.webp$/.exec(url)
-        if(!match || match[1]!==episodeId)throw new Error('Marumaru reader image identity mismatch')
-        const page=Number(match[2])
-        if(!Number.isSafeInteger(page)||page!==index+1||pages.has(page))throw new Error('Invalid or duplicate reader page index')
-        pages.set(page,url)
-    })
-    const result=[...pages.entries()].sort(([a],[b])=>a-b)
-    if(!result.length || result.some(([page],index)=>page!==index+1)) throw new Error('Marumaru complete reader data unavailable')
-    return result.map(([,url])=>url)
+
+/** The public work response advertises this exact API family, without credentials or queries. */
+export function validateEpisodesURL(value: unknown, work: string): string {
+    const expected = id(work)
+    if (
+        typeof value !== 'string' ||
+    value !== `https://api.storagewebtoon.store/api/v1/reader/A2/works/${expected}`
+    )
+        throw new Error('Invalid Marumaru advertised episode-list URL')
+    return value
 }
-export function parseSearch(html:string,currentURL:string):{items:Card[];next?:string}{
-    const current=documentParts(currentURL)
-    if(current.path!=='/search'||current.query.kind!=='manhwa'||!current.query.q)throw new Error('Unsupported Marumaru search scope')
-    const $=cheerio.load(html),items:Card[]=[],seen=new Set<string>()
-    const forms=$('form.search-page-form'),queryInput=forms.find('input[name="q"]')
-    if(forms.length!==1||queryInput.length!==1||queryInput.attr('value')!==current.query.q)throw new Error('Marumaru rendered search query mismatch')
-    $('.search-results-grid a.card').each((_,element)=>{
-        const node=$(element),target=route(node.attr('href')??'')
-        if(!target||target.episodeId)throw new Error('Marumaru search returned another content category')
-        const title=node.find('.subject').text().trim();if(!title)throw new Error('Marumaru search title missing')
-        if(seen.has(target.workId))return;seen.add(target.workId)
-        items.push({id:target.workId,title,cover:cover(node.find('img.search-thumb-img').attr('src'),target.workId),genres:node.find('.genre').text().split(',').map(s=>s.trim()).filter(Boolean)})
+export function readerURL(episodesUrl: string, work: string, episode: string): string {
+    const list = validateEpisodesURL(episodesUrl, work)
+    return list.replace(`/works/${id(work)}`, `/episodes/${id(episode)}`)
+}
+
+export function parseListing(
+    value: unknown,
+    expectedPage: number,
+    search: boolean
+): { items: (Card & { explicitlyAdult: boolean })[]; nextPage?: number } {
+    const result = record(value, 'listing')
+    const requested = integer(expectedPage, 'requested page')
+    const page = integer(result.page, 'page')
+    const size = integer(result.size, 'page size', 1)
+    const total = integer(result.total, 'result count')
+    if (page !== requested || size !== (search ? 24 : 49))
+        throw new Error('Marumaru listing pagination does not match request')
+    const offset = page * size
+    if (!Number.isSafeInteger(offset) || !Array.isArray(result.items))
+        throw new Error('Incomplete Marumaru listing')
+    const expectedLength = Math.min(size, Math.max(0, total - offset))
+    if (result.items.length !== expectedLength)
+        throw new Error('Marumaru listing differs from its advertised count')
+    const seen = new Set<string>()
+    const items = result.items.map((value) => {
+        const item = card(value)
+        if (seen.has(item.id)) throw new Error('Duplicate Marumaru listing ID')
+        seen.add(item.id)
+        return item
     })
-    if(!items.length)throw new Error('Marumaru search is incomplete, not a confirmed empty result')
-    let next:string|undefined
-    $('a.pager-btn').each((_,element)=>{const node=$(element);if(node.text().trim()==='›')next=continuationURL(node.attr('href')??'',currentURL)})
-    return {items,next}
+    return { items, ...(offset + items.length < total ? { nextPage: page + 1 } : {}) }
+}
+
+export function parseWork(value: unknown, expectedWork: string): WorkResult {
+    const result = record(value, 'work response')
+    const work = record(result.work, 'work')
+    const metadata = card(work)
+    if (metadata.id !== id(expectedWork)) throw new Error('Marumaru work ownership mismatch')
+    const episodeCount = integer(work.episodeCount, 'chapter count')
+    if (episodeCount > 10000) throw new Error('Marumaru chapter count exceeds supported inventory')
+    const author = optionalText(work.author, 'author')
+    const summary = optionalText(result.synopsis, 'synopsis')
+    let rating: number | undefined
+    if (
+        work.rating !== undefined &&
+    work.rating !== null &&
+    work.ratingCount !== undefined &&
+    work.ratingCount !== null
+    ) {
+        const count = integer(work.ratingCount, 'rating count')
+        if (
+            typeof work.rating !== 'number' ||
+      !Number.isFinite(work.rating) ||
+      work.rating < 0 ||
+      work.rating > 5
+        )
+            throw new Error('Invalid Marumaru rating')
+        if (count > 0) rating = work.rating / 5
+    }
+    return {
+        ...metadata,
+        ...(author === undefined ? {} : { author }),
+        ...(summary === undefined ? {} : { summary }),
+        ...(rating === undefined ? {} : { rating }),
+        episodeCount,
+        episodesUrl: validateEpisodesURL(result.episodesUrl, metadata.id)
+    }
+}
+function publicationDate(value: unknown): Date {
+    if (
+        typeof value !== 'string' ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(value)
+    )
+        throw new Error('Missing or invalid Marumaru chapter publication date')
+    const date = new Date(value)
+    const normalized = value.includes('.')
+        ? value.replace(/\.(\d{1,3})Z$/, (_, fraction: string) => `.${fraction.padEnd(3, '0')}Z`)
+        : value.replace(/Z$/, '.000Z')
+    if (!Number.isFinite(date.getTime()) || date.toISOString() !== normalized)
+        throw new Error('Invalid Marumaru chapter publication date')
+    return date
+}
+export function parseDetail(work: WorkResult, value: unknown): APIDetail {
+    const result = record(value, 'chapter-list response')
+    if (result.ok !== true) throw new Error('Marumaru chapter list is not ready')
+    const owner = record(result.item, 'chapter-list owner')
+    if (
+        sourceId(owner.id) !== work.id ||
+    text(owner.title, 'chapter-list title') !== work.title ||
+    adult(owner.adult) !== work.explicitlyAdult
+    )
+        throw new Error('Marumaru chapter-list ownership or classification mismatch')
+    if (
+        owner.media_type !== 'MANHWA' ||
+    integer(owner.episode_count, 'list chapter count') !== work.episodeCount ||
+    (owner.mediaType !== undefined && owner.mediaType !== 'MANHWA') ||
+    (owner.episodeCount !== undefined &&
+      integer(owner.episodeCount, 'list chapter count') !== work.episodeCount)
+    )
+        throw new Error('Marumaru chapter-list metadata conflicts with the work')
+    cover(owner.cover_url, work.id)
+    if (!Array.isArray(result.episodes) || result.episodes.length !== work.episodeCount)
+        throw new Error('Marumaru chapter inventory differs from its advertised count')
+    const seenIds = new Set<string>()
+    const seenNumbers = new Set<number>()
+    const chapters = result.episodes
+        .map((value): Episode => {
+            const item = record(value, 'chapter')
+            const episodeId = sourceId(item.id)
+            const number = sourceNumber(item.number)
+            if (seenIds.has(episodeId) || seenNumbers.has(number))
+                throw new Error('Duplicate Marumaru chapter ID or number')
+            for (const key of ['work_id', 'workId']) {
+                if (item[key] !== undefined && sourceId(item[key]) !== work.id)
+                    throw new Error('Marumaru chapter ownership mismatch')
+            }
+            if (item.embed_url !== undefined && item.embed_url !== readerURL(work.episodesUrl, work.id, episodeId))
+                throw new Error('Marumaru advertised reader identity mismatch')
+            if (item.ready !== undefined && typeof item.ready !== 'boolean')
+                throw new Error('Invalid Marumaru chapter readiness')
+            seenIds.add(episodeId)
+            seenNumbers.add(number)
+            return {
+                id: episodeId,
+                workId: work.id,
+                sourceNumber: number,
+                title: text(item.title, 'chapter title'),
+                date: publicationDate(item.published_at)
+            }
+        })
+        .sort((a, b) => b.sourceNumber - a.sourceNumber)
+    const summary = optionalText(result.synopsis, 'chapter-list synopsis') ?? work.summary
+    return {
+        id: work.id,
+        title: work.title,
+        cover: work.cover,
+        genres: [...work.genres],
+        ...(work.author === undefined ? {} : { author: work.author }),
+        ...(summary === undefined ? {} : { summary }),
+        ...(work.rating === undefined ? {} : { rating: work.rating }),
+        explicitlyAdult: work.explicitlyAdult,
+        chapters,
+        episodesUrl: validateEpisodesURL(work.episodesUrl, work.id)
+    }
+}
+
+export function parseReader(value: unknown, work: string, selected: Episode): string[] {
+    const workId = id(work)
+    const episodeId = id(selected.id)
+    if (selected.workId !== workId) throw new Error('Marumaru selected chapter ownership mismatch')
+    const result = record(value, 'reader response')
+    const item = record(result.item, 'reader chapter')
+    if (result.ok !== true || item.ready !== true) throw new Error('Marumaru reader is not ready')
+    if (
+        sourceId(item.id) !== episodeId ||
+    sourceId(item.work_id) !== workId ||
+    sourceNumber(item.number) !== selected.sourceNumber ||
+    text(item.title, 'reader title') !== selected.title
+    )
+        throw new Error('Marumaru reader chapter identity mismatch')
+    if (item.workId !== undefined && sourceId(item.workId) !== workId)
+        throw new Error('Marumaru reader chapter ownership mismatch')
+    if (!Array.isArray(item.body) || !item.body.length || item.body.length > 1000)
+        throw new Error('Marumaru reader image inventory missing')
+    return item.body.map((value, index) => {
+        const page = record(value, 'reader page')
+        if (page.kind !== 'image' || typeof page.url !== 'string')
+            throw new Error('Marumaru reader contains unsupported body content')
+        const expected = `https://peer.storagewebtoon.store/api/media/episode/${episodeId}/${index + 1}.webp`
+        if (page.url !== expected)
+            throw new Error(
+                'Marumaru reader pages are incomplete, unordered or belong to another chapter'
+            )
+        return page.url
+    })
 }
