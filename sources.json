@@ -30,7 +30,7 @@
       "path": "Hijala",
       "environment": "source",
       "intents": 106961929,
-      "hash": "6832a5d06832a5d06832a5d06832a5d06832a5d06832a5d06832a5d06832a5d0"
+      "hash": "56d083ce56d083ce56d083ce56d083ce56d083ce56d083ce56d083ce56d083ce"
     },
     {
       "id": "Kagane",
@@ -59,7 +59,7 @@
       "path": "Kagane",
       "environment": "source",
       "intents": 106961929,
-      "hash": "59cd700359cd700359cd700359cd700359cd700359cd700359cd700359cd7003"
+      "hash": "486b4e26486b4e26486b4e26486b4e26486b4e26486b4e26486b4e26486b4e26"
     },
     {
       "id": "MangaStash",
@@ -86,7 +86,7 @@
       "path": "MangaStash",
       "environment": "source",
       "intents": 106961929,
-      "hash": "0eac00360eac00360eac00360eac00360eac00360eac00360eac00360eac0036"
+      "hash": "02b61efe02b61efe02b61efe02b61efe02b61efe02b61efe02b61efe02b61efe"
     },
     {
       "id": "MangaSushi",
@@ -111,7 +111,7 @@
       "path": "MangaSushi",
       "environment": "source",
       "intents": 106961929,
-      "hash": "779d9d0e779d9d0e779d9d0e779d9d0e779d9d0e779d9d0e779d9d0e779d9d0e"
+      "hash": "770043de770043de770043de770043de770043de770043de770043de770043de"
     },
     {
       "id": "ManhwaNex",
@@ -138,12 +138,12 @@
       "path": "ManhwaNex",
       "environment": "source",
       "intents": 106961929,
-      "hash": "33dd133133dd133133dd133133dd133133dd133133dd133133dd133133dd1331"
+      "hash": "227af132227af132227af132227af132227af132227af132227af132227af132"
     },
     {
       "id": "Marumaru",
       "name": "Marumaru",
-      "version": "0.0.1-alpha.6",
+      "version": "0.0.1-alpha.7",
       "website": "https://marumaru105.com",
       "rating": 1,
       "supportedLanguages": [
@@ -158,11 +158,11 @@
           "github": "https://github.com/LucifersCircle"
         }
       ],
-      "description": "Korean manga catalog and reader through ordinary rendered website pages. Unclassified titles use a Suggestive compatibility fallback, not a source age rating. Explicit 19 labels are preserved. WebView device validation is required before release.",
+      "description": "Korean manga catalog and reader through the site’s ordinary public APIs. Unclassified titles use a Suggestive compatibility fallback, not a source age rating. Explicit 19 labels are preserved.",
       "path": "Marumaru",
       "environment": "source",
       "intents": 102761480,
-      "hash": "375eff7b375eff7b375eff7b375eff7b375eff7b375eff7b375eff7b375eff7b"
+      "hash": "19cc3b3d19cc3b3d19cc3b3d19cc3b3d19cc3b3d19cc3b3d19cc3b3d19cc3b3d"
     },
     {
       "id": "VortexScans",
@@ -189,7 +189,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 106961928,
-      "hash": "242d1757242d1757242d1757242d1757242d1757242d1757242d1757242d1757"
+      "hash": "12caf1db12caf1db12caf1db12caf1db12caf1db12caf1db12caf1db12caf1db"
     }
   ]
 }
