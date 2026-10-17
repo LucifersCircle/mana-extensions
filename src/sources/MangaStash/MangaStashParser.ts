@@ -245,9 +245,10 @@ export function parseReader(html: string, id: string, chapter: Chapter, title: s
         let value: unknown
         try { value = JSON.parse(fields.get(key) ?? '') } catch { throw new Error('MangaStash adjacent chapter is not a JSON literal') }
         if (value !== null) {
-            if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== 2 || Object.keys(value).some((field) => !['number', 'pages'].includes(field))) throw new Error('MangaStash adjacent chapter literal is malformed')
+            if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length < 1 || Object.keys(value).length > 2 || Object.keys(value).some((field) => !['number', 'pages'].includes(field))) throw new Error('MangaStash adjacent chapter literal is malformed')
+            // Adjacent page counts are optional; this chapter still requires totalPages below.
             const adjacent = value as { number?: unknown, pages?: unknown }
-            if (typeof adjacent.number !== 'number' || !Number.isFinite(adjacent.number) || adjacent.number < 0 || typeof adjacent.pages !== 'number' || !Number.isSafeInteger(adjacent.pages) || adjacent.pages < 1 || adjacent.pages > 1000) throw new Error('MangaStash adjacent chapter numbers are malformed')
+            if (typeof adjacent.number !== 'number' || !Number.isFinite(adjacent.number) || adjacent.number < 0 || (adjacent.pages !== undefined && (typeof adjacent.pages !== 'number' || !Number.isSafeInteger(adjacent.pages) || adjacent.pages < 1 || adjacent.pages > 1000))) throw new Error('MangaStash adjacent chapter numbers are malformed')
         }
     }
     const slug = fields.get('seriesSlug')?.match(/^'([a-z0-9-]+)'$/)?.[1]
