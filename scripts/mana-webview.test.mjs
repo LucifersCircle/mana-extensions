@@ -58,9 +58,9 @@ test('JSON bridge preserves cross-realm values and rejects non-JSON or side-effe
   assert.equal(called, 0);
 });
 
-function harness(override) {
+function harness(override, options = {}) {
   const calls = [];
-  const host = createManaTestWebView({ solverURL: 'http://127.0.0.1:8191', fetchImpl: async (target, init) => {
+  const host = createManaTestWebView({ ...options, solverURL: 'http://127.0.0.1:8191', fetchImpl: async (target, init) => {
     const path = new URL(target).pathname, body = JSON.parse(init.body);
     calls.push({ path, body });
     const response = await override?.(path, body);
@@ -70,6 +70,39 @@ function harness(override) {
   } });
   return { host, calls };
 }
+
+test('detail observation preserves exact consumed HTML with no extra browser command', async () => {
+  const observed = [], html = '<section>generic infrastructure string</section>';
+  const { host, calls } = harness((path, body) => path === '/webview/evaluate'
+    ? Response.json({ url: body.url, value: html }) : undefined,
+  { onDocument: value => { observed.push(value); assert(Object.isFrozen(value)); return 'never a substitute'; } });
+  const source = host.wrapSource({ async getContent(target) {
+    const page = await host.WebViewPage.create(); await page.goto(target);
+    return page.evaluate(() => 'actual source callback');
+  } });
+  assert.equal(await source.getContent(url), html);
+  assert.deepEqual(observed, [{ url, html }]);
+  assert.deepEqual(calls.map(call => call.path), ['/v1', '/webview/goto', '/webview/evaluate', '/v1']);
+  for (const target of [url + '/21331', 'https://marumaru105.com/manhwa', 'https://marumaru105.com/search?q=x&kind=manhwa']) {
+    assert.equal(await source.getContent(target), html);
+  }
+  assert.equal(observed.length, 1, 'Only canonical detail HTML is observed');
+  await host.close();
+});
+
+test('detail observation never receives invalid identity or non-string results', async () => {
+  let observed = 0, wrongURL = false;
+  const { host } = harness((path, body) => path === '/webview/evaluate'
+    ? Response.json({ url: wrongURL ? url + '/21331' : body.url, value: wrongURL ? 'not trusted' : { text: 'not HTML' } }) : undefined,
+  { onDocument: () => { observed++; } });
+  const source = host.wrapSource({ async getContent() {
+    const page = await host.WebViewPage.create(); await page.goto(url); return page.evaluate(() => null);
+  } });
+  assert.deepEqual(await source.getContent(), { text: 'not HTML' });
+  wrongURL = true; await assert.rejects(source.getContent(), /identity/);
+  assert.equal(observed, 0); await host.close();
+  assert.throws(() => createManaTestWebView({ onDocument: true }), /observer/);
+});
 
 test('SDK bridge uses seconds, serializes actual function/JSON arguments, and cleans up', async () => {
   const { host, calls } = harness();
@@ -167,7 +200,7 @@ test('failed WebView operations expose only fixed phase/reason enums and never r
 test('Python operation diagnostics classify known failures without exposing raw exceptions', () => {
   const program = `import ast, pathlib, sys
 tree = ast.parse(pathlib.Path(sys.argv[1]).read_text())
-nodes = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'operation_failure_reason']
+nodes = [n for n in tree.body if (isinstance(n, ast.FunctionDef) and n.name == 'operation_failure_reason') or (isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id in {'CALLBACK_GUARDS', 'CALLBACK_TYPES'} for t in n.targets))]
 exec(compile(ast.Module(body=nodes, type_ignores=[]), sys.argv[1], 'exec'))
 assert operation_failure_reason(TimeoutError('WebView navigation timed out')) == 'navigation-timeout'
 assert operation_failure_reason(TimeoutError('SECRET')) == 'operation-timeout'
@@ -184,6 +217,9 @@ for name, expected in [('TimeoutException', 'driver-timeout'),
  ('SECRET exception class', 'unexpected-error')]:
  error = type(name, (Exception,), {})('SECRET body url token')
  assert operation_failure_reason(error) == expected
+for reason in (*CALLBACK_GUARDS.values(), *CALLBACK_TYPES):
+ assert operation_failure_reason(ValueError('WebView source guard: ' + reason)) == reason
+assert operation_failure_reason(ValueError('WebView source guard: SECRET')) == 'invalid-operation'
 assert operation_failure_reason(RuntimeError('SECRET')) == 'unexpected-error'
 print('Fixed failure diagnostics passed')`;
   const result = spawnSync('python3', ['-c', program, fileURLToPath(new URL('./flaresolverr/webview_page.py', import.meta.url))], { encoding: 'utf8' });
@@ -290,6 +326,10 @@ print(json.dumps(next(n.value.value for n in tree.body if isinstance(n, ast.Assi
     ['() => { throw new Proxy({}, { getOwnPropertyDescriptor() { throw new Error("SECRET-trap"); } }); }', 'callback-rejected'],
     ['() => { location.href = "SECRET-url"; return 1; }', 'document-identity-changed'],
     ['not valid syntax', 'callback-invalid'],
+    ...[["Marumaru WebView navigated away from requested document", "document-identity-changed"], ["Marumaru WebView document identity changed", "document-identity-changed"], ["Marumaru reader exceeds bounded page limit", "reader-page-limit"], ["Marumaru rendered content did not become ready", "render-readiness-timeout"], ["Marumaru detail identity is ambiguous", "chapter-detail-ambiguous"], ["Marumaru chapter count is invalid or exceeds its limit", "chapter-count-invalid"], ["Marumaru chapter link escaped title identity", "chapter-link-identity"], ["Marumaru chapter endpoints unavailable", "chapter-endpoints-missing"], ["Marumaru detail changed during chapter pagination", "chapter-detail-changed"], ["Marumaru chapter pagination is ambiguous", "chapter-pager-ambiguous"], ["Marumaru chapter page is invalid", "chapter-page-invalid"], ["Marumaru chapter page changed unexpectedly", "chapter-page-unexpected"], ["Marumaru chapter pagination repeats an identity", "chapter-page-repeated"], ["Marumaru chapter list does not begin at the latest episode", "chapter-latest-mismatch"], ["Marumaru chapter inventory exceeds its advertised count", "chapter-count-exceeded"], ["Marumaru chapter continuation is ambiguous", "chapter-next-ambiguous"], ["Marumaru chapter inventory lacks a confirmed ending", "chapter-ending-unconfirmed"], ["Marumaru complete chapter continuation unavailable", "chapter-next-unavailable"]].map(([message, reason]) => [`() => { throw new Error(${JSON.stringify(message)}); }`, reason]),
+    ['() => { throw new TypeError("SECRET"); }', 'callback-type-error'],
+    ['() => { throw new ReferenceError("SECRET"); }', 'callback-reference-error'],
+    ['() => { throw new RangeError("SECRET"); }', 'callback-range-error'],
   ]) {
     const result = await run(fn);
     assert.equal(result.reason, expected);

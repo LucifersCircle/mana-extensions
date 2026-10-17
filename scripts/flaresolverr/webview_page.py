@@ -10,6 +10,8 @@ from browser_request import BrowserGate, assert_browser_safety, session_driver, 
 
 MAX_JSON = 4 * 1024 * 1024
 NAVIGATED = set()
+CALLBACK_GUARDS = {'Marumaru WebView navigated away from requested document': 'document-identity-changed', 'Marumaru WebView document identity changed': 'document-identity-changed', 'Marumaru reader exceeds bounded page limit': 'reader-page-limit', 'Marumaru rendered content did not become ready': 'render-readiness-timeout', 'Marumaru detail identity is ambiguous': 'chapter-detail-ambiguous', 'Marumaru chapter count is invalid or exceeds its limit': 'chapter-count-invalid', 'Marumaru chapter link escaped title identity': 'chapter-link-identity', 'Marumaru chapter endpoints unavailable': 'chapter-endpoints-missing', 'Marumaru detail changed during chapter pagination': 'chapter-detail-changed', 'Marumaru chapter pagination is ambiguous': 'chapter-pager-ambiguous', 'Marumaru chapter page is invalid': 'chapter-page-invalid', 'Marumaru chapter page changed unexpectedly': 'chapter-page-unexpected', 'Marumaru chapter pagination repeats an identity': 'chapter-page-repeated', 'Marumaru chapter list does not begin at the latest episode': 'chapter-latest-mismatch', 'Marumaru chapter inventory exceeds its advertised count': 'chapter-count-exceeded', 'Marumaru chapter continuation is ambiguous': 'chapter-next-ambiguous', 'Marumaru chapter inventory lacks a confirmed ending': 'chapter-ending-unconfirmed', 'Marumaru complete chapter continuation unavailable': 'chapter-next-unavailable'}
+CALLBACK_TYPES = ('callback-type-error', 'callback-reference-error', 'callback-range-error')
 
 
 def assert_document_url(value):
@@ -92,12 +94,20 @@ EVALUATE_SCRIPT = r"""
 const payload = arguments[0], done = arguments[arguments.length - 1];
 const fail = reason => done({error: 'WebView evaluation failed', reason});
 const callbackFailure = error => {
-  // Only this exact source-owned timeout can refine the fixed rejection enum.
+  // Only exact source-owned guards and built-in error types refine the enum.
   // Read an own data property, never an exception getter or arbitrary text.
   let reason = 'callback-rejected';
   try {
     const message = error && typeof error === 'object' ? Object.getOwnPropertyDescriptor(error, 'message')?.value : undefined;
-    if (message === 'Marumaru rendered content did not become ready') reason = 'render-readiness-timeout';
+    const guards = {"Marumaru WebView navigated away from requested document": "document-identity-changed", "Marumaru WebView document identity changed": "document-identity-changed", "Marumaru reader exceeds bounded page limit": "reader-page-limit", "Marumaru rendered content did not become ready": "render-readiness-timeout", "Marumaru detail identity is ambiguous": "chapter-detail-ambiguous", "Marumaru chapter count is invalid or exceeds its limit": "chapter-count-invalid", "Marumaru chapter link escaped title identity": "chapter-link-identity", "Marumaru chapter endpoints unavailable": "chapter-endpoints-missing", "Marumaru detail changed during chapter pagination": "chapter-detail-changed", "Marumaru chapter pagination is ambiguous": "chapter-pager-ambiguous", "Marumaru chapter page is invalid": "chapter-page-invalid", "Marumaru chapter page changed unexpectedly": "chapter-page-unexpected", "Marumaru chapter pagination repeats an identity": "chapter-page-repeated", "Marumaru chapter list does not begin at the latest episode": "chapter-latest-mismatch", "Marumaru chapter inventory exceeds its advertised count": "chapter-count-exceeded", "Marumaru chapter continuation is ambiguous": "chapter-next-ambiguous", "Marumaru chapter inventory lacks a confirmed ending": "chapter-ending-unconfirmed", "Marumaru complete chapter continuation unavailable": "chapter-next-unavailable"};
+    if (typeof message === 'string' && Object.hasOwn(guards, message)) reason = guards[message];
+    else {
+      const prototype = error && typeof error === 'object' ? Object.getPrototypeOf(error) : null;
+      const name = prototype && Object.getOwnPropertyDescriptor(prototype, 'name')?.value;
+      if (name === 'TypeError') reason = 'callback-type-error';
+      else if (name === 'ReferenceError') reason = 'callback-reference-error';
+      else if (name === 'RangeError') reason = 'callback-range-error';
+    }
   } catch { /* A thrown Proxy trap must still complete the bridge callback. */ }
   fail(reason);
 };
@@ -161,6 +171,8 @@ def evaluate(driver, payload):
         raise
     assert_document(driver, payload['url'])
     if isinstance(result, dict) and result.get('error'):
+        if result.get('reason') in (*CALLBACK_GUARDS.values(), *CALLBACK_TYPES):
+            raise ValueError('WebView source guard: ' + result['reason'])
         message = {
             'callback-rejected': 'WebView callback rejected',
             'callback-invalid': 'WebView callback invalid',
@@ -181,6 +193,9 @@ def operation_failure_reason(error):
         return ('navigation-timeout' if type(error) is TimeoutError
                 and str(error) == 'WebView navigation timed out' else 'operation-timeout')
     if type(error) is ValueError:
+        prefix = 'WebView source guard: '
+        if str(error).startswith(prefix) and str(error)[len(prefix):] in (*CALLBACK_GUARDS.values(), *CALLBACK_TYPES):
+            return str(error)[len(prefix):]
         return {
             'WebView document identity changed': 'document-identity-changed',
             'WebView navigation failed': 'navigation-error',
