@@ -145,16 +145,13 @@ def session_lock(session_id):
         return LOCKS.setdefault(session_id, threading.Lock())
 
 
-def assert_browser_page(driver):
+def assert_browser_safety(driver):
     current = urlparse(driver.current_url)
     title = driver.title.lower()
     if (current.scheme in ('chrome-error', 'chrome') or 'privacy error' in title
             or 'your connection is not private' in title or 'certificate error' in title
             or 'net::err_cert_' in driver.page_source.lower()):
         raise BrowserGate('security')
-    if (current.scheme != 'https' or current.hostname != 'kagane.org'
-            or current.path not in ('', '/') or current.query or current.fragment):
-        raise ValueError('Browser left the public Kagane root')
     if driver.execute_script(CAPTCHA_SCRIPT):
         raise BrowserGate('captcha')
     for frame in driver.find_elements('css selector', CHALLENGE_FRAMES):
@@ -166,6 +163,14 @@ def assert_browser_page(driver):
                 raise BrowserGate('captcha')
         finally:
             driver.switch_to.default_content()
+
+
+def assert_browser_page(driver):
+    assert_browser_safety(driver)
+    current = urlparse(driver.current_url)
+    if (current.scheme != 'https' or current.hostname != 'kagane.org'
+            or current.path not in ('', '/') or current.query or current.fragment):
+        raise ValueError('Browser left the public Kagane root')
 
 
 def register(app):

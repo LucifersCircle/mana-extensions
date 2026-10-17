@@ -2,9 +2,10 @@ import { setTimeout as delay } from 'node:timers/promises'
 
 // A small Node host for live source checks, not a Mana/iOS emulator. The built
 // bundle supplies the real @mana-app/types enums and NetworkClientBuilder.
-// ObjectStore is process-local for preference callbacks; iOS persistence, WebViews,
-// automatic retries and cookie persistence are not emulated.
-export function createManaRuntime({ logger = logRequest, fetchImpl = globalThis.fetch } = {}) {
+// ObjectStore is process-local for preference callbacks. Optional WebViews use real
+// test-only Chromium, not WKWebView. iOS persistence, automatic retries and shared
+// cookie persistence are not emulated.
+export function createManaRuntime({ logger = logRequest, fetchImpl = globalThis.fetch, webViewPage } = {}) {
     class NetworkError extends Error {
         constructor(name, message, req, res) {
             super(redactText(message))
@@ -132,7 +133,7 @@ export function createManaRuntime({ logger = logRequest, fetchImpl = globalThis.
         CloudflareError,
         ObjectStore: createObjectStore(),
         SecureStore: unsupported('SecureStore'),
-        WebViewPage: unsupported('WebViewPage'),
+        WebViewPage: webViewPage ?? unsupported('WebViewPage'),
         console,
         URL,
         URLSearchParams,

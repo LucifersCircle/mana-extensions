@@ -6,6 +6,7 @@ import { createManaRuntime, redactURL, redactText } from './mana-runtime.mjs';
 import { testKagane } from './kagane-live-tests.mjs';
 import { testHijala } from './hijala-live-tests.mjs';
 import { createManaTestTransport } from './mana-test-browser.mjs';
+import { createManaTestWebView } from './mana-test-webview.mjs';
 import { failedSources } from './test-sources.mjs';
 import { readSelection } from './changed-sources.mjs';
 import { testMangaSushi, coverDimensions } from './mangasushi-live-tests.mjs';
@@ -20,6 +21,7 @@ if (process.argv.length > 2) throw new Error('Use LIVE_TEST_SELECTION, not unval
 const names = readSelection().selectedSources;
 const report = {};
 const testTransport = createManaTestTransport();
+const testWebViews = createManaTestWebView();
 const manifest = JSON.parse(readFileSync('dist/sources.json', 'utf8'));
 const nonempty = (value, label) => assert(typeof value === 'string' && value.trim(), `${label} is empty`);
 const url = (value) => assert(['http:', 'https:'].includes(new URL(value).protocol), `Invalid URL: ${value}`);
@@ -104,9 +106,9 @@ for (const name of names) {
   await check('Built Mana bundle and source metadata', () => {
     const entries = manifest.sources.filter((entry) => entry.id === name);
     assert.equal(entries.length, 1, 'Source must have one unique built manifest entry');
-    context = vm.createContext(createManaRuntime({ fetchImpl: testTransport.fetch, logger: (request) => { requests.push(request); console.log(`[http] ${request.status ?? 'ERROR'} ${request.url} (${request.durationMs}ms)${request.error ? `: ${request.error}` : ''}`); } }));
+    context = vm.createContext(createManaRuntime({ fetchImpl: testTransport.fetch, webViewPage: testWebViews.WebViewPage, logger: (request) => { requests.push(request); console.log(`[http] ${request.status ?? 'ERROR'} ${request.url} (${request.durationMs}ms)${request.error ? `: ${request.error}` : ''}`); } }));
     vm.runInContext(readFileSync(`dist/sources/${name}.mana`, 'utf8'), context, { timeout: 10_000 });
-    source = new context.Target();
+    source = testWebViews.wrapSource(new context.Target());
     assert.equal(source.info.id, name);
     nonempty(source.info.version, 'Version');
     assert.equal(source.info.version, entries[0].version, 'Bundle version differs from built manifest');
@@ -128,13 +130,13 @@ for (const name of names) {
   });
   if (name !== 'VortexScans') {
     if (name === 'Kagane') {
-      await testKagane({ source, check, referenceFetch: testTransport.fetch, highlights, searchResult, image, requests, freshSource: () => new context.Target() });
+      await testKagane({ source, check, referenceFetch: testTransport.fetch, highlights, searchResult, image, requests, freshSource: () => testWebViews.wrapSource(new context.Target()) });
     } else if (name === 'Hijala') {
-      await testHijala({ source, check, nativeStore: context.ObjectStore, highlights, searchResult, image, requests, freshSource: () => new context.Target(), referenceFetch: testTransport.fetch });
+      await testHijala({ source, check, nativeStore: context.ObjectStore, highlights, searchResult, image, requests, freshSource: () => testWebViews.wrapSource(new context.Target()), referenceFetch: testTransport.fetch });
     } else if (name === 'MangaSushi') {
-      await testMangaSushi({ source, check, nativeStore: context.ObjectStore, highlights, searchResult, image, requests, freshSource: () => new context.Target() });
+      await testMangaSushi({ source, check, nativeStore: context.ObjectStore, highlights, searchResult, image, requests, freshSource: () => testWebViews.wrapSource(new context.Target()) });
     } else if (name === 'ManhwaNex') {
-      await testManhwaNex({ source, check, nativeStore: context.ObjectStore, requests, freshSource: () => new context.Target() });
+      await testManhwaNex({ source, check, nativeStore: context.ObjectStore, requests, freshSource: () => testWebViews.wrapSource(new context.Target()) });
     } else if (name === 'Marumaru') {
       await testMarumaru({ source, check, searchResult, image });
     } else if (name === 'MangaStash') {
@@ -363,8 +365,8 @@ for (const name of names) {
     const result = await source.handleURL(content.webUrl);
     assert.equal(result?.content?.id, catalog.results[0].id);
   });
-  await testVortexSynopsis({ check, requests, post: detailPost, freshSource: () => new context.Target() });
-  await testVortexRatings({ source, check, requests, freshSource: () => new context.Target() });
+  await testVortexSynopsis({ check, requests, post: detailPost, freshSource: () => testWebViews.wrapSource(new context.Target()) });
+  await testVortexRatings({ source, check, requests, freshSource: () => testWebViews.wrapSource(new context.Target()) });
   } catch (error) {
     // Keep executed checks, but never present an aborted suite as a complete report.
     suiteError = `Source suite aborted before completion; remaining checks were not run.\n${redactText(error?.stack ?? String(error))}`;
@@ -379,7 +381,7 @@ for (const name of names) {
   }
 }
 } finally {
-  try { await testTransport.close(); }
+  try { await Promise.all([testTransport.close(), testWebViews.close()]); }
   catch (error) { console.error(redactText(error.message)); process.exitCode = 1; }
 }
 mkdirSync('bundles', { recursive: true });
