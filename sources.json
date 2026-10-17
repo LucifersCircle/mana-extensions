@@ -30,7 +30,7 @@
       "path": "Hijala",
       "environment": "source",
       "intents": 106961929,
-      "hash": "2ffba2702ffba2702ffba2702ffba2702ffba2702ffba2702ffba2702ffba270"
+      "hash": "01d5f84201d5f84201d5f84201d5f84201d5f84201d5f84201d5f84201d5f842"
     },
     {
       "id": "Kagane",
@@ -59,7 +59,7 @@
       "path": "Kagane",
       "environment": "source",
       "intents": 106961929,
-      "hash": "3e60db033e60db033e60db033e60db033e60db033e60db033e60db033e60db03"
+      "hash": "0c8f3d2c0c8f3d2c0c8f3d2c0c8f3d2c0c8f3d2c0c8f3d2c0c8f3d2c0c8f3d2c"
     },
     {
       "id": "MangaStash",
@@ -86,7 +86,7 @@
       "path": "MangaStash",
       "environment": "source",
       "intents": 106961929,
-      "hash": "21b4798221b4798221b4798221b4798221b4798221b4798221b4798221b47982"
+      "hash": "101d2184101d2184101d2184101d2184101d2184101d2184101d2184101d2184"
     },
     {
       "id": "MangaSushi",
@@ -111,7 +111,7 @@
       "path": "MangaSushi",
       "environment": "source",
       "intents": 106961929,
-      "hash": "0fcbe54a0fcbe54a0fcbe54a0fcbe54a0fcbe54a0fcbe54a0fcbe54a0fcbe54a"
+      "hash": "2205b5622205b5622205b5622205b5622205b5622205b5622205b5622205b562"
     },
     {
       "id": "ManhwaNex",
@@ -138,7 +138,7 @@
       "path": "ManhwaNex",
       "environment": "source",
       "intents": 106961929,
-      "hash": "44d4e8ce44d4e8ce44d4e8ce44d4e8ce44d4e8ce44d4e8ce44d4e8ce44d4e8ce"
+      "hash": "13034b1913034b1913034b1913034b1913034b1913034b1913034b1913034b19"
     },
     {
       "id": "Marumaru",
@@ -162,7 +162,7 @@
       "path": "Marumaru",
       "environment": "source",
       "intents": 102761480,
-      "hash": "5f679bc25f679bc25f679bc25f679bc25f679bc25f679bc25f679bc25f679bc2"
+      "hash": "6ec6c2f36ec6c2f36ec6c2f36ec6c2f36ec6c2f36ec6c2f36ec6c2f36ec6c2f3"
     },
     {
       "id": "VortexScans",
@@ -189,7 +189,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 106961928,
-      "hash": "740133c6740133c6740133c6740133c6740133c6740133c6740133c6740133c6"
+      "hash": "422f95f8422f95f8422f95f8422f95f8422f95f8422f95f8422f95f8422f95f8"
     }
   ]
 }
