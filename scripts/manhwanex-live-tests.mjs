@@ -3,6 +3,7 @@ import vm from 'node:vm';
 import { load } from 'cheerio';
 import { assertReadOnlyManhwaNexPost, createManaRuntime, installManaHTTP } from './mana-runtime.mjs';
 import { runTestOperation, authorizeTestImage, fetchTestImage } from './mana-test-images.mjs';
+import { verifyRasterImageBytes } from './mana-test-image-bytes.mjs';
 
 const domain = 'https://manhwanex.com';
 const blocked = new Set(['adult', 'mature', 'smut', 'hentai', 'erotica', 'ecchi']);
@@ -27,43 +28,9 @@ async function imageBytes(source, url, origin) {
   return bytes;
 }
 function imageDimensions(bytes) {
-  if (bytes.subarray(0, 8).toString('hex') === '89504e470d0a1a0a') {
-    assert(bytes.length >= 45, 'Truncated PNG');
-    assert.equal(bytes.readUInt32BE(8), 13, 'Invalid PNG IHDR length');
-    assert.equal(bytes.subarray(12, 16).toString(), 'IHDR', 'PNG has no initial IHDR');
-    const dimensions = [bytes.readUInt32BE(16), bytes.readUInt32BE(20)];
-    assert(dimensions.every((value) => value > 0 && value <= 0x7fffffff), 'Invalid PNG dimensions');
-    let imageData = false;
-    for (let offset = 8; offset < bytes.length;) {
-      assert(offset + 12 <= bytes.length, 'Truncated PNG chunk');
-      const size = bytes.readUInt32BE(offset), kind = bytes.subarray(offset + 4, offset + 8).toString();
-      assert(size <= bytes.length - offset - 12, 'Truncated PNG chunk data');
-      assert(offset === 8 || kind !== 'IHDR', 'Duplicate PNG IHDR');
-      if (kind === 'IDAT') imageData = true;
-      offset += size + 12;
-      if (kind === 'IEND') {
-        assert(size === 0 && imageData && offset === bytes.length, 'PNG has no image data or is incomplete');
-        return dimensions;
-      }
-    }
-    assert.fail('PNG has no IEND');
-  }
-  assert(bytes.length >= 26, 'Truncated WebP');
-  assert.equal(bytes.subarray(0, 4).toString(), 'RIFF');
-  assert.equal(bytes.subarray(8, 12).toString(), 'WEBP');
-  assert.equal(bytes.readUInt32LE(4) + 8, bytes.length, 'WebP is incomplete');
-  for (let offset = 12; offset < bytes.length;) {
-    assert(offset + 8 <= bytes.length, 'Truncated WebP chunk');
-    const size = bytes.readUInt32LE(offset + 4);
-    assert(size + (size % 2) <= bytes.length - offset - 8, 'Truncated WebP chunk data');
-    offset += 8 + size + (size % 2);
-  }
-  assert(bytes.readUInt32LE(16) >= (bytes.subarray(12, 16).toString() === 'VP8L' ? 5 : 10), 'Truncated WebP dimensions');
-  const kind = bytes.subarray(12, 16).toString();
-  if (kind === 'VP8X') return [1 + bytes.readUIntLE(24, 3), 1 + bytes.readUIntLE(27, 3)];
-  if (kind === 'VP8L') { const n = bytes.readUInt32LE(21); return [(n & 0x3fff) + 1, ((n >>> 14) & 0x3fff) + 1]; }
-  assert.equal(kind, 'VP8 '); assert.equal(bytes.subarray(23, 26).toString('hex'), '9d012a');
-  return [bytes.readUInt16LE(26) & 0x3fff, bytes.readUInt16LE(28) & 0x3fff];
+  const { width, height } = verifyRasterImageBytes(bytes);
+  assert([width, height].every((value) => value <= 0x7fffffff), 'Invalid image dimensions');
+  return [width, height];
 }
 
 function advertisedCover(image) {
