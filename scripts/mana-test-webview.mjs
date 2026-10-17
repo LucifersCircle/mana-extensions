@@ -97,6 +97,7 @@ export function safeWebViewDiagnostic(result) {
   const phase = ['goto', 'evaluate', 'image-capture'].includes(result?.phase) ? result.phase : 'unknown';
   const reason = ['navigation-timeout', 'operation-timeout', 'document-identity-changed', 'navigation-error', 'evaluation-error',
     'callback-rejected', 'callback-invalid', 'render-readiness-timeout', 'serialization-error',
+    'chapter-count-exceeded', 'chapter-count-invalid', 'chapter-detail-ambiguous', 'chapter-detail-changed', 'chapter-ending-unconfirmed', 'chapter-endpoints-missing', 'chapter-latest-mismatch', 'chapter-link-identity', 'chapter-next-ambiguous', 'chapter-next-unavailable', 'chapter-page-invalid', 'chapter-page-repeated', 'chapter-page-unexpected', 'chapter-pager-ambiguous', 'reader-page-limit', 'callback-type-error', 'callback-reference-error', 'callback-range-error',
     'invalid-operation', 'driver-timeout', 'driver-element-changed', 'driver-frame-changed', 'driver-window-closed',
     'driver-session-lost', 'driver-script-error', 'driver-error', 'unexpected-error',
     'image-invalid-request', 'image-network-evidence-invalid', 'image-network-evidence-limit', 'image-redirect',
