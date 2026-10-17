@@ -64,7 +64,7 @@ import { allowed,
 
 const TTL = 300000
 export class Target implements ChapterSource, PageLinkResolver, CoverRequestHandler, PageRequestHandler, SourcePreferenceProvider {
-    readonly info: SourceInfo = { id: 'MangaStash', version: '0.0.1-alpha.6', name: 'MangaStash', thumbnail: 'MangaStash.png', rating: CatalogRating.MIXED, website: DOMAIN,
+    readonly info: SourceInfo = { id: 'MangaStash', version: '0.0.1-alpha.7', name: 'MangaStash', thumbnail: 'MangaStash.png', rating: CatalogRating.MIXED, website: DOMAIN,
         description: 'MangaStash native feeds and browse controls. Unlabeled titles use Suggestive only as a compatibility fallback. Some chapter dates are unavailable; their displayed upload ages are not reliable. Covers use the largest URL actually advertised per response.',
         supportedLanguages: ['en_US'], badges: ['Manga', 'Manhwa', 'Manhua'], developers: [{ name: 'Lucifers Circle', github: 'https://github.com/LucifersCircle' }] }
     readonly config = { owningLinks: ['mangastash.org'] }

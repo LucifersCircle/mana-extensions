@@ -4,6 +4,7 @@ import vm from 'node:vm';
 import { load } from 'cheerio';
 import { createManaRuntime, installManaHTTP } from './mana-runtime.mjs';
 import { authorizeTestImage, fetchTestImage } from './mana-test-images.mjs';
+import { verifyRasterImageBytes } from './mana-test-image-bytes.mjs';
 
 const domain = 'https://mangastash.org', all = { allowedContentRatings: [0, 1, 2, 3] };
 const ids = (items) => Array.from(items, (item) => item.id);
@@ -100,7 +101,7 @@ export async function testMangaStash({ check, referenceFetch = globalThis.fetch 
   const findToggle = async (target) => (await target.getPreferenceMenu()).sections[0].children.find((item) => item.id === 'onlySafe');
   let catalog, content, chapters, reader, home;
   await check('MangaStash native initialization and exact browse controls', async () => {
-    assert.equal(source.info.id, 'MangaStash'); assert.equal(source.info.version, '0.0.1-alpha.6');
+    assert.equal(source.info.id, 'MangaStash'); assert.equal(source.info.version, '0.0.1-alpha.7');
     assert.match(source.info.description, /chapter dates are unavailable/);
     assert.equal((await findToggle(source)).value, false);
     const form = await source.getSearchForm();
@@ -303,6 +304,25 @@ export async function testMangaStash({ check, referenceFetch = globalThis.fetch 
     assert.deepEqual(Array.from(reader.pages, (item) => item.url), expected); const declaredPages = [...responses.get(`${domain}/ayashimon/chapter-25.6`).matchAll(/^\s*totalPages:\s*(\d+),?\s*$/gm)];
     assert.equal(declaredPages.length, 1); assert.equal(expected.length, Number(declaredPages[0][1])); assert(expected.length > 0);
     assert.equal(new Set(expected).size, expected.length);
+  });
+  await check('Chapter-one number-only navigation preserves every page and real images', async () => {
+    assert(chapters.some(chapter => chapter.chapterId === 'ayashimon/chapter-1'));
+    const first = await source.getChapterData('ayashimon', 'ayashimon/chapter-1');
+    const html = responses.get(`${domain}/ayashimon/chapter-1`), $ = load(html);
+    const expected = $('#reader-pages > .reader-page').toArray().map(node => {
+      const img = $(node).find('.reader-page-inner > img');
+      return new URL(img.attr('data-src') || img.attr('src'), domain).href;
+    });
+    const total = html.match(/^[ \t]*totalPages:\s*(\d+),[ \t]*$/m);
+    assert(total); assert.equal(first.pages.length, Number(total[1]));
+    assert.deepEqual(Array.from(first.pages, item => item.url), expected);
+    for (const url of [first.pages[0].url, first.pages.at(-1).url]) {
+      const response = await fetchTestImage(source, url, { origin: 'page', fetchImpl: referenceFetch });
+      assert.equal(response.status, 200); assert.match(response.headers.get('content-type'), /^image\/jpeg/);
+      const bytes = Buffer.from(await response.arrayBuffer());
+      assert.equal(verifyRasterImageBytes(bytes).format, 'JPEG');
+      assert.equal(bytes.subarray(0, 2).toString('hex'), 'ffd8'); assert.equal(bytes.subarray(-2).toString('hex'), 'ffd9');
+    }
   });
   await check('First, middle, last reader and original cover images deliver complete image bytes', async () => {
     const cold = host(replay(), store).source;
