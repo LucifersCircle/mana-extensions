@@ -136,6 +136,60 @@ for (const code of ['captcha', 'security']) test(`${code} stops later operations
   assert.equal(calls.length, count);
 });
 
+test('failed WebView operations expose only fixed phase/reason enums and never retry', async () => {
+  for (const payload of [
+    { code: 'operation', phase: 'goto', reason: 'driver-frame-changed' },
+    { code: 'operation', phase: 'evaluate', reason: 'evaluation-error' },
+    { code: 'operation', phase: 'evaluate', reason: 'render-readiness-timeout' },
+    { code: 'operation', phase: 'SECRET-url', reason: 'SECRET-token' },
+    { code: 'SECRET-code', phase: 'goto', reason: 'navigation-error' },
+  ]) {
+    const { host, calls } = harness(path => path === '/webview/goto'
+      ? Response.json({ ...payload, error: 'SECRET-body' }, { status: 502 }) : undefined);
+    const source = host.wrapSource({ async search() {
+      const page = await host.WebViewPage.create();
+      await page.goto(url);
+    } });
+    await assert.rejects(source.search(), error => {
+      assert(!error.message.includes('SECRET'));
+      if (payload.reason === 'driver-frame-changed') assert.match(error.message, /goto: driver-frame-changed/);
+      if (payload.reason === 'evaluation-error') assert.match(error.message, /evaluate: evaluation-error/);
+      if (payload.reason === 'render-readiness-timeout') assert.match(error.message, /evaluate: render-readiness-timeout/);
+      if (payload.reason === 'SECRET-token') assert.match(error.message, /unknown: unknown/);
+      return true;
+    });
+    assert.equal(calls.filter(call => call.path === '/webview/goto').length, 1);
+    assert.equal(calls.at(-1).body.cmd, 'sessions.destroy');
+    await host.close();
+  }
+});
+
+test('Python operation diagnostics classify known failures without exposing raw exceptions', () => {
+  const program = `import ast, pathlib, sys
+tree = ast.parse(pathlib.Path(sys.argv[1]).read_text())
+nodes = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'operation_failure_reason']
+exec(compile(ast.Module(body=nodes, type_ignores=[]), sys.argv[1], 'exec'))
+assert operation_failure_reason(TimeoutError('WebView navigation timed out')) == 'navigation-timeout'
+assert operation_failure_reason(TimeoutError('SECRET')) == 'operation-timeout'
+for message, expected in [('WebView document identity changed', 'document-identity-changed'),
+ ('WebView navigation failed', 'navigation-error'), ('WebView evaluation failed', 'evaluation-error'),
+ ('WebView callback rejected', 'callback-rejected'), ('WebView callback invalid', 'callback-invalid'),
+ ('WebView render readiness timeout', 'render-readiness-timeout'), ('WebView serialization failed', 'serialization-error'),
+ ('SECRET body url token', 'invalid-operation')]:
+ assert operation_failure_reason(ValueError(message)) == expected
+for name, expected in [('TimeoutException', 'driver-timeout'),
+ ('StaleElementReferenceException', 'driver-element-changed'), ('NoSuchFrameException', 'driver-frame-changed'),
+ ('NoSuchWindowException', 'driver-window-closed'), ('InvalidSessionIdException', 'driver-session-lost'),
+ ('JavascriptException', 'driver-script-error'), ('WebDriverException', 'driver-error'),
+ ('SECRET exception class', 'unexpected-error')]:
+ error = type(name, (Exception,), {})('SECRET body url token')
+ assert operation_failure_reason(error) == expected
+assert operation_failure_reason(RuntimeError('SECRET')) == 'unexpected-error'
+print('Fixed failure diagnostics passed')`;
+  const result = spawnSync('python3', ['-c', program, fileURLToPath(new URL('./flaresolverr/webview_page.py', import.meta.url))], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+});
+
 test('wrong identity, malformed results and uncertain creation fail closed and destroy sessions', async () => {
   for (const failAt of ['/v1', '/webview/goto', '/webview/evaluate']) {
     const { host, calls } = harness((path, body) => {
@@ -226,6 +280,20 @@ print(json.dumps(next(n.value.value for n in tree.body if isinstance(n, ast.Assi
   for (const fn of ['() => undefined', '() => NaN', '() => new Date()', '() => [undefined]',
     '() => { const x = {}; x.x = x; return x; }', '() => { throw new Error("SECRET"); }']) {
     assert.equal((await run(fn)).error, 'WebView evaluation failed');
+  }
+  for (const [fn, expected] of [
+    ['() => undefined', 'serialization-error'],
+    ['() => { throw new Error("SECRET"); }', 'callback-rejected'],
+    ['async () => { throw new Error("SECRET"); }', 'callback-rejected'],
+    ['async () => { throw new Error("Marumaru rendered content did not become ready"); }', 'render-readiness-timeout'],
+    ['() => { throw { get message() { throw new Error("getter must not execute"); } }; }', 'callback-rejected'],
+    ['() => { throw new Proxy({}, { getOwnPropertyDescriptor() { throw new Error("SECRET-trap"); } }); }', 'callback-rejected'],
+    ['() => { location.href = "SECRET-url"; return 1; }', 'document-identity-changed'],
+    ['not valid syntax', 'callback-invalid'],
+  ]) {
+    const result = await run(fn);
+    assert.equal(result.reason, expected);
+    assert(!JSON.stringify(result).includes('SECRET'));
   }
   assert.equal((await run('() => Object.setPrototypeOf([1, 2], {toJSON() {throw new Error("must not run")}})')).encoded, '[1,2]');
 });

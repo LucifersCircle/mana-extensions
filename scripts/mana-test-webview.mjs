@@ -115,7 +115,13 @@ export function createManaTestWebView({ solverURL = process.env.FLARESOLVERR_URL
         const reason = ['insecure-capability', 'internal-page', 'certificate-marker', 'tls-navigation-error'].includes(result.reason) ? ` (${result.reason})` : '';
         stopped = new Error(`Browser security warning${reason}; WebView live checks stopped`);
       }
-      throw stopped ?? new Error('Live-test WebView operation failed; no upstream details are logged');
+      const phase = ['goto', 'evaluate'].includes(result?.phase) ? result.phase : 'unknown';
+      const reason = ['navigation-timeout', 'operation-timeout', 'document-identity-changed', 'navigation-error', 'evaluation-error',
+        'callback-rejected', 'callback-invalid', 'render-readiness-timeout', 'serialization-error',
+        'invalid-operation', 'driver-timeout', 'driver-element-changed', 'driver-frame-changed', 'driver-window-closed',
+        'driver-session-lost', 'driver-script-error', 'driver-error', 'unexpected-error'].includes(result?.reason) ? result.reason : 'unknown';
+      const diagnostic = result?.code === 'operation' ? ` (${phase}: ${reason})` : '';
+      throw stopped ?? new Error(`Live-test WebView operation failed${diagnostic}; no upstream details are logged`);
     }
     return result;
   }

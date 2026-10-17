@@ -90,7 +90,17 @@ def navigate(driver, url, wait_until, timeout, allow_startup=False):
 
 EVALUATE_SCRIPT = r"""
 const payload = arguments[0], done = arguments[arguments.length - 1];
-const fail = () => done({error: 'WebView evaluation failed'});
+const fail = reason => done({error: 'WebView evaluation failed', reason});
+const callbackFailure = error => {
+  // Only this exact source-owned timeout can refine the fixed rejection enum.
+  // Read an own data property, never an exception getter or arbitrary text.
+  let reason = 'callback-rejected';
+  try {
+    const message = error && typeof error === 'object' ? Object.getOwnPropertyDescriptor(error, 'message')?.value : undefined;
+    if (message === 'Marumaru rendered content did not become ready') reason = 'render-readiness-timeout';
+  } catch { /* A thrown Proxy trap must still complete the bridge callback. */ }
+  fail(reason);
+};
 const encode = (value, ancestors = new Set()) => {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return JSON.stringify(value);
   if (typeof value === 'number' && Number.isFinite(value)) return JSON.stringify(value);
@@ -113,18 +123,22 @@ const encode = (value, ancestors = new Set()) => {
   return encoded;
 };
 try {
-  if (location.href !== payload.url) throw new Error('Document changed');
+  if (location.href !== payload.url) return fail('document-identity-changed');
   // The callback is the actual compiled source function, not a replacement
   // parser. Evaluate it in this page's JS realm with only JSON bridge arguments.
   const fn = (0, eval)('(' + payload.script + ')');
-  if (typeof fn !== 'function') throw new Error('Function required');
-  Promise.resolve(fn(...payload.args)).then(value => {
-    if (location.href !== payload.url) throw new Error('Document changed');
-    const encoded = encode(value);
-    if (new TextEncoder().encode(encoded).length > 4 * 1024 * 1024) throw new Error('Result too large');
-    done({url: location.href, encoded});
-  }).catch(fail);
-} catch { fail(); }
+  if (typeof fn !== 'function') return fail('callback-invalid');
+  let value;
+  try { value = fn(...payload.args); } catch (error) { return callbackFailure(error); }
+  Promise.resolve(value).then(value => {
+    if (location.href !== payload.url) return fail('document-identity-changed');
+    try {
+      const encoded = encode(value);
+      if (new TextEncoder().encode(encoded).length > 4 * 1024 * 1024) throw new Error('Result too large');
+      done({url: location.href, encoded});
+    } catch { fail('serialization-error'); }
+  }).catch(callbackFailure);
+} catch { fail('callback-invalid'); }
 """
 
 
@@ -146,14 +160,49 @@ def evaluate(driver, payload):
         assert_browser_safety(driver)
         raise
     assert_document(driver, payload['url'])
+    if isinstance(result, dict) and result.get('error'):
+        message = {
+            'callback-rejected': 'WebView callback rejected',
+            'callback-invalid': 'WebView callback invalid',
+            'render-readiness-timeout': 'WebView render readiness timeout',
+            'serialization-error': 'WebView serialization failed',
+            'document-identity-changed': 'WebView document identity changed',
+        }.get(result.get('reason'), 'WebView evaluation failed')
+        raise ValueError(message)
     if (not isinstance(result, dict) or result.get('error') or result.get('url') != payload['url']
             or not isinstance(result.get('encoded'), str) or len(result['encoded'].encode()) > MAX_JSON):
         raise ValueError('WebView evaluation failed')
     return {'url': result['url'], 'value': json.loads(result['encoded'])}
 
 
+def operation_failure_reason(error):
+    """Fixed diagnostics only: never return exception text or driver metadata."""
+    if isinstance(error, TimeoutError):
+        return ('navigation-timeout' if type(error) is TimeoutError
+                and str(error) == 'WebView navigation timed out' else 'operation-timeout')
+    if type(error) is ValueError:
+        return {
+            'WebView document identity changed': 'document-identity-changed',
+            'WebView navigation failed': 'navigation-error',
+            'WebView evaluation failed': 'evaluation-error',
+            'WebView callback rejected': 'callback-rejected',
+            'WebView callback invalid': 'callback-invalid',
+            'WebView render readiness timeout': 'render-readiness-timeout',
+            'WebView serialization failed': 'serialization-error',
+        }.get(str(error), 'invalid-operation')
+    return {
+        'TimeoutException': 'driver-timeout',
+        'StaleElementReferenceException': 'driver-element-changed',
+        'NoSuchFrameException': 'driver-frame-changed',
+        'NoSuchWindowException': 'driver-window-closed',
+        'InvalidSessionIdException': 'driver-session-lost',
+        'JavascriptException': 'driver-script-error',
+        'WebDriverException': 'driver-error',
+    }.get(type(error).__name__, 'unexpected-error')
+
+
 def register(app):
-    def handle(keys, action):
+    def handle(keys, action, phase):
         try:
             payload = request.json or {}
             if set(payload) != keys or not re.fullmatch(r'[A-Za-z0-9-]{1,100}', str(payload.get('session', ''))):
@@ -163,10 +212,11 @@ def register(app):
         except BrowserGate as error:
             response.status = 409
             return {'error': 'Browser requires user action', 'code': error.code, 'reason': error.reason}
-        except Exception:
+        except Exception as error:
             response.status = 502
             # Never expose exception text, page bodies, arguments or credentials.
-            return {'error': 'Anonymous WebView operation failed'}
+            return {'error': 'Anonymous WebView operation failed', 'code': 'operation',
+                    'phase': phase, 'reason': operation_failure_reason(error)}
 
     @app.hook('before_request')
     def forget_destroyed_session():
@@ -180,8 +230,8 @@ def register(app):
 
     @app.post('/webview/goto')
     def goto():
-        return handle({'session', 'url', 'waitUntil', 'timeout'}, navigate_once)
+        return handle({'session', 'url', 'waitUntil', 'timeout'}, navigate_once, 'goto')
 
     @app.post('/webview/evaluate')
     def run_evaluation():
-        return handle({'session', 'url', 'script', 'args', 'timeout'}, evaluate)
+        return handle({'session', 'url', 'script', 'args', 'timeout'}, evaluate, 'evaluate')

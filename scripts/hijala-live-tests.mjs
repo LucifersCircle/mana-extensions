@@ -123,9 +123,15 @@ export async function testHijala({ source, check, highlights, searchResult, imag
     assert.deepEqual(Array.from(items, ({ id, title, isNonInteractive }) => ({ id, title, isNonInteractive })), expectedItems);
     assert(content.additionalTitles.includes('미모사')); assert(content.tags.length >= 6); assert(content.additionalInfo[0].items.length);
     assert.equal(content.cover, catalog.results.find((item) => item.id === 'mimosa').cover);
+    assert.equal(content.cover, new URL(consumedPost.featuredImage, domain).href, 'Cover must retain the exact current source original, not a thumbnail or older cover');
     assert(!/\/(?:thumb|small|medium)\//i.test(content.cover)); assert(content.chapters.length > 30);
     originalTitles = Array.from(content.additionalTitles);
-    const measured = await coverDimensions(source, content.cover); assert(measured.width > 500 && measured.height > 500);
+    const measured = await coverDimensions(source, content.cover);
+    assert.equal(measured.mime?.toLowerCase(), { JPEG: 'image/jpeg', PNG: 'image/png', WEBP: 'image/webp' }[measured.format], 'Cover MIME must match its actual image bytes');
+    assert(measured.bytes > 0 && [measured.width, measured.height].every((value) => Number.isSafeInteger(value) && value > 1), 'Cover must contain image bytes and non-placeholder dimensions');
+    // A publisher can replace its cover with a smaller original. Keep the real
+    // HTTP, full-body image checks and source identity fatal, not a pixel target.
+    if (measured.width <= 500 || measured.height <= 500) console.log(`HIJALA ORIGINAL ${measured.width}x${measured.height}: valid current source image below the former 500px target`);
   });
   await check('Complete chapter list is reused, sequentially indexed and paid hidden by default', async () => {
     const start = requests.length; chapters = await source.getChapters('mimosa'); assert.equal(requests.length, start);
