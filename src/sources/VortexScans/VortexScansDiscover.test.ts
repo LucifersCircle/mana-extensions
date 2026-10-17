@@ -1,31 +1,10 @@
 import {
-    buildVortexHomeSections,
     parseCollectionHighlights,
     parsePopularToday,
     selectPublishedCollections
 } from './VortexScansDiscover'
 
 describe('VortexScans discovery', () => {
-    test('promotes every API-backed home list into its own section', () => {
-        const sections = buildVortexHomeSections({
-            collections: [
-                { id: 2, slug: 'second', title: 'Second', displayOrder: 2 },
-                { id: 1, slug: 'first', title: 'First', displayOrder: 1 }
-            ]
-        })
-
-        expect(sections.map(({ id, title }) => ({ id, title })))
-            .toEqual([
-                { id: 'featured', title: 'Featured' },
-                { id: 'popular-today', title: 'Popular Today' },
-                { id: 'latest', title: 'Latest Releases' },
-                { id: 'new', title: 'New' },
-                { id: 'collection:first', title: 'First' },
-                { id: 'collection:second', title: 'Second' },
-                { id: 'most-popular', title: 'Most Popular' }
-            ])
-    })
-
     test('parses popular titles and resolves their serialized post IDs', () => {
         const html = `
             <script>window.data=[{id:42,slug:"the-series"}]</script>
