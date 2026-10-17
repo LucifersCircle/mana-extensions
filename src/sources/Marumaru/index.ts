@@ -99,6 +99,7 @@ export class Target implements ChapterSource, CoverRequestHandler, PageRequestHa
     private imageClient(origin: RequestOrigin.Cover | RequestOrigin.Page): HttpClient {
         // Request-local evidence keeps concurrent requests independent on each reusable client.
         const evidence = new WeakMap<Readonly<HttpRequest>, { url: string; policy: Policy }>()
+        // Keep the native host's User-Agent and the SDK's CloudflareError flow.
         const client = new HttpClient().setTimeoutMs(30000)
             .addRequestInterceptor(async (request, context) => {
                 this.validateImage({ url: request.url, origin: context.origin as RequestOrigin.Cover | RequestOrigin.Page }, origin)

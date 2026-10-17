@@ -649,7 +649,10 @@ comparisons come from live advertised inventories, not saved provider fixtures.
 Cover and page images use separate reusable SDK clients and synchronous transport
 factories. Async request/response interceptors retain request-local exact-URL,
 origin, issuing-policy and revocation checks. The SDK's native Cloudflare challenge
-handling is unchanged. Marumaru live checks exercise direct native HTTP only, without
+handling is unchanged. The source does not replace the native host's User-Agent: the
+current Mana SDK has no Paperback-style default-UA getter, so a Node-host check
+must not be reported as proof of the iOS host's identity. Marumaru live checks
+exercise direct native HTTP only, without
 browser image fallback: even an `application/octet-stream` cover must return its
 exact issued URL and pass independent full JPEG/PNG/WebP container/dimension checks.
 The retained test-only WebView/browser image adapter is not part of Marumaru's source

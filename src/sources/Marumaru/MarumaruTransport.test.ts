@@ -188,4 +188,35 @@ describe('Marumaru SDK image transport', () => {
         expect(urls).toEqual(['https://marumaru105.com/api/works?mediaType=MANHWA&page=100&size=49', 'https://marumaru105.com/api/search?q=query&page=100&media=MANHWA&sort=LATEST'])
     })
 
+    test('does not invent a User-Agent and preserves a caller-supplied request header', async () => {
+        const source = new Target(), api = new MarumaruAPI(), request = { url: cover, origin: RequestOrigin.Cover as const }
+        respond = async () => ({ status: 200, headers: { 'content-type': 'application/json' }, text: '{}' })
+        await api.json('https://marumaru105.com/api/works/123')
+        await api.json('https://api.storagewebtoon.store/api/v1/reader/A2/works/123')
+        await dispatch(source.getCoverTransport(request), request)
+        const pageRequest = { url: page, origin: RequestOrigin.Page as const }
+        await dispatch(source.getPageTransport(pageRequest), pageRequest)
+        for (const message of sent) expect(new Headers(message.headers as Record<string, string>).has('user-agent')).toBe(false)
+        const supplied = 'TestHostNativeIdentity/1.0'
+        source.getCoverTransport(request).addHeader('User-Agent', supplied)
+        await dispatch(source.getCoverTransport(request), request)
+        expect(new Headers(sent[4]?.headers as Record<string, string>).get('user-agent')).toBe(supplied)
+    })
+
+    test('SDK Cloudflare errors retain the actual API and image resolution URL', async () => {
+        const source = new Target(), api = new MarumaruAPI(), url = 'https://marumaru105.com/api/works/123'
+        respond = async () => ({ status: 503, headers: { server: 'cloudflare', 'content-type': 'text/html' }, text: '<html>cf-chl-test</html>' })
+        await expect(api.json(url)).rejects.toMatchObject({ name: 'CloudflareError', resolutionURL: url })
+        for (const [image, origin] of [[cover, RequestOrigin.Cover], [page, RequestOrigin.Page]] as const) {
+            const request = { url: image, origin }
+            const client = origin === RequestOrigin.Cover ? source.getCoverTransport(request) : source.getPageTransport(request)
+            await expect(dispatch(client, request)).rejects.toMatchObject({ name: 'CloudflareError', resolutionURL: image })
+        }
+    })
+
+    test('ordinary JSON 406 stays an HTTP failure, not a forged Cloudflare challenge', async () => {
+        respond = async () => ({ status: 406, headers: { 'content-type': 'application/json' }, text: '{"status":406,"path":"/seo-gate"}' })
+        await expect(new MarumaruAPI().json('https://marumaru105.com/api/works/123')).rejects.toThrow('Marumaru API request failed (HTTP 406)')
+    })
+
 })

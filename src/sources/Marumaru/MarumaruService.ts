@@ -24,6 +24,8 @@ export class MarumaruAPI {
     private readonly catalog = this.client(DOMAIN).addHeader('X-Site', 'marumaru')
     private readonly reader = this.client('https://api.storagewebtoon.store')
     private client(origin: string): HttpClient {
+        // Mana 0.1 owns native request identity. Unlike Paperback it exposes no
+        // default-UA getter: leave the host's User-Agent intact, never impersonate it.
         return new HttpClient().setTimeoutMs(30000).setRateLimit(3, 1000).addHeader('Accept', 'application/json')
             .addRequestInterceptor((request, context) => {
                 validateAPIURL(request.url)
@@ -37,7 +39,8 @@ export class MarumaruAPI {
         const response = await client.get(url)
         try {
             if (response.headers.get('cf-mitigated')?.toLowerCase() === 'challenge') throw new CloudflareError(url)
-            if (response.status !== 200 || response.url !== url || response.request.url !== url
+            if (response.status !== 200) throw new Error(`Marumaru API request failed (HTTP ${response.status})`)
+            if (response.url !== url || response.request.url !== url
                 || !/^application\/json(?:;|$)/i.test(response.headers.get('content-type') ?? '')) throw new Error('Marumaru returned an invalid API response')
             const body = await response.text()
             if (body.length > 4_000_000) throw new Error('Marumaru API response exceeds supported size')
