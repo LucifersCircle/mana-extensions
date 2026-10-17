@@ -1,4 +1,4 @@
-name: Live Extension Tests
+name: Temporary Marumaru cover diagnostic (not full suite)
 
 on:
   schedule:
@@ -15,7 +15,10 @@ concurrency:
 
 jobs:
   live-tests:
-    name: Test extensions
+    # Temporary non-merge branch: the diagnostic below retains every static gate.
+    # Normal live coverage is deliberately not claimed or published by this run.
+    if: ${{ false }}
+    name: Full live suite NOT RUN (temporary diagnostic)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -87,7 +90,7 @@ jobs:
     name: Update README status
     needs: live-tests
     if: >-
-      always() && github.event_name != 'pull_request' &&
+      false && always() && github.event_name != 'pull_request' &&
       github.ref_name == github.event.repository.default_branch &&
       needs.live-tests.result != 'cancelled'
     runs-on: ubuntu-latest
@@ -137,3 +140,46 @@ jobs:
           done
           exit 1
 
+
+  diagnose-cover:
+    name: Diagnose one native cover request (not full-suite validation)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout the isolated diagnostic candidate
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Preserve all existing static checks and build the same native sources
+        run: |
+          npm run test:report
+          npm test
+          npm run typecheck
+          npm run lint
+          npm run build -- --output dist
+      - name: Start the unchanged test-only Chromium host
+        run: docker compose up -d --build --wait --wait-timeout 90
+      - name: Diagnose the unchanged native cover request once
+        env:
+          FLARESOLVERR_URL: http://127.0.0.1:8191
+        run: |
+          set -o pipefail
+          mkdir -p bundles/cover-diagnostic
+          node scripts/marumaru-cover-diagnostic.mjs 2>&1 | tee bundles/cover-diagnostic/diagnostic.log
+      - name: Preserve bounded diagnostic output only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: temporary-cover-diagnostic-not-full-suite
+          retention-days: 7
+          path: bundles/cover-diagnostic/
+      - name: Stop the test-only Chromium host
+        if: always()
+        run: docker compose down
