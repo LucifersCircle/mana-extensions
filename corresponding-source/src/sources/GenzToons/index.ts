@@ -34,7 +34,7 @@ import { chapters,
     seriesURL,
     slug } from './Parser'
 export class Target implements ChapterSource, PageLinkResolver, CoverRequestHandler, PageRequestHandler {
-    readonly info: SourceInfo = { id: 'GenzToons', name: 'GenzToons', version: '0.0.1-alpha.1', website: DOMAIN, thumbnail: 'GenzToons.png', rating: CatalogRating.MIXED,
+    readonly info: SourceInfo = { id: 'GenzToons', name: 'GenzToons', version: '0.0.1-alpha.2', website: DOMAIN, thumbnail: 'GenzToons.png', rating: CatalogRating.MIXED,
         description: 'Genz Toons public comics, adapted from nicartjay and keiyoushi. Novels and paid chapters are excluded. Unclassified titles use a Suggestive compatibility fallback, not a verified age rating. Relative or missing dates are unknown. Draft: image MIME compatibility is unverified.',
         supportedLanguages: ['en_US'], badges: ['Manga', 'Manhwa', 'Manhua'], developers: [{ name: 'Lucifers Circle', github: 'https://github.com/LucifersCircle' }, { name: 'nicartjay', github: 'https://github.com/Nicartjay' }, { name: 'keiyoushi', github: 'https://github.com/keiyoushi' }] }
     readonly config = { owningLinks: ['genztoons.org'] }

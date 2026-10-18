@@ -120,7 +120,11 @@ export function reader(html: string, id: string, chapter: Chapter): ChapterData 
     if (!rows.length || rows.length > 1000 || $('#pages').children().not('img, script').length > 0) throw new Error('Incomplete GenzToons image inventory')
     return { pages: rows.toArray().map((node, index) => {
         const row = $(node), uid = row.attr('uid') ?? ''
-        if (!/^[A-Za-z0-9_-]{1,100}$/.test(uid) || row.attr('count') !== String(index) || seen.has(uid)) throw new Error('Invalid GenzToons page identity or order')
+        if (!/^[A-Za-z0-9_-]{1,100}$/.test(uid)) throw new Error(`Invalid GenzToons page UID at page ${index + 1} (length ${uid.length})`)
+        const count = row.attr('count')
+        const countDiagnostic = count === undefined ? 'missing' : /^\d{1,6}$/.test(count) ? String(Number(count)) : 'non-numeric or out of range'
+        if (count !== String(index)) throw new Error(`Invalid GenzToons page order at page ${index + 1} (expected ${index}, received ${countDiagnostic})`)
+        if (seen.has(uid)) throw new Error(`Duplicate GenzToons page UID at page ${index + 1}`)
         seen.add(uid)
         return { url: imageURL('https://cdn.meowing.org/uploads/' + uid) }
     }) }

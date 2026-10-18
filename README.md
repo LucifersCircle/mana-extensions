@@ -1,24 +1,35 @@
 # GenzToons device-test preview (not a release)
 
 EXPERIMENTAL / UNRELEASED. Native capability result: 6 of 7 pass; the image MIME
-check remains failed and actual device compatibility is unverified.
+check remains failed. User device testing confirmed the original test title loads,
+but did not confirm all 16 pages or general image compatibility.
 
-Reviewed local build: GenzToons 0.0.1-alpha.1. This preview contains only this
+Reviewed local build: GenzToons 0.0.1-alpha.2. This preview contains only this
 source. It does not change the production repository/feed and has no workflows.
 
 Known limitation: the provider returns genuine WebP pages as text/plain. The
-shared MIME test remains failed; actual Mana reader rendering is unverified.
-No image headers or identities are rewritten. Use only to test this limitation.
+shared MIME test remains failed; headers and image identities are not rewritten.
+The user reports Senior Disciple Lee Hwe loads in Mana. The Necromancer Who Spares
+No Expense, Chapter 20 instead failed a reader-manifest guard before image loading.
+Alpha.2 only distinguishes invalid UID, duplicate UID and count/order failures;
+it changes no acceptance rule and is not a fix for that chapter.
 
-Once its exact preview repository URL is supplied, add that URL with Mana's normal
-repository-add action. Confirm the repository name says GenzToons unpublished
-device test. Install GenzToons alpha.1 from this preview, open Senior Disciple Lee
-Hwe, and read public Chapter 1. Check all 16 pages, including first and last;
-close and reopen the reader. Report Mana build/iOS version and exact errors, if
-any. Stop on access or security barriers; do not use paid chapters.
+Add the supplied preview repository URL using Mana's normal repository action.
+Confirm its name is GenzToons unpublished device test and the installed source
+version is 0.0.1-alpha.2. A branch-based preview URL can receive later reviewed
+updates; an immutable commit URL remains pinned. Keep the production repository.
+Open The Necromancer Who Spares No Expense, public Chapter 20, and report the
+complete error screenshot plus Mana/iOS versions. Do not test paid chapters or
+change security settings. Stop on access/security barriers. No full HTML, raw UID,
+cookies or headers are included in the diagnostic message.
 
-Remove this preview repository/source from Mana after testing, without removing
-the production repository. Do not expect this preview to receive updates.
+Fresh provider validation is stopped after an ordinary detail request received
+Cloudflare error 1010 (owner/browser-signature denial). No alternate identity or
+route was attempted. Alpha.2 passed static/build, captured-data and negative checks;
+it has not received a fresh native live pass. Original native result remains 6/7.
+
+Remove the preview repository/source from Mana after testing if desired, without
+removing the production repository. This preview is not a stable update channel.
 
 Mana adaptation © 2026 Lucifers Circle, GPL-3.0-or-later (LICENSE). Keyoapp
 selectors, UID loader and source icon adapted from nicartjay / keiyoushi in
@@ -34,7 +45,7 @@ provided with this non-source bundle under the included license terms. The
 repository name is deliberately changed in the public single-source test index;
 the built extension body and emitted source metadata are unchanged.
 
-Raw-GitHub repository import is itself unverified in Mana. Official developer
-code establishes this static layout, not the importer’s allowed hosts or MIME
-rules. If the repository URL is rejected, report that error rather than changing
-security settings. This preview is not production CI or release verification.
+The user successfully installed the original raw-GitHub preview and opened its
+reader. A branch-based URL and alpha.2 refresh still require device verification.
+If the repository URL is rejected, report that error rather than changing security
+settings. This preview is not production CI or release verification.
