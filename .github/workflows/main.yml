@@ -36,6 +36,8 @@ jobs:
         run: |
           npm run build -- --output dist
           npm run verify:bundles
+      - name: Include full license and attribution notices
+        run: node scripts/stage-notices.mjs dist
       - name: Add custom domain
         run: cp CNAME dist/CNAME
 
