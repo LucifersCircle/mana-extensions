@@ -2,6 +2,7 @@
 // Oracles inspect consumed live responses only; they do not fetch reference copies.
 import assert from 'node:assert/strict';
 import { load } from 'cheerio';
+import { decode } from 'html-entities';
 const plain = value => JSON.parse(JSON.stringify(value));
 const norm = value => String(value ?? '').replace(/\s+/g, ' ').trim();
 const chapterIDs = chapters => Array.from(chapters, c => c.chapterId);
@@ -75,6 +76,78 @@ function madara(host, sample) {
   };
 }
 export const sourceContracts = {
+  QiScans: {
+    // Candidate identities come from saved genuine browser evidence and the
+    // upstream PB route inspection, not a successful legacy-v1 native response.
+    // This contract must remain unrun while the administrative denial persists.
+    sample: '4190634673-eleceed', chapter: 'chapter-1', section: 'banners',
+    issuedImageOwnership: false, separateBrowseAndSearch: true,
+    methods: [...methods, ...controls], controls: true, documentLimit: 32,
+    budgetReason: 'Complete v1 inventory at 30 rows/page plus discovery, search, metadata, reader and controls. The saved browser inventory has 404 rows (14 equivalent v1 pages), not a verified legacy count. Reader reuses only a complete short-lived inventory; budget exhaustion fails without truncation.',
+    filter(_state, fields) {
+      const option = fields.find(field => field.id === 'genre')?.options?.find(value => value.id);
+      assert(option, 'QiScans native genre menu has no selectable source option');
+      return { genre: option };
+    },
+    filtered(state, _result, filter) {
+      const requests = state.transport.requests.slice(state.filterRequestStart);
+      assert(requests.some(request => {
+        const url = new URL(request.url);
+        return url.origin === 'https://api.qimanhwa.com' && url.pathname === '/api/v1/series'
+          && url.searchParams.get('genre') === filter.genre.id && !url.searchParams.has('q');
+      }), 'Native QiScans filtered browse did not transmit the selected source genre slug');
+    },
+    detail(state) {
+      const raw = json(state, url => url.origin === 'https://api.qimanhwa.com' && url.pathname === `/api/v1/series/${state.id}`);
+      assert.equal(raw.slug, state.id); assert.equal(state.content.webUrl, `https://qimanhwa.com/series/${raw.slug}`);
+      assert.equal(state.content.title, norm(decode(raw.title)));
+      assert.equal(state.content.cover, raw.cover || '');
+      assert.equal(state.content.contentRating, 1, 'Unclassified QiScans must retain its disclosed compatibility fallback, not Safe');
+      assert.deepEqual(Array.from(state.content.additionalTitles ?? []), (raw.alternativeTitles || '').split(/, ?/).map(value => norm(decode(value))).filter(Boolean));
+    },
+    inventory(state) {
+      const captures = state.transport.captures.filter(item => {
+        const url = new URL(item.url);
+        return url.origin === 'https://api.qimanhwa.com' && url.pathname === `/api/v1/series/${state.id}/chapters`;
+      });
+      assert(captures.length, 'Native QiScans v1 inventory was not consumed');
+      const rows = [], ids = new Set(); let total, pageCount;
+      for (const [index, capture] of captures.entries()) {
+        const url = new URL(capture.url), raw = JSON.parse(capture.text), page = index + 1;
+        assert.equal(url.searchParams.get('page'), String(page));
+        assert.equal(url.searchParams.get('perPage'), '30'); assert.equal(url.searchParams.get('sort'), 'desc');
+        assert.equal(raw.current, page); assert(Array.isArray(raw.data));
+        assert(Number.isSafeInteger(raw.totalItems) && raw.totalItems >= 0);
+        assert(Number.isSafeInteger(raw.totalPages) && raw.totalPages >= 1);
+        if (total !== undefined) assert.equal(raw.totalItems, total, 'QiScans source inventory changed during traversal');
+        if (pageCount !== undefined) assert.equal(raw.totalPages, pageCount);
+        total = raw.totalItems; pageCount = raw.totalPages;
+        assert.equal(raw.next, page === pageCount ? null : page + 1);
+        for (const row of raw.data) {
+          text(row.slug, 'Source chapter slug'); assert(!ids.has(row.slug), 'Source v1 continuation repeated a chapter identity');
+          ids.add(row.slug); rows.push(row);
+        }
+      }
+      assert.equal(captures.length, pageCount, 'Native traversal omitted advertised v1 pages');
+      assert.equal(rows.length, total, 'Native traversal omitted source chapter rows');
+      const available = rows.filter(row => row.publishStatus === 'PUBLIC' && row.isFree === true && row.requiresPurchase === false && row.price === 0 && (row.discountedPrice == null || row.discountedPrice === 0))
+        .sort((a, b) => a.number - b.number || Date.parse(a.createdAt) - Date.parse(b.createdAt));
+      assert.deepEqual(Array.from(state.chapters, row => [row.chapterId, row.number]), available.map(row => [row.slug, row.number]), 'Native chapters must retain every public/free source slug and exact decimal number');
+      assert.deepEqual(Array.from(state.chapters, row => row.webUrl), available.map(row => `https://qimanhwa.com/series/${state.id}/${row.slug}`));
+    },
+    reader(state) {
+      const raw = json(state, url => url.origin === 'https://api.qimanhwa.com' && url.pathname === `/api/v1/series/${state.id}/chapters/${state.chapter.chapterId}`);
+      assert.equal(raw.slug, state.chapter.chapterId); assert.equal(raw.number, state.chapter.number);
+      if (raw.series) assert.equal(raw.series.slug, state.id);
+      assert.equal(raw.publishStatus, 'PUBLIC'); assert.equal(raw.isFree, true); assert.equal(raw.requiresPurchase, false);
+      assert.equal(raw.price, 0); assert(raw.discountedPrice == null || raw.discountedPrice === 0);
+      assert(Array.isArray(raw.images) && raw.images.length > 0); assert.equal(raw.images.length, raw.totalImages);
+      assert.equal(new Set(raw.images.map(image => image.order)).size, raw.images.length);
+      assert(raw.images.every(image => Number.isSafeInteger(image.order) && image.order >= 0));
+      const ordered = [...raw.images].sort((a, b) => a.order - b.order);
+      assert.deepEqual(Array.from(state.reader.pages, page => page.url), ordered.map(image => image.url), 'Native reader must preserve the complete source image manifest/order');
+    },
+  },
   Hijala: {
     sample: 'mimosa', chapter: 'chapter-56', issuedImageOwnership: false, methods: [...methods, ...controls, 'getPreferenceMenu'], controls: true, documentLimit: 12,
     // Observe this run's already-parsed native data. Never replace a response or source method result.
