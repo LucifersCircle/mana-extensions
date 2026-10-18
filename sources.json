@@ -30,7 +30,7 @@
       "path": "Hijala",
       "environment": "source",
       "intents": 106961929,
-      "hash": "47d9695e47d9695e47d9695e47d9695e47d9695e47d9695e47d9695e47d9695e"
+      "hash": "7f9d09097f9d09097f9d09097f9d09097f9d09097f9d09097f9d09097f9d0909"
     },
     {
       "id": "Kagane",
@@ -59,7 +59,7 @@
       "path": "Kagane",
       "environment": "source",
       "intents": 106961929,
-      "hash": "03b5455603b5455603b5455603b5455603b5455603b5455603b5455603b54556"
+      "hash": "34d44b4534d44b4534d44b4534d44b4534d44b4534d44b4534d44b4534d44b45"
     },
     {
       "id": "MangaStash",
@@ -86,7 +86,7 @@
       "path": "MangaStash",
       "environment": "source",
       "intents": 106961929,
-      "hash": "34f808ba34f808ba34f808ba34f808ba34f808ba34f808ba34f808ba34f808ba"
+      "hash": "0391855c0391855c0391855c0391855c0391855c0391855c0391855c0391855c"
     },
     {
       "id": "MangaSushi",
@@ -111,7 +111,38 @@
       "path": "MangaSushi",
       "environment": "source",
       "intents": 106961929,
-      "hash": "44085e2044085e2044085e2044085e2044085e2044085e2044085e2044085e20"
+      "hash": "7c91eeba7c91eeba7c91eeba7c91eeba7c91eeba7c91eeba7c91eeba7c91eeba"
+    },
+    {
+      "id": "MangaTaro",
+      "name": "MangaTaro",
+      "thumbnail": "MangaTaro.png",
+      "version": "0.0.1-alpha.1",
+      "website": "https://mangataro.org",
+      "rating": 1,
+      "description": "Public manga catalog, site filters and complete image chapters. Unclassified titles use a Suggestive compatibility fallback, not a verified age rating. Relative upload dates are approximate; unavailable dates remain unknown. Text novels and restricted chapters are not supported.",
+      "supportedLanguages": [
+        "en_US"
+      ],
+      "badges": [
+        "Manga",
+        "Manhwa",
+        "Manhua"
+      ],
+      "developers": [
+        {
+          "name": "Lucifers Circle",
+          "github": "https://github.com/LucifersCircle"
+        },
+        {
+          "name": "Inkdex",
+          "github": "https://github.com/inkdex"
+        }
+      ],
+      "path": "MangaTaro",
+      "environment": "source",
+      "intents": 106961928,
+      "hash": "0064fd6e0064fd6e0064fd6e0064fd6e0064fd6e0064fd6e0064fd6e0064fd6e"
     },
     {
       "id": "ManhwaNex",
@@ -138,7 +169,7 @@
       "path": "ManhwaNex",
       "environment": "source",
       "intents": 106961929,
-      "hash": "5f96053b5f96053b5f96053b5f96053b5f96053b5f96053b5f96053b5f96053b"
+      "hash": "67e069cf67e069cf67e069cf67e069cf67e069cf67e069cf67e069cf67e069cf"
     },
     {
       "id": "Marumaru",
@@ -162,7 +193,7 @@
       "path": "Marumaru",
       "environment": "source",
       "intents": 102761480,
-      "hash": "3eaca2343eaca2343eaca2343eaca2343eaca2343eaca2343eaca2343eaca234"
+      "hash": "0623143906231439062314390623143906231439062314390623143906231439"
     },
     {
       "id": "VortexScans",
@@ -189,7 +220,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 106961928,
-      "hash": "43fcdf6543fcdf6543fcdf6543fcdf6543fcdf6543fcdf6543fcdf6543fcdf65"
+      "hash": "7c86705f7c86705f7c86705f7c86705f7c86705f7c86705f7c86705f7c86705f"
     }
   ]
 }
