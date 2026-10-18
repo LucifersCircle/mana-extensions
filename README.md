@@ -514,22 +514,29 @@ labels and order are preserved, including multipart labels. Refreshing the chapt
 list rechecks bulk availability without per-chapter requests. Counts and first/last
 page comparisons come from live advertised inventories, not saved provider fixtures.
 
-Title access is persisted separately from catalog/image snapshots so overlapping
+Title access is persisted separately from catalog snapshots so overlapping
 source contexts cannot erase a completed detail grant. Grants retain their native
 rating scope, original one-hour lifetime and revocation generation; positive adult
 evidence cannot be downgraded by a stale catalog snapshot. Missing or expired access
 still requires a successful title refresh with native content-policy context.
 
 Cover and page images use separate reusable SDK clients and synchronous transport
-factories. Async request/response interceptors retain request-local exact-URL,
-origin, issuing-policy and revocation checks. The SDK's native Cloudflare challenge
-handling is unchanged. API and image clients send the Marumaru site origin as Referer;
+factories. Stateless request/response interceptors retain exact-URL, role-specific
+trusted-path, native-origin, GET and header checks without ObjectStore or per-image
+metadata requests. Valid public URLs no longer require issuance, expire with metadata,
+or get revoked by later metadata/access changes. Legacy image records are ignored and
+omitted from subsequent metadata writes; this is not a library or app-cache migration.
+Request-local native rating filters, bounded title/access arrays, one-hour evidence
+lifetimes and contextless chapter access checks remain. Final metadata and reader checks retain
+positive adult evidence, policy revision and access-generation safeguards. This does
+not claim native display, cancellation or cache behavior. The SDK's native Cloudflare
+challenge handling is unchanged. API and image clients send the Marumaru site origin as Referer;
 X-Site remains limited to the Marumaru site API. The source does not replace the native host's User-Agent: the
 current Mana SDK has no Paperback-style default-UA getter, so a Node-host check
 must not be reported as proof of the iOS host's identity. Marumaru live checks
 exercise direct native HTTP only, without
 browser image fallback: even an `application/octet-stream` cover must return its
-exact issued URL and pass independent full JPEG/PNG/WebP container/dimension checks.
+exact requested URL and pass independent full JPEG/PNG/WebP container/dimension checks.
 The retained test-only WebView/browser image adapter is not part of Marumaru's source
 or native-API proof. Passing the SDK test host is not physical iOS device validation.
 Without FLARESOLVERR_URL, local network checks use ordinary direct requests,
