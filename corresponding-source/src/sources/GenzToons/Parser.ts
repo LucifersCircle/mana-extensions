@@ -17,6 +17,8 @@ import { incompleteRatingInfo,
 export const DOMAIN = 'https://genztoons.org'
 export const text = (value: string): string => value.replace(/\s+/g, ' ').trim()
 const comicTypes = new Set(['manga', 'manhwa', 'manhua', 'comic', 'mangatoon'])
+// Provider UIDs are exact upload basenames, including optional image extensions.
+const uploadBasename = /^[A-Za-z0-9_-]+(?:\.(?:avif|webp|png|jpe?g))?$/
 export function slug(value: string): string {
     if (typeof value !== 'string' || !/^[a-z0-9]+(?:[a-z0-9-]*[a-z0-9])?$/.test(value) || value.length > 250) throw new Error('Invalid GenzToons identity')
     return value
@@ -36,13 +38,12 @@ function identity(value: string, kind: 'series' | 'chapter'): string {
 export function imageURL(value: string, cover = false): string {
     const url = new URL(value)
     if (url.href !== value || url.username || url.password || url.hash || /[\\\s%]/.test(value)) throw new Error('Invalid GenzToons image URL')
-    const upload = /^[A-Za-z0-9_-]+(?:\.(?:avif|webp|png|jpe?g))?$/
     if (!cover) {
-        if (url.origin !== 'https://cdn.meowing.org' || url.search || !url.pathname.startsWith('/uploads/') || !upload.test(url.pathname.slice(9))) throw new Error('Unsupported GenzToons page URL')
+        if (url.origin !== 'https://cdn.meowing.org' || url.search || !url.pathname.startsWith('/uploads/') || !uploadBasename.test(url.pathname.slice(9))) throw new Error('Unsupported GenzToons page URL')
     } else {
         // Preserve the exact provider-supplied cover proxy URL, not a rewritten CDN URL.
         const target = url.searchParams.get('url') ?? '', width = url.searchParams.get('w') ?? ''
-        if (url.origin !== 'https://wsrv.nl' || url.pathname !== '/' || !target.startsWith('cdn.meowing.org/uploads/') || !upload.test(target.slice(24)) || !/^[1-9]\d{0,3}$/.test(width) || [...url.searchParams.keys()].sort().join(',') !== 'url,w') throw new Error('Unsupported GenzToons cover URL')
+        if (url.origin !== 'https://wsrv.nl' || url.pathname !== '/' || !target.startsWith('cdn.meowing.org/uploads/') || !uploadBasename.test(target.slice(24)) || !/^[1-9]\d{0,3}$/.test(width) || [...url.searchParams.keys()].sort().join(',') !== 'url,w') throw new Error('Unsupported GenzToons cover URL')
     }
     return value
 }
@@ -120,7 +121,7 @@ export function reader(html: string, id: string, chapter: Chapter): ChapterData 
     if (!rows.length || rows.length > 1000 || $('#pages').children().not('img, script').length > 0) throw new Error('Incomplete GenzToons image inventory')
     return { pages: rows.toArray().map((node, index) => {
         const row = $(node), uid = row.attr('uid') ?? ''
-        if (!/^[A-Za-z0-9_-]{1,100}$/.test(uid)) throw new Error(`Invalid GenzToons page UID at page ${index + 1} (length ${uid.length})`)
+        if (uid.length > 100 || !uploadBasename.test(uid)) throw new Error(`Invalid GenzToons page UID at page ${index + 1} (length ${uid.length})`)
         const count = row.attr('count')
         const countDiagnostic = count === undefined ? 'missing' : /^\d{1,6}$/.test(count) ? String(Number(count)) : 'non-numeric or out of range'
         if (count !== String(index)) throw new Error(`Invalid GenzToons page order at page ${index + 1} (expected ${index}, received ${countDiagnostic})`)

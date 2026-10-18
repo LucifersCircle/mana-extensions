@@ -5,7 +5,7 @@
     {
       "id": "GenzToons",
       "name": "GenzToons",
-      "version": "0.0.1-alpha.2",
+      "version": "0.0.1-alpha.3",
       "website": "https://genztoons.org",
       "thumbnail": "GenzToons.png",
       "rating": 1,
@@ -35,7 +35,7 @@
       "path": "GenzToons",
       "environment": "source",
       "intents": 106955784,
-      "hash": "180572da180572da180572da180572da180572da180572da180572da180572da"
+      "hash": "5c57d8385c57d8385c57d8385c57d8385c57d8385c57d8385c57d8385c57d838"
     }
   ]
 }
