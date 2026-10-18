@@ -195,6 +195,11 @@ content of every image.
   pages are retained; native reader checks load actual image bytes.
 - Mana's series-only Highlights show the latest visible chapter per series;
   chapter links resolve to their series under the pinned native API.
+- Public images reuse separate Cover and Page clients per source instance, with
+  existing URL validation and provider headers. Same-role clients accept another
+  valid URL, including the SDK's normal fragment stripping; no image ledger,
+  metadata fetch or preference read is added. This is client allocation reuse,
+  not a claim about native image caching or device performance.
 
 **Settings and limitations**
 
