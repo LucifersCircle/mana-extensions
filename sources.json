@@ -30,7 +30,7 @@
       "path": "Hijala",
       "environment": "source",
       "intents": 106961929,
-      "hash": "007b583e007b583e007b583e007b583e007b583e007b583e007b583e007b583e"
+      "hash": "3714269b3714269b3714269b3714269b3714269b3714269b3714269b3714269b"
     },
     {
       "id": "Kagane",
@@ -59,7 +59,7 @@
       "path": "Kagane",
       "environment": "source",
       "intents": 106961929,
-      "hash": "4b1356344b1356344b1356344b1356344b1356344b1356344b1356344b135634"
+      "hash": "147a8855147a8855147a8855147a8855147a8855147a8855147a8855147a8855"
     },
     {
       "id": "MangaStash",
@@ -86,7 +86,7 @@
       "path": "MangaStash",
       "environment": "source",
       "intents": 106961929,
-      "hash": "7c561ca47c561ca47c561ca47c561ca47c561ca47c561ca47c561ca47c561ca4"
+      "hash": "45bd4ada45bd4ada45bd4ada45bd4ada45bd4ada45bd4ada45bd4ada45bd4ada"
     },
     {
       "id": "MangaSushi",
@@ -111,7 +111,7 @@
       "path": "MangaSushi",
       "environment": "source",
       "intents": 106961929,
-      "hash": "0355af9c0355af9c0355af9c0355af9c0355af9c0355af9c0355af9c0355af9c"
+      "hash": "33431dec33431dec33431dec33431dec33431dec33431dec33431dec33431dec"
     },
     {
       "id": "MangaTaro",
@@ -142,7 +142,7 @@
       "path": "MangaTaro",
       "environment": "source",
       "intents": 106961928,
-      "hash": "287d8639287d8639287d8639287d8639287d8639287d8639287d8639287d8639"
+      "hash": "5f16541a5f16541a5f16541a5f16541a5f16541a5f16541a5f16541a5f16541a"
     },
     {
       "id": "ManhwaNex",
@@ -169,7 +169,7 @@
       "path": "ManhwaNex",
       "environment": "source",
       "intents": 106961929,
-      "hash": "1837f73f1837f73f1837f73f1837f73f1837f73f1837f73f1837f73f1837f73f"
+      "hash": "4ed0c5044ed0c5044ed0c5044ed0c5044ed0c5044ed0c5044ed0c5044ed0c504"
     },
     {
       "id": "Marumaru",
@@ -194,7 +194,38 @@
       "path": "Marumaru",
       "environment": "source",
       "intents": 102761480,
-      "hash": "7e2150c77e2150c77e2150c77e2150c77e2150c77e2150c77e2150c77e2150c7"
+      "hash": "4b45dd574b45dd574b45dd574b45dd574b45dd574b45dd574b45dd574b45dd57"
+    },
+    {
+      "id": "QiScans",
+      "name": "QiScans",
+      "thumbnail": "QiScans.png",
+      "version": "0.0.1-alpha.1",
+      "website": "https://qimanhwa.com",
+      "rating": 1,
+      "description": "QiScans legacy v1 public comic catalog, adapted from Inkdex QiScans. Unclassified titles use a Suggestive compatibility fallback, not a verified age rating. Text novels, redirected titles and paid chapters are excluded.",
+      "supportedLanguages": [
+        "en_US"
+      ],
+      "badges": [
+        "Manga",
+        "Manhwa",
+        "Manhua"
+      ],
+      "developers": [
+        {
+          "name": "Lucifers Circle",
+          "github": "https://github.com/LucifersCircle"
+        },
+        {
+          "name": "Inkdex",
+          "github": "https://github.com/inkdex"
+        }
+      ],
+      "path": "QiScans",
+      "environment": "source",
+      "intents": 106961928,
+      "hash": "786314b2786314b2786314b2786314b2786314b2786314b2786314b2786314b2"
     },
     {
       "id": "VortexScans",
@@ -221,7 +252,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 106961928,
-      "hash": "0361352603613526036135260361352603613526036135260361352603613526"
+      "hash": "33379fa533379fa533379fa533379fa533379fa533379fa533379fa533379fa5"
     }
   ]
 }
