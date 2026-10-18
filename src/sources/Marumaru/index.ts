@@ -40,7 +40,7 @@ import { accessPolicy,
     rating,
     visible } from './MarumaruPolicy'
 export class Target implements ChapterSource, CoverRequestHandler, PageRequestHandler, PageLinkResolver {
-    readonly info:SourceInfo={id:'Marumaru',name:'Marumaru',version:'0.0.1-alpha.9',thumbnail:'Marumaru.png',website:DOMAIN,rating:CatalogRating.MIXED,supportedLanguages:['ko_KR'],badges:['Manga'],developers:[{name:'Lucifers Circle',github:'https://github.com/LucifersCircle'}],description:'Korean manga catalog and reader through the site’s ordinary public APIs. Unclassified titles use a Suggestive compatibility fallback, not a source age rating. Explicit 19 labels are preserved.'};
+    readonly info:SourceInfo={id:'Marumaru',name:'Marumaru',version:'0.0.1-alpha.10',thumbnail:'Marumaru.png',website:DOMAIN,rating:CatalogRating.MIXED,supportedLanguages:['ko_KR'],badges:['Manga'],developers:[{name:'Lucifers Circle',github:'https://github.com/LucifersCircle'}],description:'Korean manga catalog and reader through the site’s ordinary public APIs. Unclassified titles use a Suggestive compatibility fallback, not a source age rating. Explicit 19 labels are preserved.'};
     readonly config={owningLinks:['marumaru105.com']};
     private readonly api = new MarumaruAPI()
     private readonly service = new MarumaruService(url => this.api.json(url))
