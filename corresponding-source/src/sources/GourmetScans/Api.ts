@@ -20,7 +20,11 @@ export class Api {
         if (request.method !== HttpMethod.Get || request.body !== undefined) throw new Error('Unsupported GourmetScans request method')
         documentURL(request.url); return request
     })
-    async text(url: string): Promise<string> {
+    async text(url: string): Promise<string> { return this.read(url, (_response, body) => body) }
+    async novel(url: string, sanitize: (body: string) => string): Promise<HttpResponse> {
+        return this.read(url, (response, body) => response.withBody(sanitize(body), { contentType: 'text/html; charset=utf-8' }))
+    }
+    private async read<T>(url: string, transform: (response: HttpResponse, body: string) => T): Promise<T> {
         documentURL(url)
         const response = await this.client.get(url)
         try {
@@ -28,7 +32,7 @@ export class Api {
             const body = await response.text(); challenge(response, body)
             if (response.status !== 200) throw new Error(`GourmetScans unavailable (HTTP ${response.status})`)
             if (body.length > 5_000_000 || !/text\/html/i.test(response.headers.get('content-type') ?? '')) throw new Error('Invalid GourmetScans document')
-            return body
+            return transform(response, body)
         } finally { response.releaseNative() }
     }
 }

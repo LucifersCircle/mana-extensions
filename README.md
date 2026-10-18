@@ -1,12 +1,14 @@
 # GourmetScans unpublished Mana device preview
 
-This isolated preview contains GourmetScans 0.0.1-alpha.2 only. It does not modify the stable repository or represent a hosted live-test pass. Keep your regular Mana repository unchanged.
+This isolated preview contains GourmetScans 0.0.1-alpha.3 only. It does not modify the stable repository or represent a hosted live-test pass. Keep your regular Mana repository unchanged.
 
-This preview adds verified login-lock inventory markers and fixed reader-payload diagnostic categories, without changing reader acceptance guards. SHA256: 370a91149c1e3ee5c06d611bbf2cf58488e962a4e74d6cdccd3760db7a8388cc.
+This preview retains the alpha.2 login-lock inventory fix and adds an experimental native HTML document path for titles explicitly identified as novels. It preserves chapter identity, content policy, paid/login checks and the existing comic reader. Novel documents contain only escaped text, paragraphs and simple emphasis, with all provider attributes, styles and external resources removed. SHA256: 2977ca58d34b9027a70586747d4bb5bc9491f2fcb3d8cb0d84e1f58e09b466e4.
 
-Current hosted run 39143086521 passed static/build and unchanged-existing-source proof but only 2/8 native capabilities. Its first document received a managed challenge; the anonymous test browser timed out without fetching an assisted document. This preview contains no test-host browser helper or transport bypass. The user confirmed basic preview operation; comic reader rendering remains unverified on device. Star Chef is a novel and is not supported by this image-reader implementation. Novel handling and catalog inclusion are unchanged in alpha.2.
+The saved free Star Chef chapter 1 response is used for offline native transport and sanitization checks; no copyrighted chapter fixture is included here. These checks do not establish that the iOS reader displays HTML. Actual native novel display remains a device check. The user confirmed basic preview operation and one unspecified image chapter rendering, not full reader validation.
 
-Suggested device smoke test: install this preview source, open its catalog, search for A Kind Goblin's Bird, open details and its chapter list, then Chapter 34 (end). Check whether actual reader pages render, including first and last. If Mana presents a challenge or error, report the actual message rather than changing security settings. Confirm your Mana/iOS versions when reporting results. This smoke test does not claim complete automated coverage.
+Hosted run 39146861116 passed static/build and unchanged-existing-source proof but only 2/8 native capabilities due to a managed challenge and bounded test-browser warm-up timeout. No hosted live pass is claimed for this preview. It contains no browser helper or transport bypass.
+
+Suggested device test: refresh this preview source to alpha.3, reopen Star Chef, With a Side of Regression details, then chapter 1. Check whether paragraphs and emphasis display as text. Also check A Kind Goblin's Bird chapter 34 (end), including its first and last comic images. If Mana presents a challenge or error, report the actual message rather than changing security settings. Confirm Mana/iOS versions when reporting results. This is an isolated device trial, not complete automated coverage.
 
 ## Corresponding source and reproduction
 

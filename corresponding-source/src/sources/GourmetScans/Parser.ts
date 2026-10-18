@@ -85,9 +85,9 @@ export function detail(html: string, id: string): Content {
     return { title, cover: image($, $('.summary_image img').first().get(0)), webUrl: expected,
         summary: text($('.description-summary .summary__content, .summary__content').first().text()).replace(/Show more$/i, '').trim(),
         additionalTitles: [text(field($, 'alternative').text())].filter(Boolean), tags: genres,
-        contentRating: nativeRating(age), contentType: type === 'Manhwa' ? ContentType.MANHWA : type === 'Manga' ? ContentType.MANGA : type === 'Manhua' ? ContentType.MANHUA : undefined,
+        contentRating: nativeRating(age), contentType: type === 'Manhwa' ? ContentType.MANHWA : type === 'Manga' ? ContentType.MANGA : type === 'Manhua' ? ContentType.MANHUA : type === 'Novel' ? ContentType.NOVEL : undefined,
         status: status === 'completed' ? PublicationStatus.COMPLETED : status === 'ongoing' ? PublicationStatus.ONGOING : undefined,
-        recommendedPanelMode: ReadingMode.PAGED_MANGA,
+        recommendedPanelMode: type === 'Novel' ? undefined : ReadingMode.PAGED_MANGA,
         additionalInfo: [...(people.length ? [staff.section({ id: 'staff', title: 'Staff', hasMore: false, items: people })] : []), ...(age === undefined ? [incompleteRatingInfo()] : []), tags.section({ id: 'chapter-date', title: 'Chapter dates', items: [tags.item({ id: 'unknown-dates', title: 'Missing source chapter dates are unknown, not recent releases.', isNonInteractive: true })] })] }
 }
 export function chapters(html: string, id: string): Chapter[] {
@@ -109,9 +109,7 @@ export function chapters(html: string, id: string): Chapter[] {
     return result.reverse().map((value, index) => ({ ...value, index }))
 }
 export function reader(html: string, id: string, chapterId: string): ChapterData {
-    const $ = load(html), expected = seriesURL(id) + slug(chapterId) + '/'
-    if ($('link[rel="canonical"]').attr('href') !== expected || $('#wp-manga-current-chap').attr('value') !== chapterId) throw new Error('GourmetScans reader identity mismatch')
-    if ($('.reading-content.content-blocked, .reading-content.chapter-premium, .reading-content.login-required, .reading-content .content-blocked, .content-blocked.login-required, .reading-content .chapter-premium, .reading-content .login-required').length) throw new Error('GourmetScans chapter requires payment or login')
+    const $ = readerDocument(html, id, chapterId)
     const values: Record<string, string> = {}
     for (const node of $('script').toArray()) for (const match of $(node).text().matchAll(/var\s+(chapter_data|wpmangaprotectornonce)\s*=\s*'([^']*)';/g)) {
         if (values[match[1] as string] !== undefined) throw new Error('Ambiguous GourmetScans reader payload')
@@ -132,4 +130,32 @@ export function reader(html: string, id: string, chapterId: string): ChapterData
     const count = $('.reading-content .page-break[id^="chapter-img-"]').length
     if (!Array.isArray(pages) || !count || pages.length !== count || pages.length > 1000 || pages.some(value => typeof value !== 'string') || new Set(pages).size !== pages.length) throw new Error('GourmetScans reader page inventory is incomplete')
     return { pages: pages.map(value => ({ url: imageURL(value as string) })) }
+}
+
+function readerDocument(html: string, id: string, chapterId: string): ReturnType<typeof load> {
+    const $ = load(html), expected = seriesURL(id) + slug(chapterId) + '/'
+    if ($('link[rel="canonical"]').attr('href') !== expected || $('#wp-manga-current-chap').attr('value') !== chapterId) throw new Error('GourmetScans reader identity mismatch')
+    if ($('.reading-content.content-blocked, .reading-content.chapter-premium, .reading-content.login-required, .reading-content .content-blocked, .content-blocked.login-required, .reading-content .chapter-premium, .reading-content .login-required').length) throw new Error('GourmetScans chapter requires payment or login')
+    return $
+}
+
+// Device-preview trial: native HTML rendering is not yet confirmed.
+export function novelDocument(html: string, id: string, chapterId: string): string {
+    const $ = readerDocument(html, id, chapterId)
+    const blocks = $('.chapter-type-text .reading-content > .translation-block')
+    if (blocks.length !== 1) throw new Error('GourmetScans novel text is missing or ambiguous')
+    const escape = (value: string): string => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+    const serialize = (node: cheerio.Element): string => {
+        if (node.type === 'text') return escape(node.data ?? '')
+        if (node.type !== 'tag') return ''
+        if (!['p', 'strong', 'em', 'b', 'i', 'br'].includes(node.name ?? '')) {
+            if (!['script', 'style', 'iframe', 'object', 'embed', 'svg', 'math'].includes(node.name ?? '') && text($(node).text())) throw new Error('Unsupported GourmetScans novel text structure')
+            return ''
+        }
+        if (node.name === 'br') return '<br>'
+        return `<${node.name}>${(node.children ?? []).map(child => serialize(child)).join('')}</${node.name}>`
+    }
+    const body = blocks.contents().toArray().map(node => serialize(node)).join('')
+    if (!text(load(body).root().text()) || body.length > 500_000 || !blocks.children('p').length) throw new Error('Invalid GourmetScans novel text')
+    return '<!doctype html><html><head><meta charset="utf-8"></head><body>' + body + '</body></html>'
 }
