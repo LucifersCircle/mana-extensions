@@ -100,7 +100,7 @@ export function chapters(html: string, id: string): Chapter[] {
         const chapterId = slug(href.slice(base.length, -1))
         if (seen.has(chapterId)) throw new Error('Repeated GourmetScans chapter identity')
         seen.add(chapterId)
-        if (row.is('.premium, .locked, .paid, .login-required, [data-price], [data-coin]') || row.find('.fa-lock, .ion-locked, .chapter-premium, [data-price], [data-coin]').length || /(?:premium|locked|paid)/i.test(row.attr('class') ?? '')) return
+        if (row.is('.premium, .locked, .paid, .login-required, .required-login, [data-price], [data-coin]') || row.find('.fa-lock, .fa-user-lock, .ion-locked, .chapter-premium, .login-required, .required-login, [data-price], [data-coin]').length || /(?:premium|locked|paid)/i.test(row.attr('class') ?? '')) return
         const title = text(anchor.text()), number = Number(title.match(/(?:chapter|side story|epilogue|prologue)\s*(\d+(?:\.\d+)?)/i)?.[1] ?? chapterId.match(/(?:chapter|side-story|epilogue|prologue)-(\d+(?:-\d+)?)/)?.[1]?.replace('-', '.'))
         if (!Number.isFinite(number)) throw new Error('Unsupported GourmetScans chapter numbering')
         const dateText = row.find('.chapter-release-date [title]').attr('title') ?? text(row.find('.chapter-release-date').text()), timestamp = Date.parse(dateText)
@@ -118,7 +118,10 @@ export function reader(html: string, id: string, chapterId: string): ChapterData
         values[match[1] as string] = match[2] as string
     }
     const payload = values.chapter_data, nonce = values.wpmangaprotectornonce
-    if (!payload || payload.length > 2_000_000 || !nonce || !/^[a-f0-9]{10}$/.test(nonce)) throw new Error('Incomplete GourmetScans reader payload')
+    if (!payload) throw new Error('Incomplete GourmetScans reader payload: chapter data missing')
+    if (payload.length > 2_000_000) throw new Error('Incomplete GourmetScans reader payload: chapter data exceeds limit')
+    if (!nonce) throw new Error('Incomplete GourmetScans reader payload: reader key missing')
+    if (!/^[a-f0-9]{10}$/.test(nonce)) throw new Error('Incomplete GourmetScans reader payload: reader key format unsupported')
     const data = JSON.parse(payload) as { ct: string, iv: string, s: string }
     if (typeof data.ct !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(data.ct) || !/^[a-f0-9]{32}$/.test(data.iv) || !/^[a-f0-9]{16}$/.test(data.s)) throw new Error('Invalid GourmetScans reader encryption envelope')
     const ciphertext = Base64.parse(data.ct)

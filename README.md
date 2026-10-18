@@ -1,10 +1,10 @@
 # GourmetScans unpublished Mana device preview
 
-This isolated preview contains GourmetScans 0.0.1-alpha.1 only. It does not modify the stable repository or represent a hosted live-test pass. Keep your regular Mana repository unchanged.
+This isolated preview contains GourmetScans 0.0.1-alpha.2 only. It does not modify the stable repository or represent a hosted live-test pass. Keep your regular Mana repository unchanged.
 
-The unchanged reviewed source bundle is from PR91 head abbfe4c4b95e8c44258db16690ba2be48e90d13f. SHA256: 90afff3b0868a28dbcb0179c54b82803680c7b75e6649da9197774a54665d689.
+This preview adds verified login-lock inventory markers and fixed reader-payload diagnostic categories, without changing reader acceptance guards. SHA256: 370a91149c1e3ee5c06d611bbf2cf58488e962a4e74d6cdccd3760db7a8388cc.
 
-Current hosted run 39143086521 passed static/build and unchanged-existing-source proof but only 2/8 native capabilities. Its first document received a managed challenge; the anonymous test browser timed out without fetching an assisted document. This preview contains no test-host browser helper or transport bypass. Native app behavior remains unverified.
+Current hosted run 39143086521 passed static/build and unchanged-existing-source proof but only 2/8 native capabilities. Its first document received a managed challenge; the anonymous test browser timed out without fetching an assisted document. This preview contains no test-host browser helper or transport bypass. The user confirmed basic preview operation; comic reader rendering remains unverified on device. Star Chef is a novel and is not supported by this image-reader implementation. Novel handling and catalog inclusion are unchanged in alpha.2.
 
 Suggested device smoke test: install this preview source, open its catalog, search for A Kind Goblin's Bird, open details and its chapter list, then Chapter 34 (end). Check whether actual reader pages render, including first and last. If Mana presents a challenge or error, report the actual message rather than changing security settings. Confirm your Mana/iOS versions when reporting results. This smoke test does not claim complete automated coverage.
 
