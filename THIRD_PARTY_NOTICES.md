@@ -28,3 +28,16 @@ execute downloaded site scripts. These adaptations remain GPL-3.0-or-later. See 
 Marumaru's icon is the unmodified source-brand PNG also distributed by
 [LucifersCircle/pirate.vodka-extensions](https://github.com/LucifersCircle/pirate.vodka-extensions/blob/29e05c0fed61973ed41492cda624e1a718b2eef7/src/Marumaru/static/icon.png).
 The source's branding is retained without redesign.
+
+## QiScans
+
+QiScans is adapted from the QiScans source in
+[inkdex/general-extensions](https://github.com/inkdex/general-extensions/tree/6a38c563de092342fb8d07913a6ad7d3dcd05bf4/src/QiScans),
+commit `6a38c563de092342fb8d07913a6ad7d3dcd05bf4` (0.9/stable),
+copyright © 2026 Inkdex, developed by Lucifers Circle, licensed GPL-3.0-or-later.
+The original source-brand PNG icon is retained unmodified.
+The v1 route shapes, numbered chapter traversal, search normalization and
+apostrophe fallback, discovery sections, and metadata/chapter/image parsing
+contracts originate there. The adaptation uses native Mana contracts, with
+additional completeness, URL and paid-content safeguards. These adaptations
+remain GPL-3.0-or-later. See LICENSE.
