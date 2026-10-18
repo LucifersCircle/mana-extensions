@@ -569,6 +569,7 @@ image bytes are preserved. Warm-up waits for ordinary noninteractive managed
 checks only: CAPTCHA controls are never clicked, and an explicit CAPTCHA or browser
 security warning stops the test. TLS verification stays enabled. The native source
 still uses Mana's built-in CloudflareError flow; no helper is bundled in extensions.
+Marumaru's bundled [icon](assets/Marumaru.png) preserves the same source-brand PNG used by the Paperback extension.
 Marumaru uses the site's ordinary JSON catalog/search/work APIs and the exact public
 reader API advertised by each work. Metadata, complete chapter inventories and reader
 pages use reusable SDK HTTP clients; no WebView navigation or per-card detail request
