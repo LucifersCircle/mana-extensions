@@ -30,7 +30,7 @@
       "path": "Hijala",
       "environment": "source",
       "intents": 106961929,
-      "hash": "5a87c3015a87c3015a87c3015a87c3015a87c3015a87c3015a87c3015a87c301"
+      "hash": "4e32a57c4e32a57c4e32a57c4e32a57c4e32a57c4e32a57c4e32a57c4e32a57c"
     },
     {
       "id": "Kagane",
@@ -59,7 +59,7 @@
       "path": "Kagane",
       "environment": "source",
       "intents": 106961929,
-      "hash": "59e98eaa59e98eaa59e98eaa59e98eaa59e98eaa59e98eaa59e98eaa59e98eaa"
+      "hash": "02a3f9ab02a3f9ab02a3f9ab02a3f9ab02a3f9ab02a3f9ab02a3f9ab02a3f9ab"
     },
     {
       "id": "MangaStash",
@@ -86,7 +86,7 @@
       "path": "MangaStash",
       "environment": "source",
       "intents": 106961929,
-      "hash": "28a6c80428a6c80428a6c80428a6c80428a6c80428a6c80428a6c80428a6c804"
+      "hash": "2e9ec8fc2e9ec8fc2e9ec8fc2e9ec8fc2e9ec8fc2e9ec8fc2e9ec8fc2e9ec8fc"
     },
     {
       "id": "MangaSushi",
@@ -111,7 +111,7 @@
       "path": "MangaSushi",
       "environment": "source",
       "intents": 106961929,
-      "hash": "5e58cb595e58cb595e58cb595e58cb595e58cb595e58cb595e58cb595e58cb59"
+      "hash": "4a61a0c84a61a0c84a61a0c84a61a0c84a61a0c84a61a0c84a61a0c84a61a0c8"
     },
     {
       "id": "MangaTaro",
@@ -142,7 +142,7 @@
       "path": "MangaTaro",
       "environment": "source",
       "intents": 106961928,
-      "hash": "3285956332859563328595633285956332859563328595633285956332859563"
+      "hash": "7634d6f37634d6f37634d6f37634d6f37634d6f37634d6f37634d6f37634d6f3"
     },
     {
       "id": "ManhwaNex",
@@ -169,12 +169,12 @@
       "path": "ManhwaNex",
       "environment": "source",
       "intents": 106961929,
-      "hash": "42cb242442cb242442cb242442cb242442cb242442cb242442cb242442cb2424"
+      "hash": "65ef43fc65ef43fc65ef43fc65ef43fc65ef43fc65ef43fc65ef43fc65ef43fc"
     },
     {
       "id": "Marumaru",
       "name": "Marumaru",
-      "version": "0.0.1-alpha.9",
+      "version": "0.0.1-alpha.10",
       "thumbnail": "Marumaru.png",
       "website": "https://marumaru105.com",
       "rating": 1,
@@ -194,7 +194,7 @@
       "path": "Marumaru",
       "environment": "source",
       "intents": 102761480,
-      "hash": "231e3931231e3931231e3931231e3931231e3931231e3931231e3931231e3931"
+      "hash": "6f755eaa6f755eaa6f755eaa6f755eaa6f755eaa6f755eaa6f755eaa6f755eaa"
     },
     {
       "id": "QiScans",
@@ -225,7 +225,7 @@
       "path": "QiScans",
       "environment": "source",
       "intents": 106961928,
-      "hash": "071b62c0071b62c0071b62c0071b62c0071b62c0071b62c0071b62c0071b62c0"
+      "hash": "5e60f7805e60f7805e60f7805e60f7805e60f7805e60f7805e60f7805e60f780"
     },
     {
       "id": "VortexScans",
@@ -252,7 +252,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 106961928,
-      "hash": "5e644cbc5e644cbc5e644cbc5e644cbc5e644cbc5e644cbc5e644cbc5e644cbc"
+      "hash": "4a561e474a561e474a561e474a561e474a561e474a561e474a561e474a561e47"
     }
   ]
 }
