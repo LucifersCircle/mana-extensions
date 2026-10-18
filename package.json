@@ -41,6 +41,7 @@
   "dependencies": {
     "@mana-app/types": "0.1.0",
     "cheerio": "1.0.0-rc.12",
+    "crypto-es": "2.1.0",
     "html-entities": "^2.5.2"
   },
   "mana": {

@@ -1,6 +1,7 @@
 // Small source-specific seeds/oracles for the same native method contract.
 // Oracles inspect consumed live responses only; they do not fetch reference copies.
 import assert from 'node:assert/strict';
+import { createHash, createDecipheriv } from 'node:crypto';
 import { load } from 'cheerio';
 import { decode } from 'html-entities';
 const plain = value => JSON.parse(JSON.stringify(value));
@@ -77,6 +78,49 @@ function madara(host, sample) {
   };
 }
 export const sourceContracts = {
+  GourmetScans: {
+    sample: 'a-kind-goblins-bird', chapter: 'chapter-34-end', section: 'latest',
+    issuedImageOwnership: false, methods: [...methods, ...controls], controls: true, documentLimit: 9,
+    filter(state, fields) {
+      const option = fields.find(field => field.id === 'genres')?.options?.find(value => value.id === 'historical');
+      assert(option, 'GourmetScans genre taxonomy lacks the seed genre');
+      state.filterQuery = state.content.title; state.filterExpectedID = state.id;
+      return { genres: option };
+    },
+    filtered(state, _result, filter) {
+      assert(state.transport.requests.slice(state.filterRequestStart).some(request => new URL(request.url).searchParams.get('genre[]') === filter.genres.id), 'Native genre filter was not transmitted');
+    },
+    detail(state) {
+      const expected = `https://gourmetsupremacy.com/project/${state.id}/`, $ = html(state, url => url.href === expected);
+      assert.equal(state.content.webUrl, expected); assert.equal($('link[rel="canonical"]').attr('href'), expected);
+      const heading = $('.post-title h1').first().clone(); heading.children().remove();
+      assert.equal(state.content.title, norm(heading.text()));
+      const genres = $('.tab-summary .genres-content a').toArray().map(a => [$(a).attr('href').split('/').filter(Boolean).at(-1), norm($(a).text())]);
+      assert.deepEqual(Array.from(state.content.tags, tag => [tag.id, tag.title]), genres);
+      assert.equal(state.content.contentRating, 3, 'Smut genre must not become an unknown/Safe title');
+    },
+    inventory(state) {
+      const $ = html(state, url => url.href === `https://gourmetsupremacy.com/project/${state.id}/`);
+      const rows = $('.wp-manga-chapter > a').toArray(), ids = rows.map(a => $(a).attr('href').split('/').filter(Boolean).at(-1));
+      const count = Number(norm($('.tab-summary .post-content_item').filter((_, node) => norm($(node).find('.summary-heading').text()) === 'Chapters').find('.summary-content').text()));
+      assert.equal(rows.length, count); assert.equal(new Set(ids).size, count);
+      assert.deepEqual(chapterIDs(state.chapters), ids.reverse(), 'Native inventory must include all source chapters in chronological display order');
+    },
+    reader(state) {
+      const expected = `https://gourmetsupremacy.com/project/${state.id}/${state.chapter.chapterId}/`, $ = html(state, url => url.href === expected);
+      assert.equal($('link[rel="canonical"]').attr('href'), expected); assert.equal($('#wp-manga-current-chap').val(), state.chapter.chapterId);
+      const script = $('script').toArray().map(node => $(node).text()).find(value => value.includes('var chapter_data='));
+      assert(script, 'Missing consumed public reader envelope');
+      const payload = JSON.parse(script.match(/var chapter_data='([^']+)';/)[1]);
+      const nonce = script.match(/var wpmangaprotectornonce='([^']+)';/)[1];
+      let block = Buffer.alloc(0), material = Buffer.alloc(0);
+      while (material.length < 32) { block = createHash('md5').update(Buffer.concat([block, Buffer.from(nonce), Buffer.from(payload.s, 'hex')])).digest(); material = Buffer.concat([material, block]); }
+      const cipher = createDecipheriv('aes-256-cbc', material.subarray(0, 32), Buffer.from(payload.iv, 'hex'));
+      const pages = JSON.parse(JSON.parse(Buffer.concat([cipher.update(Buffer.from(payload.ct, 'base64')), cipher.final()]).toString('utf8')));
+      assert.equal(pages.length, $('.reading-content .page-break[id^="chapter-img-"]').length);
+      assert.deepEqual(Array.from(state.reader.pages, page => page.url), pages, 'Native crypto/reader manifest differs from independent Node decoder');
+    },
+  },
   QiScans: {
     // Candidate identities come from saved genuine browser evidence and the
     // upstream PB route inspection, not a successful legacy-v1 native response.
