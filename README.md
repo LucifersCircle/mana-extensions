@@ -36,21 +36,23 @@ publishing. Pull requests never publish sources.
 
 <!-- LIVE_TEST_STATUS:START -->
 
-Last checked: **2026-10-18 01:35:53 UTC** · [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/39086981104)
-Live scope: all; 7/7 sources selected; 7 complete reports. Non-PR events run the full live suite
-Selected tests: 51/55 passed; 4 failed.
-Started: 2026-10-18 01:34:23 UTC
-Tested commit: `99d22e2`
+Last checked: **2026-10-18 06:40:28 UTC** · [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/39104771128)
+Live scope: all; 9/9 sources selected; 9 complete reports. Non-PR events run the full live suite
+Selected tests: 61/71 passed; 10 failed.
+Started: 2026-10-18 06:38:47 UTC
+Tested commit: `c037e82`
 
 | Extension | Result | Passed | Failed | Duration |
 | --- | --- | ---: | ---: | ---: |
-| Hijala | ✅ Pass | 8/8 | 0 | 5.29s |
-| Kagane | ✅ Pass | 8/8 | 0 | 11.03s |
-| MangaStash | ✅ Pass | 8/8 | 0 | 5.92s |
-| MangaSushi | ✅ Pass | 8/8 | 0 | 6.47s |
-| ManhwaNex | ✅ Pass | 8/8 | 0 | 3.72s |
-| Marumaru | ❌ Fail | 3/7 | 4 | 1.62s |
-| VortexScans | ✅ Pass | 8/8 | 0 | 3.66s |
+| Hijala | ✅ Pass | 8/8 | 0 | 6.24s |
+| Kagane | ✅ Pass | 8/8 | 0 | 13.90s |
+| MangaStash | ✅ Pass | 8/8 | 0 | 8.35s |
+| MangaSushi | ✅ Pass | 8/8 | 0 | 8.13s |
+| MangaTaro | ✅ Pass | 8/8 | 0 | 3.61s |
+| ManhwaNex | ✅ Pass | 8/8 | 0 | 4.27s |
+| Marumaru | ❌ Fail | 3/7 | 4 | 1.85s |
+| QiScans | ❌ Fail | 2/8 | 6 | 0.79s |
+| VortexScans | ✅ Pass | 8/8 | 0 | 4.03s |
 
 <details>
 <summary>Test output</summary>
@@ -58,59 +60,75 @@ Tested commit: `99d22e2`
 | Extension | Test | Result | Duration | Failure |
 | --- | --- | --- | ---: | --- |
 | Hijala | Native initialization and advertised capabilities | ✅ Pass | 0.00s | — |
-| Hijala | Native discovery schema and representative section | ✅ Pass | 1.52s | — |
-| Hijala | Native catalog search and offered continuation | ✅ Pass | 1.11s | — |
-| Hijala | Native details identity, metadata and complete cover bytes | ✅ Pass | 1.13s | — |
-| Hijala | Native complete chapter inventory, identity and ordering | ✅ Pass | 0.23s | — |
-| Hijala | Native reader identity, ordered manifest and first/last image bytes | ✅ Pass | 0.68s | — |
-| Hijala | Native advertised controls and representative filtered search | ✅ Pass | 0.58s | — |
+| Hijala | Native discovery schema and representative section | ✅ Pass | 1.78s | — |
+| Hijala | Native catalog search and offered continuation | ✅ Pass | 1.32s | — |
+| Hijala | Native details identity, metadata and complete cover bytes | ✅ Pass | 1.25s | — |
+| Hijala | Native complete chapter inventory, identity and ordering | ✅ Pass | 0.25s | — |
+| Hijala | Native reader identity, ordered manifest and first/last image bytes | ✅ Pass | 0.87s | — |
+| Hijala | Native advertised controls and representative filtered search | ✅ Pass | 0.73s | — |
 | Hijala | Native policy and image-origin guards fail before network | ✅ Pass | 0.00s | — |
 | Kagane | Native initialization and advertised capabilities | ✅ Pass | 0.00s | — |
-| Kagane | Native discovery schema and representative section | ✅ Pass | 3.47s | — |
-| Kagane | Native catalog search and offered continuation | ✅ Pass | 1.70s | — |
-| Kagane | Native details identity, metadata and complete cover bytes | ✅ Pass | 2.32s | — |
-| Kagane | Native complete chapter inventory, identity and ordering | ✅ Pass | 1.18s | — |
-| Kagane | Native reader identity, ordered manifest and first/last image bytes | ✅ Pass | 1.37s | — |
-| Kagane | Native advertised controls and representative filtered search | ✅ Pass | 0.96s | — |
+| Kagane | Native discovery schema and representative section | ✅ Pass | 4.09s | — |
+| Kagane | Native catalog search and offered continuation | ✅ Pass | 2.09s | — |
+| Kagane | Native details identity, metadata and complete cover bytes | ✅ Pass | 3.02s | — |
+| Kagane | Native complete chapter inventory, identity and ordering | ✅ Pass | 1.27s | — |
+| Kagane | Native reader identity, ordered manifest and first/last image bytes | ✅ Pass | 2.30s | — |
+| Kagane | Native advertised controls and representative filtered search | ✅ Pass | 1.11s | — |
 | Kagane | Native policy and image-origin guards fail before network | ✅ Pass | 0.00s | — |
 | MangaStash | Native initialization and advertised capabilities | ✅ Pass | 0.00s | — |
-| MangaStash | Native discovery schema and representative section | ✅ Pass | 0.87s | — |
-| MangaStash | Native catalog search and offered continuation | ✅ Pass | 2.08s | — |
-| MangaStash | Native details identity, metadata and complete cover bytes | ✅ Pass | 1.47s | — |
+| MangaStash | Native discovery schema and representative section | ✅ Pass | 0.95s | — |
+| MangaStash | Native catalog search and offered continuation | ✅ Pass | 2.52s | — |
+| MangaStash | Native details identity, metadata and complete cover bytes | ✅ Pass | 1.21s | — |
 | MangaStash | Native complete chapter inventory, identity and ordering | ✅ Pass | 0.01s | — |
-| MangaStash | Native reader identity, ordered manifest and first/last image bytes | ✅ Pass | 0.74s | — |
-| MangaStash | Native advertised controls and representative filtered search | ✅ Pass | 0.71s | — |
+| MangaStash | Native reader identity, ordered manifest and first/last image bytes | ✅ Pass | 2.83s | — |
+| MangaStash | Native advertised controls and representative filtered search | ✅ Pass | 0.80s | — |
 | MangaStash | Native policy and image-origin guards fail before network | ✅ Pass | 0.00s | — |
 | MangaSushi | Native initialization and advertised capabilities | ✅ Pass | 0.00s | — |
-| MangaSushi | Native discovery schema and representative section | ✅ Pass | 1.28s | — |
-| MangaSushi | Native catalog search and offered continuation | ✅ Pass | 2.15s | — |
-| MangaSushi | Native details identity, metadata and complete cover bytes | ✅ Pass | 0.57s | — |
-| MangaSushi | Native complete chapter inventory, identity and ordering | ✅ Pass | 0.43s | — |
-| MangaSushi | Native reader identity, ordered manifest and first/last image bytes | ✅ Pass | 0.25s | — |
-| MangaSushi | Native advertised controls and representative filtered search | ✅ Pass | 1.74s | — |
+| MangaSushi | Native discovery schema and representative section | ✅ Pass | 1.42s | — |
+| MangaSushi | Native catalog search and offered continuation | ✅ Pass | 1.98s | — |
+| MangaSushi | Native details identity, metadata and complete cover bytes | ✅ Pass | 0.58s | — |
+| MangaSushi | Native complete chapter inventory, identity and ordering | ✅ Pass | 0.92s | — |
+| MangaSushi | Native reader identity, ordered manifest and first/last image bytes | ✅ Pass | 0.88s | — |
+| MangaSushi | Native advertised controls and representative filtered search | ✅ Pass | 2.32s | — |
 | MangaSushi | Native policy and image-origin guards fail before network | ✅ Pass | 0.00s | — |
+| MangaTaro | Native initialization and advertised capabilities | ✅ Pass | 0.00s | — |
+| MangaTaro | Native discovery schema and representative section | ✅ Pass | 0.55s | — |
+| MangaTaro | Native catalog search and offered continuation | ✅ Pass | 0.88s | — |
+| MangaTaro | Native details identity, metadata and complete cover bytes | ✅ Pass | 0.85s | — |
+| MangaTaro | Native complete chapter inventory, identity and ordering | ✅ Pass | 0.64s | — |
+| MangaTaro | Native reader identity, ordered manifest and first/last image bytes | ✅ Pass | 0.44s | — |
+| MangaTaro | Native advertised controls and representative filtered search | ✅ Pass | 0.21s | — |
+| MangaTaro | Native policy and image-origin guards fail before network | ✅ Pass | 0.00s | — |
 | ManhwaNex | Native initialization and advertised capabilities | ✅ Pass | 0.00s | — |
-| ManhwaNex | Native discovery schema and representative section | ✅ Pass | 0.73s | — |
-| ManhwaNex | Native catalog search and offered continuation | ✅ Pass | 1.10s | — |
-| ManhwaNex | Native details identity, metadata and complete cover bytes | ✅ Pass | 0.13s | — |
-| ManhwaNex | Native complete chapter inventory, identity and ordering | ✅ Pass | 0.37s | — |
-| ManhwaNex | Native reader identity, ordered manifest and first/last image bytes | ✅ Pass | 0.64s | — |
+| ManhwaNex | Native discovery schema and representative section | ✅ Pass | 1.11s | — |
+| ManhwaNex | Native catalog search and offered continuation | ✅ Pass | 1.20s | — |
+| ManhwaNex | Native details identity, metadata and complete cover bytes | ✅ Pass | 0.19s | — |
+| ManhwaNex | Native complete chapter inventory, identity and ordering | ✅ Pass | 0.29s | — |
+| ManhwaNex | Native reader identity, ordered manifest and first/last image bytes | ✅ Pass | 0.72s | — |
 | ManhwaNex | Native advertised controls and representative filtered search | ✅ Pass | 0.72s | — |
 | ManhwaNex | Native policy and image-origin guards fail before network | ✅ Pass | 0.00s | — |
 | Marumaru | Native initialization and advertised capabilities | ✅ Pass | 0.00s | — |
-| Marumaru | Native discovery schema and representative section | ✅ Pass | 0.11s | — |
+| Marumaru | Native discovery schema and representative section | ✅ Pass | 0.17s | — |
 | Marumaru | Native catalog search and offered continuation | ❌ Fail | 1.04s | Error: Marumaru API request failed (HTTP 406)     at MarumaruAPI.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:41:83112)     at Generator.next (&lt;anonymous&gt;)     at fulfilled (evalmachine.&lt;anonymous&gt;:41:1186)     at /home/runner/work/mana-extensions/mana-extensions/node_modules/@mana-app/types/dist/runtime/http-host.generated.js:291:55     at within (/home/runner/work/mana-extensions |
-| Marumaru | Native details identity, metadata and complete cover bytes | ❌ Fail | 0.44s | Error: Marumaru API request failed (HTTP 406)     at MarumaruAPI.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:41:83112)     at Generator.next (&lt;anonymous&gt;)     at fulfilled (evalmachine.&lt;anonymous&gt;:41:1186)     at /home/runner/work/mana-extensions/mana-extensions/node_modules/@mana-app/types/dist/runtime/http-host.generated.js:291:55     at within (/home/runner/work/mana-extensions |
+| Marumaru | Native details identity, metadata and complete cover bytes | ❌ Fail | 0.61s | Error: Marumaru API request failed (HTTP 406)     at MarumaruAPI.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:41:83112)     at Generator.next (&lt;anonymous&gt;)     at fulfilled (evalmachine.&lt;anonymous&gt;:41:1186)     at /home/runner/work/mana-extensions/mana-extensions/node_modules/@mana-app/types/dist/runtime/http-host.generated.js:291:55     at within (/home/runner/work/mana-extensions |
 | Marumaru | Native complete chapter inventory, identity and ordering | ❌ Fail | 0.00s | AssertionError [ERR_ASSERTION]: Native details prerequisite failed     at file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:167:5     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/live-tests.mjs:25:19)     at testNativeContract (file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:166:9)     at proces |
 | Marumaru | Native reader identity, ordered manifest and first/last image bytes | ❌ Fail | 0.00s | AssertionError [ERR_ASSERTION]: Native inventory prerequisite failed     at file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:181:5     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/live-tests.mjs:25:19)     at testNativeContract (file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:180:9)     at proc |
 | Marumaru | Native policy and image-origin guards fail before network | ✅ Pass | 0.00s | — |
+| QiScans | Native initialization and advertised capabilities | ✅ Pass | 0.00s | — |
+| QiScans | Native discovery schema and representative section | ❌ Fail | 0.15s | CloudflareError: The requested resource is Cloudflare protected     at RequestExecution.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:41:47428)     at Generator.next (&lt;anonymous&gt;)     at evalmachine.&lt;anonymous&gt;:41:40126     at new Promise (&lt;anonymous&gt;)     at __awaiter (evalmachine.&lt;anonymous&gt;:41:39767)     at RequestExecution.checkChallenge (evalmachine.&lt;anonymous&gt |
+| QiScans | Native catalog search and offered continuation | ❌ Fail | 0.27s | CloudflareError: The requested resource is Cloudflare protected     at RequestExecution.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:41:47428)     at Generator.next (&lt;anonymous&gt;)     at evalmachine.&lt;anonymous&gt;:41:40126     at new Promise (&lt;anonymous&gt;)     at __awaiter (evalmachine.&lt;anonymous&gt;:41:39767)     at RequestExecution.checkChallenge (evalmachine.&lt;anonymous&gt |
+| QiScans | Native details identity, metadata and complete cover bytes | ❌ Fail | 0.33s | CloudflareError: The requested resource is Cloudflare protected     at RequestExecution.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:41:47428)     at Generator.next (&lt;anonymous&gt;)     at evalmachine.&lt;anonymous&gt;:41:40126     at new Promise (&lt;anonymous&gt;)     at __awaiter (evalmachine.&lt;anonymous&gt;:41:39767)     at RequestExecution.checkChallenge (evalmachine.&lt;anonymous&gt |
+| QiScans | Native complete chapter inventory, identity and ordering | ❌ Fail | 0.00s | AssertionError [ERR_ASSERTION]: Native details prerequisite failed     at file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:167:5     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/live-tests.mjs:25:19)     at testNativeContract (file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:166:9)     at proces |
+| QiScans | Native reader identity, ordered manifest and first/last image bytes | ❌ Fail | 0.00s | AssertionError [ERR_ASSERTION]: Native inventory prerequisite failed     at file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:181:5     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/live-tests.mjs:25:19)     at testNativeContract (file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:180:9)     at proc |
+| QiScans | Native advertised controls and representative filtered search | ❌ Fail | 0.00s | AssertionError [ERR_ASSERTION]: Native details prerequisite failed     at file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:193:7     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/live-tests.mjs:25:19)     at testNativeContract (file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:192:11)     at proce |
+| QiScans | Native policy and image-origin guards fail before network | ✅ Pass | 0.00s | — |
 | VortexScans | Native initialization and advertised capabilities | ✅ Pass | 0.00s | — |
-| VortexScans | Native discovery schema and representative section | ✅ Pass | 1.20s | — |
-| VortexScans | Native catalog search and offered continuation | ✅ Pass | 0.66s | — |
-| VortexScans | Native details identity, metadata and complete cover bytes | ✅ Pass | 0.69s | — |
-| VortexScans | Native complete chapter inventory, identity and ordering | ✅ Pass | 0.25s | — |
-| VortexScans | Native reader identity, ordered manifest and first/last image bytes | ✅ Pass | 0.32s | — |
-| VortexScans | Native advertised controls and representative filtered search | ✅ Pass | 0.50s | — |
+| VortexScans | Native discovery schema and representative section | ✅ Pass | 1.37s | — |
+| VortexScans | Native catalog search and offered continuation | ✅ Pass | 0.68s | — |
+| VortexScans | Native details identity, metadata and complete cover bytes | ✅ Pass | 0.80s | — |
+| VortexScans | Native complete chapter inventory, identity and ordering | ✅ Pass | 0.26s | — |
+| VortexScans | Native reader identity, ordered manifest and first/last image bytes | ✅ Pass | 0.43s | — |
+| VortexScans | Native advertised controls and representative filtered search | ✅ Pass | 0.45s | — |
 | VortexScans | Native policy and image-origin guards fail before network | ✅ Pass | 0.00s | — |
 
 </details>
@@ -118,32 +136,32 @@ Tested commit: `99d22e2`
 <details>
 <summary>Recent checks (last 24 runs)</summary>
 
-| Checked (UTC) | Hijala | Kagane | MangaStash | MangaSushi | ManhwaNex | Marumaru | VortexScans | Run |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 2026-10-18 01:35:53 UTC | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | ❌ Fail | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/39086981104) |
-| 2026-10-17 23:31:52 UTC | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | ❌ Fail | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/39079283118) |
-| 2026-10-17 21:38:22 UTC | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/39071223344) |
-| 2026-10-17 19:00:41 UTC | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/39060025139) |
-| 2026-10-17 16:38:04 UTC | ❌ Fail | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | ❌ Fail | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/39049785712) |
-| 2026-10-17 13:24:22 UTC | ✅ Pass | ✅ Pass | ❌ Fail | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/39035882067) |
-| 2026-10-17 09:36:00 UTC | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/39021272517) |
-| 2026-10-17 05:10:27 UTC | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/39004831028) |
-| 2026-10-17 00:41:25 UTC | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38986976478) |
-| 2026-10-16 22:15:02 UTC | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38973851972) |
-| 2026-10-16 19:10:15 UTC | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38951999569) |
-| 2026-10-16 15:44:07 UTC | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38925226294) |
-| 2026-10-16 11:42:33 UTC | ✅ Pass | ❌ Fail | ❌ Fail | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38894698267) |
-| 2026-10-16 06:02:57 UTC | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38858342066) |
-| 2026-10-16 00:56:57 UTC | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38831668014) |
-| 2026-10-15 22:48:20 UTC | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38818829286) |
-| 2026-10-15 20:32:03 UTC | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38801561745) |
-| 2026-10-15 20:25:09 UTC | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | ✅ Pass | — Not tested | ❌ Fail | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38800771139) |
-| 2026-10-15 19:35:01 UTC | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | ❌ Fail | — Not tested | ❌ Fail | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38794101786) |
-| 2026-10-15 17:36:13 UTC | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38777761970) |
-| 2026-10-15 16:51:20 UTC | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | ✅ Pass | — Not tested | ❌ Fail | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38771520288) |
-| 2026-10-15 15:28:39 UTC | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38759506369) |
-| 2026-10-15 15:19:26 UTC | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38758018828) |
-| 2026-10-15 10:29:41 UTC | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38719746193) |
+| Checked (UTC) | Hijala | Kagane | MangaStash | MangaSushi | MangaTaro | ManhwaNex | Marumaru | QiScans | VortexScans | Run |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2026-10-18 06:40:28 UTC | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | ❌ Fail | ❌ Fail | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/39104771128) |
+| 2026-10-18 01:35:53 UTC | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | ❌ Fail | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/39086981104) |
+| 2026-10-17 23:31:52 UTC | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | ❌ Fail | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/39079283118) |
+| 2026-10-17 21:38:22 UTC | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/39071223344) |
+| 2026-10-17 19:00:41 UTC | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/39060025139) |
+| 2026-10-17 16:38:04 UTC | ❌ Fail | ✅ Pass | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | ❌ Fail | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/39049785712) |
+| 2026-10-17 13:24:22 UTC | ✅ Pass | ✅ Pass | ❌ Fail | ✅ Pass | — Not tested | ✅ Pass | — Not tested | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/39035882067) |
+| 2026-10-17 09:36:00 UTC | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | — Not tested | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/39021272517) |
+| 2026-10-17 05:10:27 UTC | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | — Not tested | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/39004831028) |
+| 2026-10-17 00:41:25 UTC | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | — Not tested | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38986976478) |
+| 2026-10-16 22:15:02 UTC | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | — Not tested | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38973851972) |
+| 2026-10-16 19:10:15 UTC | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | — Not tested | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38951999569) |
+| 2026-10-16 15:44:07 UTC | ✅ Pass | ✅ Pass | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | — Not tested | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38925226294) |
+| 2026-10-16 11:42:33 UTC | ✅ Pass | ❌ Fail | ❌ Fail | ✅ Pass | — Not tested | ✅ Pass | — Not tested | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38894698267) |
+| 2026-10-16 06:02:57 UTC | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | — Not tested | ✅ Pass | — Not tested | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38858342066) |
+| 2026-10-16 00:56:57 UTC | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | — Not tested | ✅ Pass | — Not tested | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38831668014) |
+| 2026-10-15 22:48:20 UTC | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | — Not tested | ✅ Pass | — Not tested | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38818829286) |
+| 2026-10-15 20:32:03 UTC | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | — Not tested | ✅ Pass | — Not tested | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38801561745) |
+| 2026-10-15 20:25:09 UTC | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | — Not tested | ✅ Pass | — Not tested | — Not tested | ❌ Fail | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38800771139) |
+| 2026-10-15 19:35:01 UTC | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | — Not tested | ❌ Fail | — Not tested | — Not tested | ❌ Fail | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38794101786) |
+| 2026-10-15 17:36:13 UTC | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | — Not tested | ✅ Pass | — Not tested | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38777761970) |
+| 2026-10-15 16:51:20 UTC | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | — Not tested | ✅ Pass | — Not tested | — Not tested | ❌ Fail | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38771520288) |
+| 2026-10-15 15:28:39 UTC | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | — Not tested | ✅ Pass | — Not tested | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38759506369) |
+| 2026-10-15 15:19:26 UTC | ✅ Pass | ✅ Pass | — Not tested | ✅ Pass | — Not tested | ✅ Pass | — Not tested | — Not tested | ✅ Pass | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/38758018828) |
 
 </details>
 
