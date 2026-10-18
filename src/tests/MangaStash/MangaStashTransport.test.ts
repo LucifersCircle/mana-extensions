@@ -6,9 +6,9 @@ import { BridgeOperation,
     HttpMethod,
     imageDispatch,
     RequestOrigin } from '@mana-app/types'
-import { Target } from './index'
-import * as parser from './MangaStashParser'
-import { MangaStashApi } from './MangaStashApi'
+import { Target } from '../../sources/MangaStash/index'
+import * as parser from '../../sources/MangaStash/MangaStashParser'
+import { MangaStashApi } from '../../sources/MangaStash/MangaStashApi'
 import { allowed,
     changeSetting,
     check,
@@ -16,7 +16,7 @@ import { allowed,
     enter,
     known,
     observe,
-    requireAllowed } from './MangaStashPolicy'
+    requireAllowed } from '../../sources/MangaStash/MangaStashPolicy'
 
 const globals = globalThis as unknown as Record<string, unknown>
 const cover = 'https://mangastash.org/content/covers/kagura-bachi.jpg'

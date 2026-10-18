@@ -7,18 +7,18 @@ import {
     PublicationStatus,
     ReadingMode
 } from '@mana-app/types'
-import { isVortexChallenge } from './VortexScansApi'
-import { VortexPost } from './VortexScansModels'
+import { isVortexChallenge } from '../../sources/VortexScans/VortexScansApi'
+import { VortexPost } from '../../sources/VortexScans/VortexScansModels'
 import {
     VortexScansParser,
     isVortexChapterLocked
-} from './VortexScansParser'
+} from '../../sources/VortexScans/VortexScansParser'
 import {
     buildVortexApiUrl,
     buildVortexContentId,
     normalizeVortexSearchTerm,
     parseVortexContentId
-} from './VortexScansUtils'
+} from '../../sources/VortexScans/VortexScansUtils'
 
 const parser = new VortexScansParser()
 

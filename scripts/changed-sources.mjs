@@ -218,6 +218,8 @@ export function classifyChanges(changes, sources, before, after, sourceRoot = SO
       }
       if (sourceRoot === "src" && path.startsWith("src/tests/"))
         owner = known.find((source) => path === `src/tests/${source}.ts`);
+      if (sourceRoot === "src/sources" && path.startsWith("src/tests/"))
+        owner = known.find((source) => path.startsWith(`src/tests/${source}/`));
       if (sourceRoot === "src/sources" && path.startsWith("assets/"))
         owner = known.find((source) => new RegExp(`^assets/${source}\\.[A-Za-z0-9]+$`).test(path));
       if (sourceRoot === "src/sources" && suiteOwners.has(path)) owner = suiteOwners.get(path);

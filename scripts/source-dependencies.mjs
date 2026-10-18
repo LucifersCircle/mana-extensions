@@ -32,6 +32,7 @@ export function isolatedSourceLayout(
       return sources.find(
         (source) =>
           local.startsWith(`${sourceRoot}/${source}/`) ||
+          (sourceRoot === "src/sources" && local.startsWith(`src/tests/${source}/`)) ||
           (local !== sharedSuite && local === suitePath(source)),
       );
     };
@@ -110,6 +111,8 @@ export function isolatedSourceLayout(
         }
       };
       walk(join(root, sourceRoot, source));
+      const unitTests = join(root, "src/tests", source);
+      if (sourceRoot === "src/sources" && existsSync(unitTests)) walk(unitTests);
       const implementationFiles = new Set();
       for (const file of files) if (!inspectFile(file, source, implementationFiles)) return false;
       const suite = join(root, suitePath(source));

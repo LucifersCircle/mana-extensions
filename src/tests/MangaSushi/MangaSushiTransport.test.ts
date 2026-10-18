@@ -6,10 +6,10 @@ import { BridgeOperation,
     HttpMethod,
     imageDispatch,
     RequestOrigin } from '@mana-app/types'
-import { Target } from './index'
-import { MangaSushiApi } from './MangaSushiApi'
-import * as parser from './MangaSushiParser'
-import * as policy from './MangaSushiPolicy'
+import { Target } from '../../sources/MangaSushi/index'
+import { MangaSushiApi } from '../../sources/MangaSushi/MangaSushiApi'
+import * as parser from '../../sources/MangaSushi/MangaSushiParser'
+import * as policy from '../../sources/MangaSushi/MangaSushiPolicy'
 
 const globals = globalThis as unknown as Record<string, unknown>
 const cover = 'https://mangasushi.org/wp-content/uploads/public-cover.jpg'
@@ -137,7 +137,7 @@ describe('MangaSushi public images and retained classification policy', () => {
         await policy.observeClassificationEvidence('title', true, older)
         saved.delete('MangaSushi.imageEvidence'); saved.delete('MangaSushi.imageEvidenceGeneration')
         let reloaded!: typeof policy
-        jest.isolateModules(() => { reloaded = jest.requireActual('./MangaSushiPolicy') as typeof policy })
+        jest.isolateModules(() => { reloaded = jest.requireActual('../../sources/MangaSushi/MangaSushiPolicy') as typeof policy })
         const newer = await reloaded.beginClassificationEvidence()
         expect(newer.generation).toBeGreaterThan(older.generation)
         await reloaded.observeClassificationEvidence('title', true, newer)
