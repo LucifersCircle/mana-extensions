@@ -29,7 +29,11 @@ export function createGourmetTestTransport({ fetchImpl = fetch, solverURL, diagn
     } catch { traffic.helperOutcomes.push({ operation: payload.operation ?? payload.cmd, outcome: 'uncertain' }); return stop('Gourmet browser request failed or was cancelled; outcome uncertain, no retry'); }
     if (!response.ok || result.error || (path === '/v1' && result.status !== 'ok')) {
       const code = ['captcha', 'security', 'denial', 'identity'].includes(result.code) ? result.code : 'failed';
-      traffic.helperOutcomes.push({ operation: payload.operation ?? payload.cmd, outcome: code });
+      traffic.helperOutcomes.push({ operation: payload.operation ?? payload.cmd, outcome: code,
+        stage: ['validation', 'session', 'warm-safety', 'warm-navigation', 'warm-poll', 'fetch-safety', 'fetch', 'response-inspection'].includes(result.stage) ? result.stage : 'unknown',
+        reason: ['operation-error', 'challenge-timeout', 'readiness-timeout', 'deadline-expired', 'safety-stop'].includes(result.reason) ? result.reason : 'unknown',
+        category: ['validation', 'python-type', 'python-name', 'webdriver-timeout', 'webdriver-script', 'webdriver', 'other'].includes(result.category) ? result.category : 'unknown',
+      });
       return stop(`Gourmet browser stopped: ${code}; no retry`);
     }
     traffic.helperOutcomes.push({ operation: payload.operation ?? payload.cmd, outcome: 'completed' });

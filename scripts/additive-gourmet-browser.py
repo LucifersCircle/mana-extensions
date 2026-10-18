@@ -40,6 +40,7 @@ def register(app):
     def gourmet():
         payload = request.json or {}
         state = None
+        stage, reason = 'validation', 'operation-error'
         try:
             if set(payload) != {'session', 'url', 'method', 'headers', 'body', 'deadline', 'operation'} or payload['method'] != 'GET' or payload['body'] is not None:
                 raise ValueError('Unsupported payload')
@@ -53,6 +54,7 @@ def register(app):
                     or ('referer' in headers and headers['referer'] != 'https://gourmetsupremacy.com/')):
                 raise ValueError('Unsupported headers')
             with session_lock(payload['session']):
+                stage = 'session'
                 driver = session_driver(payload['session'])
                 state = STATE.setdefault(payload['session'], {'warmups': 0, 'assistedRequests': 0, 'stopped': False})
                 if state['stopped'] or state['assistedRequests'] >= 12:
@@ -60,32 +62,40 @@ def register(app):
                 if payload['operation'] == 'warm':
                     if state['warmups']:
                         raise ValueError('Warm-up already attempted')
+                    stage = 'warm-safety'
                     assert_browser_safety(driver, allow_startup=True)
                     state['warmups'] += 1
                     state['document'] = payload['url']
+                    stage = 'warm-navigation'
                     result = driver.execute_cdp_cmd('Page.navigate', {'url': payload['url']})
                     if result.get('errorText'):
                         raise BrowserGate('security')
                     deadline = min(time.monotonic() + 10, time.monotonic() + payload['deadline'] / 1000 - time.time())
                     while True:
+                        stage = 'warm-poll'
                         safety(driver, state['document'], startup=True)
                         title, html = driver.title.lower(), driver.page_source.lower()
                         challenge = (title in ('just a moment...', 'ddos-guard') or 'cf-chl' in html or 'id="challenge-running"' in html)
                         if driver.current_url == state['document'] and not challenge and driver.execute_script('return document.readyState') in ('interactive', 'complete'):
                             break
                         if time.monotonic() >= deadline:
+                            reason = 'challenge-timeout' if challenge else 'readiness-timeout'
                             raise ValueError('Managed challenge timeout')
                         time.sleep(0.1)
                     return {'ready': True, 'traffic': {'warmups': state['warmups'], 'assistedRequests': state['assistedRequests'], 'subresourcesUncounted': True}}
                 if not state['warmups']:
                     raise ValueError('Warm-up required')
+                stage = 'fetch-safety'
                 safety(driver, state['document'])
                 remaining = int(payload['deadline'] - time.time() * 1000)
                 if remaining <= 0:
+                    reason = 'deadline-expired'
                     raise ValueError('Assist deadline expired before fetch')
                 state['assistedRequests'] += 1
                 driver.set_script_timeout(remaining / 1000 + 1)
+                stage = 'fetch'
                 data = driver.execute_async_script(FETCH_SCRIPT.replace('AbortSignal.timeout(60000)', f'AbortSignal.timeout({remaining})'), {**payload, 'headers': {key: value for key, value in headers.items() if key == 'accept'}})
+                stage = 'response-inspection'
                 safety(driver, state['document'])
                 if data.get('error') or data.get('url') != payload['url']:
                     raise ValueError('Browser response identity failed')
@@ -107,9 +117,10 @@ def register(app):
             if state is not None:
                 state['stopped'] = True
             response.status = 409
-            return {'error': 'Browser stopped', 'code': error.code}
-        except Exception:
+            return {'error': 'Browser stopped', 'code': error.code, 'stage': stage, 'reason': 'safety-stop'}
+        except Exception as error:
             if state is not None:
                 state['stopped'] = True
             response.status = 502
-            return {'error': 'Anonymous Gourmet browser request failed'}
+            category = {'ValueError': 'validation', 'TypeError': 'python-type', 'AttributeError': 'python-type', 'NameError': 'python-name', 'TimeoutException': 'webdriver-timeout', 'JavascriptException': 'webdriver-script', 'WebDriverException': 'webdriver'}.get(type(error).__name__, 'other')
+            return {'error': 'Anonymous Gourmet browser request failed', 'stage': stage, 'reason': reason, 'category': category}

@@ -80,3 +80,15 @@ test('complete helper denial reason is retained without arbitrary text', async (
     await transport.close();
   }
 });
+test('helper failure diagnostics retain only fixed stage and reason enums', async () => {
+  for (const extra of [{ stage: 'warm-poll', reason: 'challenge-timeout', category: 'validation' }, { stage: 'private URL', reason: 'secret body', category: 'raw exception' }]) {
+    const { transport } = fixture(challenge, { error: 'arbitrary helper text', ...extra });
+    await assert.rejects(transport.fetch(url));
+    const result = transport.traffic.helperOutcomes.at(-1);
+    assert.equal(result.stage, extra.stage === 'warm-poll' ? 'warm-poll' : 'unknown');
+    assert.equal(result.reason, extra.reason === 'challenge-timeout' ? 'challenge-timeout' : 'unknown');
+    assert.equal(result.category, extra.category === 'validation' ? 'validation' : 'unknown');
+    assert(!JSON.stringify(transport.traffic).includes('secret body'));
+    await transport.close();
+  }
+});
