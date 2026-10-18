@@ -198,3 +198,24 @@ test('host close aborts pending operations and permanently rejects new transfer 
     assert.deepEqual(f.host.stats(), empty);
     await assert.rejects(f.run(`new ManaHTTP.HttpClient().get('https://example.invalid/')`), { name: 'AbortError' });
 });
+
+
+test('Marumaru failure diagnostics retain only bounded allowlisted classifications', async () => {
+    const { marumaruFailureDiagnostic } = await import('./mana-http-host.mjs');
+    const request = { url: 'https://marumaru105.com/api/works/17155?token=SECRET', method: 'GET', headers: { Cookie: 'SECRET', Authorization: 'SECRET' } };
+    const bytes = new TextEncoder().encode(JSON.stringify({ status: 406, path: '/seo-gate', error: 'SECRET', token: 'SECRET' }));
+    const response = new Response('', { status: 406, headers: { 'content-type': 'application/json', 'set-cookie': 'SECRET' } });
+    assert.deepEqual(marumaruFailureDiagnostic(request, response, bytes), {
+        method: 'GET', route: 'https://marumaru105.com/api/works/:id', userAgent: 'transport-default', contentType: 'application/json', cloudflareChallenge: false, errorStatus: 406, errorPath: '/seo-gate',
+    });
+    assert.equal(marumaruFailureDiagnostic(request, new Response(''), bytes), undefined);
+    assert.equal(marumaruFailureDiagnostic({ ...request, url: 'https://other.invalid/api/works/1' }, response, bytes), undefined);
+    const unexpected = new TextEncoder().encode(JSON.stringify({ status: 'SECRET', path: '/SECRET', error: 'SECRET' }));
+    const diagnostic = marumaruFailureDiagnostic({ ...request, headers: { 'user-agent': 'SECRET' } }, response, unexpected);
+    assert.equal(diagnostic.userAgent, 'source-supplied');
+    assert(!JSON.stringify(diagnostic).includes('SECRET'));
+    assert(!('errorStatus' in diagnostic)); assert(!('errorPath' in diagnostic));
+    assert(!('errorStatus' in marumaruFailureDiagnostic(request, response, new Uint8Array(4097))));
+    const challenge = new Response('', { status: 403, headers: { 'cf-mitigated': 'challenge', 'content-type': 'text/html' } });
+    assert.equal(marumaruFailureDiagnostic(request, challenge, bytes).cloudflareChallenge, true);
+});

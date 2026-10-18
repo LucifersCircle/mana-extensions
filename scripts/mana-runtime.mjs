@@ -31,8 +31,9 @@ function unsupported(name) {
     })
 }
 
-function logRequest({ url, status, durationMs, error }) {
+function logRequest({ url, status, durationMs, error, diagnostic }) {
     console.log(`[http] ${status ?? 'ERROR'} ${url} (${durationMs}ms)${error ? `: ${error}` : ''}`)
+    if (diagnostic) console.log(`[http-diagnostic] ${JSON.stringify(diagnostic)}`)
 }
 
 // Reader page URLs carry ephemeral public-reader tokens. Retain useful route logs,
