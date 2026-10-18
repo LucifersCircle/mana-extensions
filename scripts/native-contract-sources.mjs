@@ -6,6 +6,7 @@ import { decode } from 'html-entities';
 const plain = value => JSON.parse(JSON.stringify(value));
 const norm = value => String(value ?? '').replace(/\s+/g, ' ').trim();
 const chapterIDs = chapters => Array.from(chapters, c => c.chapterId);
+const qiPath = value => encodeURIComponent(value).replace(/[!'()*]/g, character => '%' + character.charCodeAt(0).toString(16).toUpperCase());
 const captured = (state, match) => {
   const values = state.transport.captures.filter(item => match(new URL(item.url)));
   assert(values.length, 'Missing the response consumed by the native method'); return values.at(-1);
@@ -98,17 +99,17 @@ export const sourceContracts = {
       }), 'Native QiScans filtered browse did not transmit the selected source genre slug');
     },
     detail(state) {
-      const raw = json(state, url => url.origin === 'https://api.qimanhwa.com' && url.pathname === `/api/v1/series/${state.id}`);
-      assert.equal(raw.slug, state.id); assert.equal(state.content.webUrl, `https://qimanhwa.com/series/${raw.slug}`);
+      const raw = json(state, url => url.origin === 'https://api.qimanhwa.com' && url.pathname === `/api/v1/series/${qiPath(state.id)}`);
+      assert.equal(raw.slug, state.id); assert.equal(state.content.webUrl, `https://qimanhwa.com/series/${qiPath(raw.slug)}`);
       assert.equal(state.content.title, norm(decode(raw.title)));
-      assert.equal(state.content.cover, raw.cover || '');
+      assert.equal(state.content.cover, raw.cover ? new URL(raw.cover, 'https://qimanhwa.com').href : '');
       assert.equal(state.content.contentRating, 1, 'Unclassified QiScans must retain its disclosed compatibility fallback, not Safe');
       assert.deepEqual(Array.from(state.content.additionalTitles ?? []), (raw.alternativeTitles || '').split(/, ?/).map(value => norm(decode(value))).filter(Boolean));
     },
     inventory(state) {
       const captures = state.transport.captures.filter(item => {
         const url = new URL(item.url);
-        return url.origin === 'https://api.qimanhwa.com' && url.pathname === `/api/v1/series/${state.id}/chapters`;
+        return url.origin === 'https://api.qimanhwa.com' && url.pathname === `/api/v1/series/${qiPath(state.id)}/chapters`;
       });
       assert(captures.length, 'Native QiScans v1 inventory was not consumed');
       const rows = [], ids = new Set(); let total, pageCount;
@@ -133,10 +134,10 @@ export const sourceContracts = {
       const available = rows.filter(row => row.publishStatus === 'PUBLIC' && row.isFree === true && row.requiresPurchase === false && row.price === 0 && (row.discountedPrice == null || row.discountedPrice === 0))
         .sort((a, b) => a.number - b.number || Date.parse(a.createdAt) - Date.parse(b.createdAt));
       assert.deepEqual(Array.from(state.chapters, row => [row.chapterId, row.number]), available.map(row => [row.slug, row.number]), 'Native chapters must retain every public/free source slug and exact decimal number');
-      assert.deepEqual(Array.from(state.chapters, row => row.webUrl), available.map(row => `https://qimanhwa.com/series/${state.id}/${row.slug}`));
+      assert.deepEqual(Array.from(state.chapters, row => row.webUrl), available.map(row => `https://qimanhwa.com/series/${qiPath(state.id)}/${qiPath(row.slug)}`));
     },
     reader(state) {
-      const raw = json(state, url => url.origin === 'https://api.qimanhwa.com' && url.pathname === `/api/v1/series/${state.id}/chapters/${state.chapter.chapterId}`);
+      const raw = json(state, url => url.origin === 'https://api.qimanhwa.com' && url.pathname === `/api/v1/series/${qiPath(state.id)}/chapters/${qiPath(state.chapter.chapterId)}`);
       assert.equal(raw.slug, state.chapter.chapterId); assert.equal(raw.number, state.chapter.number);
       if (raw.series) assert.equal(raw.series.slug, state.id);
       assert.equal(raw.publishStatus, 'PUBLIC'); assert.equal(raw.isFree, true); assert.equal(raw.requiresPurchase, false);
@@ -145,7 +146,7 @@ export const sourceContracts = {
       assert.equal(new Set(raw.images.map(image => image.order)).size, raw.images.length);
       assert(raw.images.every(image => Number.isSafeInteger(image.order) && image.order >= 0));
       const ordered = [...raw.images].sort((a, b) => a.order - b.order);
-      assert.deepEqual(Array.from(state.reader.pages, page => page.url), ordered.map(image => image.url), 'Native reader must preserve the complete source image manifest/order');
+      assert.deepEqual(Array.from(state.reader.pages, page => page.url), ordered.map(image => new URL(image.url, 'https://qimanhwa.com').href), 'Native reader must preserve the complete source image manifest/order');
     },
   },
   Hijala: {
