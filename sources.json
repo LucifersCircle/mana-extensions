@@ -30,7 +30,7 @@
       "path": "Hijala",
       "environment": "source",
       "intents": 106961929,
-      "hash": "2bf144a52bf144a52bf144a52bf144a52bf144a52bf144a52bf144a52bf144a5"
+      "hash": "5f30d16c5f30d16c5f30d16c5f30d16c5f30d16c5f30d16c5f30d16c5f30d16c"
     },
     {
       "id": "Kagane",
@@ -59,11 +59,11 @@
       "path": "Kagane",
       "environment": "source",
       "intents": 106961929,
-      "hash": "1d8c0ed71d8c0ed71d8c0ed71d8c0ed71d8c0ed71d8c0ed71d8c0ed71d8c0ed7"
+      "hash": "50cb98dd50cb98dd50cb98dd50cb98dd50cb98dd50cb98dd50cb98dd50cb98dd"
     },
     {
       "id": "MangaStash",
-      "version": "0.0.1-alpha.7",
+      "version": "0.0.1-alpha.8",
       "name": "MangaStash",
       "thumbnail": "MangaStash.png",
       "rating": 1,
@@ -86,7 +86,7 @@
       "path": "MangaStash",
       "environment": "source",
       "intents": 106961929,
-      "hash": "3a386dec3a386dec3a386dec3a386dec3a386dec3a386dec3a386dec3a386dec"
+      "hash": "2aba36892aba36892aba36892aba36892aba36892aba36892aba36892aba3689"
     },
     {
       "id": "MangaSushi",
@@ -111,7 +111,7 @@
       "path": "MangaSushi",
       "environment": "source",
       "intents": 106961929,
-      "hash": "4c2101cc4c2101cc4c2101cc4c2101cc4c2101cc4c2101cc4c2101cc4c2101cc"
+      "hash": "7f608e947f608e947f608e947f608e947f608e947f608e947f608e947f608e94"
     },
     {
       "id": "ManhwaNex",
@@ -138,7 +138,7 @@
       "path": "ManhwaNex",
       "environment": "source",
       "intents": 106961929,
-      "hash": "36944da336944da336944da336944da336944da336944da336944da336944da3"
+      "hash": "69d3d9ec69d3d9ec69d3d9ec69d3d9ec69d3d9ec69d3d9ec69d3d9ec69d3d9ec"
     },
     {
       "id": "Marumaru",
@@ -162,7 +162,7 @@
       "path": "Marumaru",
       "environment": "source",
       "intents": 102761480,
-      "hash": "44abcbad44abcbad44abcbad44abcbad44abcbad44abcbad44abcbad44abcbad"
+      "hash": "116bf00d116bf00d116bf00d116bf00d116bf00d116bf00d116bf00d116bf00d"
     },
     {
       "id": "VortexScans",
@@ -189,7 +189,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 106961928,
-      "hash": "18144d5118144d5118144d5118144d5118144d5118144d5118144d5118144d51"
+      "hash": "1b2b3f931b2b3f931b2b3f931b2b3f931b2b3f931b2b3f931b2b3f931b2b3f93"
     }
   ]
 }
