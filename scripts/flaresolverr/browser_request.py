@@ -21,7 +21,8 @@ SEARCH_KEYS = {'source_type', 'title', 'content_rating', 'age_rating',
                'source_id', 'genres', 'tags', 'current_books', 'start_year'}
 HEADERS = {'accept', 'content-type', 'origin', 'referer', 'user-agent', 'x-integrity-token'}
 WARM_URLS = {'kagane.org': 'https://kagane.org/',
-             'marumaru105.com': 'https://marumaru105.com/manhwa'}
+             'marumaru105.com': 'https://marumaru105.com/manhwa',
+             'api.storagewebtoon.store': 'https://api.storagewebtoon.store/'}
 
 FETCH_SCRIPT = """
 const payload = arguments[0], done = arguments[arguments.length - 1];
@@ -83,14 +84,15 @@ def assert_public_marumaru_request(payload):
     value = payload.get('url')
     if (payload.get('method') != 'GET' or payload.get('body') is not None
             or not isinstance(value, str) or re.search(r'[\s\\]', value)
-            or not re.fullmatch(r'https://marumaru105\.com/api/' + route, value, re.ASCII)):
+            or not (re.fullmatch(r'https://marumaru105\.com/api/' + route, value, re.ASCII)
+                    or re.fullmatch(r'https://api\.storagewebtoon\.store/api/v1/reader/A2/(?:works|episodes)/[1-9][0-9]*', value))):
         raise ValueError('Unsupported Marumaru operation')
 
 
 def assert_public_request(payload):
     """Mirror mana-runtime.mjs's exact read-only allowlist, independently."""
     url = urlparse(payload.get('url', ''))
-    if url.hostname == 'marumaru105.com':
+    if url.hostname in ('marumaru105.com', 'api.storagewebtoon.store'):
         return assert_public_marumaru_request(payload)
     if (url.scheme != 'https' or url.hostname != 'kagane.org'
             or url.port not in (None, 443) or url.username or url.password
@@ -246,12 +248,13 @@ def register(app):
                 raise ValueError('Unsupported payload')
             assert_public_request(payload)
             site = urlparse(payload['url']).hostname
-            marumaru = site == 'marumaru105.com'
+            marumaru = site != 'kagane.org'
+            catalog = site == 'marumaru105.com'
             headers = payload['headers']
-            allowed = (HEADERS - {'x-integrity-token'} | {'x-site'}) if marumaru else HEADERS
+            allowed = (HEADERS - {'x-integrity-token'} | ({'x-site'} if catalog else set())) if marumaru else HEADERS
             if not isinstance(headers, dict) or any(key.lower() not in allowed for key in headers):
                 raise ValueError('Unsupported headers')
-            if marumaru and {key.lower(): value for key, value in headers.items()}.get('x-site') != 'marumaru':
+            if catalog and {key.lower(): value for key, value in headers.items()}.get('x-site') != 'marumaru':
                 raise ValueError('Missing Marumaru site header')
             if (any(key.lower() == 'x-integrity-token' for key in headers)
                     and not (payload['method'] == 'POST'
@@ -263,7 +266,7 @@ def register(app):
                 driver.set_script_timeout(65)
                 # Browser supplies its own anonymous cookies, Origin and Referer.
                 payload['headers'] = {key: value for key, value in headers.items()
-                                      if key.lower() in ('accept', 'content-type', 'x-site' if marumaru else 'x-integrity-token')}
+                                      if key.lower() in ('accept', 'content-type', 'x-site' if catalog else 'x-integrity-token')}
                 result = driver.execute_async_script(FETCH_SCRIPT, payload)
                 assert_browser_page(driver, site)
                 if result.get('error'):

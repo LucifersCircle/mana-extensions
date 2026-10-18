@@ -10,7 +10,9 @@ const detail = `${origin}/api/works/17155`;
 const headers = { accept: 'application/json', 'x-site': 'marumaru', referer: `${origin}/` };
 const catalog = `${origin}/api/works?mediaType=MANHWA&page=0&size=49`;
 const search = `${origin}/api/search?q=${encodeURIComponent('라멘 아카네코')}&page=0&media=MANHWA&sort=LATEST`;
-const valid = [detail, catalog, search, search.replace('page=0', 'page=1')].map(url => ({ url, method: 'GET' }));
+const reader = 'https://api.storagewebtoon.store/api/v1/reader/A2/works/17155';
+const valid = [detail, catalog, search, search.replace('page=0', 'page=1'), reader,
+  reader.replace('works/17155', 'episodes/21333')].map(url => ({ url, method: 'GET' }));
 const invalid = [
   detail.replace('https:', 'http:'), detail.replace('marumaru105.com', 'other.invalid'),
   detail.replace('marumaru105.com', 'marumaru105.com:443'), detail.replace('https://', 'https://user:password@'),
@@ -20,13 +22,14 @@ const invalid = [
   `${origin}/manhwa/17155`, `${origin}/api/works?mediaType=WEBTOON&page=0&size=49`,
   `${catalog}&page=1`, `${catalog}&account=1`, search.replace('q=', 'q=one&q='),
   search.replace('page=0', 'page=-1'), search.replace('sort=LATEST', 'sort=UNKNOWN'),
-  'https://api.storagewebtoon.store/api/v1/reader/A2/works/17155',
+  reader.replace('/A2/', '/OTHER/'), `${reader}?token=secret`, reader.replace('/works/', '/account/'),
+  reader.replace('https:', 'http:'), reader.replace('17155', '0'), reader.replace('https://', 'https://user:password@'),
   'https://peer.storagewebtoon.store/api/media/episode/123/1.webp',
 ].map(url => ({ url, method: 'GET' }));
 invalid.push(...['POST', 'PUT', 'DELETE', 'HEAD'].map(method => ({ url: detail, method })),
   { url: detail, method: 'GET', body: 'unexpected' });
 
-test('Node and Python browser boundaries accept only the public Marumaru catalog GET routes', () => {
+test('Node and Python browser boundaries accept only the public Marumaru catalog/reader GET routes', () => {
   valid.forEach(request => assert.doesNotThrow(() => assertPublicMarumaruRequest(request)));
   invalid.forEach(request => assert.throws(() => assertPublicMarumaruRequest(request), undefined, request.url));
   const program = `import ast, json, pathlib, re, sys
@@ -67,7 +70,7 @@ function fixture(reply = payload => ({ status: 200, body: 'public test JSON', ur
   return { calls, direct, transport };
 }
 
-test('separate anonymous source sessions reuse their warm-up and leave reader API/images direct', async () => {
+test('separate anonymous host sessions reuse their warm-up and leave images direct', async () => {
   const f = fixture();
   try {
     await Promise.all([f.transport.fetch(detail, { headers }), f.transport.fetch(catalog, { headers })]);
@@ -80,13 +83,17 @@ test('separate anonymous source sessions reuse their warm-up and leave reader AP
     assert.equal(marumaru.length, 2);
     assert(marumaru.every(call => call.session === creates[0].session && call.method === 'GET' && call.body === null));
     assert(marumaru.every(call => call.headers['x-site'] === 'marumaru'));
-    for (const url of ['https://api.storagewebtoon.store/api/v1/reader/A2/works/17155',
-      'https://peer.storagewebtoon.store/manhwa/17155/cover.dat', 'https://peer.storagewebtoon.store/api/media/episode/123/1.webp']) {
+    await f.transport.fetch(reader, { headers: { accept: 'application/json', referer: `${origin}/` } });
+    const readerCall = f.calls.find(call => call.url === reader);
+    assert(readerCall && !creates.some(call => call.session === readerCall.session));
+    assert.equal(readerCall.headers['x-site'], undefined);
+    for (const url of ['https://peer.storagewebtoon.store/manhwa/17155/cover.dat',
+      'https://peer.storagewebtoon.store/api/media/episode/123/1.webp']) {
       await f.transport.fetch(url, { headers: { referer: `${origin}/` } });
     }
-    assert.equal(f.direct.length, 3);
+    assert.equal(f.direct.length, 2);
   } finally { await f.transport.close(); }
-  assert.equal(f.calls.filter(call => call.cmd === 'sessions.destroy').length, 2);
+  assert.equal(f.calls.filter(call => call.cmd === 'sessions.destroy').length, 3);
   await assert.rejects(f.transport.fetch(detail, { headers }), /closed/);
 });
 
@@ -112,6 +119,7 @@ test('unsupported routes, credentials and cross-site headers fail before helper 
   for (const extra of [{ authorization: 'secret' }, { cookie: 'secret' }, { 'x-integrity-token': 'secret' }, { 'x-site': 'other' }]) {
     await assert.rejects(f.transport.fetch(detail, { headers: { ...headers, ...extra } }));
   }
+  await assert.rejects(f.transport.fetch(reader, { headers }));
   await assert.rejects(f.transport.fetch(detail));
   assert.equal(f.calls.length, 0);
   await f.transport.close();

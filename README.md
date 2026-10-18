@@ -568,8 +568,8 @@ emulator rejects network access, so it is not used as live-test evidence. The li
 the iOS app: it does not validate native UI rendering, persistent cookies/stores,
 WKWebView-specific behavior or interactive Cloudflare/vShield resolution. CI explicitly opts into a test-only
 Chromium transport for Kagane's exact public API routes and cover images and
-Marumaru's public catalog/search/work GET routes, using separate anonymous,
-short-lived FlareSolverr sessions for each site. JSON POST bodies and actual binary
+Marumaru's public catalog/search/work and advertised reader GET routes, using
+separate anonymous, short-lived FlareSolverr sessions for each host. JSON POST bodies and actual binary
 image bytes are preserved. Warm-up waits for ordinary noninteractive managed
 checks only: CAPTCHA controls are never clicked, and an explicit CAPTCHA or browser
 security warning stops the test. TLS verification stays enabled. The native source
@@ -605,9 +605,10 @@ X-Site remains limited to the Marumaru site API. The source does not replace the
 current Mana SDK has no Paperback-style default-UA getter, so a Node-host check
 must not be reported as proof of the iOS host's identity. In CI, the catalog API
 uses Chromium's ordinary anonymous browser identity because the provider returns
-HTTP 406 `/seo-gate` to the Node transport. The unchanged native source receives
-the actual response status, headers and body. The advertised reader API and all
-Marumaru image transfers stay direct, without browser image fallback: even an
+HTTP 406 `/seo-gate` to the Node transport. Its advertised reader API has a separate
+anonymous browser session for Cloudflare challenges seen on the CI runner.
+The unchanged native source receives the actual response status, headers and body.
+All Marumaru image transfers stay direct, without browser image fallback: even an
 `application/octet-stream` cover must return its
 exact requested URL and pass independent full JPEG/PNG/WebP container/dimension checks.
 The retained test-only WebView/browser image adapter is not part of Marumaru's source

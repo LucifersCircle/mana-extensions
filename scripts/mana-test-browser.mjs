@@ -51,21 +51,22 @@ export function createManaTestTransport({ solverURL = process.env.FLARESOLVERR_U
     async fetch(input, init = {}) {
       const target = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
       // CDN and actual reader image-byte checks never go through a helper.
-      if (!['kagane.org', 'marumaru105.com'].includes(target.hostname)) return fetchImpl(input, init);
+      if (!['kagane.org', 'marumaru105.com', 'api.storagewebtoon.store'].includes(target.hostname)) return fetchImpl(input, init);
       const method = init.method ?? (input instanceof Request ? input.method : 'GET');
       const body = init.body ?? null;
-      const marumaru = target.hostname === 'marumaru105.com';
+      const marumaru = target.hostname !== 'kagane.org', catalog = target.hostname === 'marumaru105.com';
       (marumaru ? assertPublicMarumaruRequest : assertPublicKaganeRequest)({
         url: typeof input === 'string' ? input : target.href, method, body,
       });
       const headers = new Headers(init.headers ?? (input instanceof Request ? input.headers : undefined));
-      const allowed = new Set(['accept', 'content-type', 'origin', 'referer', 'user-agent', marumaru ? 'x-site' : 'x-integrity-token']);
+      const allowed = new Set(['accept', 'content-type', 'origin', 'referer', 'user-agent',
+        ...(catalog ? ['x-site'] : marumaru ? [] : ['x-integrity-token'])]);
       for (const key of headers.keys()) {
         if (!allowed.has(key) || (key === 'x-integrity-token' && (method !== 'POST' || !/^\/api\/v2\/books\/[A-Za-z0-9-]+$/.test(target.pathname)))) {
           throw new Error('Live-test browser rejects account credentials and unsupported headers');
         }
       }
-      if (marumaru && headers.get('x-site') !== 'marumaru') throw new Error('Live-test browser requires the Marumaru site header');
+      if (catalog && headers.get('x-site') !== 'marumaru') throw new Error('Live-test browser requires the Marumaru site header');
       if (closed) throw new Error('Live-test browser session is closed');
       if (!sites.has(target.hostname)) sites.set(target.hostname, { host: target.hostname, session: randomUUID(), queue: Promise.resolve(), created: false });
       const site = sites.get(target.hostname);
