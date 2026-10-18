@@ -47,16 +47,16 @@ import { Card,
     parseHome,
     parseListing,
     parseReader,
+    publicImageURL,
     readableChapters,
     seriesId,
     url,
     validId } from './MangaStashParser'
 import { allowed,
-    authorizeImage,
     changeSetting,
     check,
+    checkTitles,
     enter,
-    issue,
     known,
     observe,
     Policy,
@@ -64,17 +64,19 @@ import { allowed,
 
 const TTL = 300000
 export class Target implements ChapterSource, PageLinkResolver, CoverRequestHandler, PageRequestHandler, SourcePreferenceProvider {
-    readonly info: SourceInfo = { id: 'MangaStash', version: '0.0.1-alpha.7', name: 'MangaStash', thumbnail: 'MangaStash.png', rating: CatalogRating.MIXED, website: DOMAIN,
+    readonly info: SourceInfo = { id: 'MangaStash', version: '0.0.1-alpha.8', name: 'MangaStash', thumbnail: 'MangaStash.png', rating: CatalogRating.MIXED, website: DOMAIN,
         description: 'MangaStash native feeds and browse controls. Unlabeled titles use Suggestive only as a compatibility fallback. Some chapter dates are unavailable; their displayed upload ages are not reliable. Covers use the largest URL actually advertised per response.',
         supportedLanguages: ['en_US'], badges: ['Manga', 'Manhwa', 'Manhua'], developers: [{ name: 'Lucifers Circle', github: 'https://github.com/LucifersCircle' }] }
     readonly config = { owningLinks: ['mangastash.org'] }
     private readonly api = new MangaStashApi()
+    private readonly coverClient = this.imageTransport(RequestOrigin.Cover)
+    private readonly pageClient = this.imageTransport(RequestOrigin.Page)
     private readonly cache = new Map<string, { at: number, html: string }>()
     private readonly pending = new Map<string, Promise<string>>()
     private readonly details = new Map<string, { at: number, value: Detail }>()
     async getPreferenceMenu(): Promise<Form> {
         const policy = await enter()
-        return { sections: [UIListSection({ header: 'Content safety', footer: 'Off by default. When enabled, only titles explicitly labeled Safe by MangaStash are allowed; unlabeled listings are excluded. Source labels do not guarantee all-ages suitability. Unclassified titles otherwise use a Suggestive compatibility fallback, not a source rating.', children: [UIToggle({ id: 'onlySafe', title: 'Only explicitly Safe titles', value: policy.onlySafe, didChange: async (value) => { await changeSetting(value); this.cache.clear(); this.details.clear() } })] })] }
+        return { sections: [UIListSection({ header: 'Content safety', footer: 'Off by default. When enabled, only titles explicitly labeled Safe by MangaStash are allowed; unlabeled listings are excluded. Public image URLs are not revoked by this setting; image transport validates supported URLs and headers, not title permissions. Source labels do not guarantee all-ages suitability. Unclassified titles otherwise use a Suggestive compatibility fallback, not a source rating.', children: [UIToggle({ id: 'onlySafe', title: 'Only explicitly Safe titles', value: policy.onlySafe, didChange: async (value) => { await changeSetting(value); this.cache.clear(); this.details.clear() } })] })] }
     }
     async getSortOptions(): Promise<SortOption[]> { return SORTS }
     async getSearchForm(): Promise<SearchForm> {
@@ -95,7 +97,7 @@ export class Target implements ChapterSource, PageLinkResolver, CoverRequestHand
         const rated = await observe(items, policy), visible = rated.filter((item) => allowed(item, policy))
         if (!policy.onlySafe && items.length && !visible.length) throw new Error('MangaStash listings are excluded by the requested content-rating policy; unclassified listings use Suggestive compatibility, not a source rating')
         if (policy.onlySafe && items.length && !visible.length) throw new Error('MangaStash listings have no explicitly Safe metadata allowed by current policy. Turn off Only explicitly Safe titles to include unclassified listings.')
-        await issue(visible, policy); await check(policy)
+        await checkTitles(visible.map((item) => item.id), policy)
         return visible.map((item) => ({ id: item.id, title: item.title, cover: item.cover, webUrl: `${DOMAIN}/${item.id}/`, contentRating: nativeRating(item.rating), context }))
     }
     private checkHome(link: PageLink): void { if (link.id !== 'home') throw new Error('Unknown MangaStash page') }
@@ -152,7 +154,7 @@ export class Target implements ChapterSource, PageLinkResolver, CoverRequestHand
         const rated = (await observe([value.card], policy, value.chapters))[0]
         requireAllowed(rated, policy)
         if (!rated) throw new Error('MangaStash title classification missing')
-        await issue([rated], policy); await check(policy)
+        await checkTitles([id], policy)
         return { ...value, card: rated, content: { ...value.content, contentRating: nativeRating(rated.rating) } }
     }
     async getContent(id: string, context?: SourceContext): Promise<Content> { const policy = await enter(context); return (await this.detail(id, policy)).content }
@@ -168,28 +170,31 @@ export class Target implements ChapterSource, PageLinkResolver, CoverRequestHand
         if (selected?.locked) throw new Error('MangaStash chapter is explicitly locked or requires access; no reader request was made')
         if (!selected) throw new Error('MangaStash chapter is not in the complete source inventory')
         const result = parseReader(await this.html(`${DOMAIN}/${chapter}`, policy), id, selected, metadata?.title ?? '')
-        await issue([], policy, { id, chapter, urls: result.pages?.map((page) => page.url ?? '') ?? [] }); await check(policy)
+        const current = await known(id, policy); requireAllowed(current, policy)
+        if (!current?.chapters?.some((item) => item.chapterId === chapter && !item.locked)) throw new Error('MangaStash chapter access changed during the reader request')
+        await check(policy)
         return result
     }
-    private imageTransport(image: ImageRequest, origin: RequestOrigin.Cover | RequestOrigin.Page): HttpClient {
-        const url = image.url, requestedOrigin = image.origin
-        const policies = new Map<string, Policy>()
-        return new HttpClient().addRequestInterceptor(async (request, context) => {
-            if (requestedOrigin !== origin || context.origin !== origin || request.url !== url || request.method !== HttpMethod.Get) throw new Error('Invalid MangaStash image request')
-            const policy = await enter(); await authorizeImage(request.url, policy); await check(policy)
-            policies.set(context.requestId, policy)
+    private imageTransport(origin: RequestOrigin.Cover | RequestOrigin.Page): HttpClient {
+        // Stateless interceptors can serve concurrent public images without a
+        // persistent permission ledger or per-image client allocation.
+        return new HttpClient().addRequestInterceptor((request, context) => {
+            if (context.origin !== origin || request.method !== HttpMethod.Get) throw new Error('Invalid MangaStash image request')
+            publicImageURL(request.url)
             request.headers.setAll({ Referer: `${DOMAIN}/`, Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8' })
             return request
-        }).addResponseInterceptor(async (response, context) => {
-            const policy = policies.get(context.requestId)
-            policies.delete(context.requestId)
-            if (!policy) throw new Error('MangaStash image authorization is missing')
-            await authorizeImage(response.request.url, policy); await check(policy)
-            return response
         })
     }
-    getCoverTransport(request: ImageRequest): HttpClient { return this.imageTransport(request, RequestOrigin.Cover) }
-    getPageTransport(request: ImageRequest): HttpClient { return this.imageTransport(request, RequestOrigin.Page) }
+    getCoverTransport(request: ImageRequest): HttpClient {
+        if (request.origin !== RequestOrigin.Cover) throw new Error('Invalid MangaStash image request')
+        publicImageURL(request.url)
+        return this.coverClient
+    }
+    getPageTransport(request: ImageRequest): HttpClient {
+        if (request.origin !== RequestOrigin.Page) throw new Error('Invalid MangaStash image request')
+        publicImageURL(request.url)
+        return this.pageClient
+    }
     async handleURL(target: string): Promise<DeepLinkContext | null> {
         let id: string, chapter: string | undefined
         try { const parsed = url(target); if (parsed.search) return null; if (/\/chapter-/.test(parsed.pathname)) { id = validId(parsed.pathname.split('/')[1] ?? ''); chapter = chapterId(parsed.href, id) } else id = seriesId(parsed.href) } catch { return null }
