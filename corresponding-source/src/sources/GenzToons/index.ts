@@ -16,6 +16,9 @@ import { CatalogRating,
     PagedSearchResult,
     RequestOrigin,
     ResolvedPageSection,
+    SearchForm,
+    SearchListSection,
+    SearchExcludableMultiPickerSheet,
     SearchRequest,
     SectionStyle,
     SourceContext,
@@ -28,13 +31,15 @@ import { chapters,
     chapterURL,
     detail,
     DOMAIN,
+    genreOptions,
     imageURL,
     listing,
     reader,
+    selectedGenres,
     seriesURL,
     slug } from './Parser'
 export class Target implements ChapterSource, PageLinkResolver, CoverRequestHandler, PageRequestHandler {
-    readonly info: SourceInfo = { id: 'GenzToons', name: 'GenzToons', version: '0.0.1-alpha.3', website: DOMAIN, thumbnail: 'GenzToons.png', rating: CatalogRating.MIXED,
+    readonly info: SourceInfo = { id: 'GenzToons', name: 'GenzToons', version: '0.0.1-alpha.4', website: DOMAIN, thumbnail: 'GenzToons.png', rating: CatalogRating.MIXED,
         description: 'Genz Toons public comics, adapted from nicartjay and keiyoushi. Novels and paid chapters are excluded. Unclassified titles use a Suggestive compatibility fallback, not a verified age rating. Relative or missing dates are unknown. Draft: image MIME compatibility is unverified.',
         supportedLanguages: ['en_US'], badges: ['Manga', 'Manhwa', 'Manhua'], developers: [{ name: 'Lucifers Circle', github: 'https://github.com/LucifersCircle' }, { name: 'nicartjay', github: 'https://github.com/Nicartjay' }, { name: 'keiyoushi', github: 'https://github.com/keiyoushi' }] }
     readonly config = { owningLinks: ['genztoons.org'] }
@@ -61,12 +66,15 @@ export class Target implements ChapterSource, PageLinkResolver, CoverRequestHand
         urls.forEach(url => target.add(url))
         while (target.size > 3000) target.delete(target.values().next().value as string)
     }
+    async getSearchForm(): Promise<SearchForm> {
+        return { sections: [SearchListSection({ children: [SearchExcludableMultiPickerSheet({ id: 'genres', title: 'Genres', options: genreOptions(await this.document(DOMAIN + '/series')) })] })] }
+    }
     async search(request: SearchRequest): Promise<PagedSearchResult> {
         assertRatingPolicy(request.context)
-        const page = request.page ?? 1, query = request.query ?? ''
-        if (!Number.isSafeInteger(page) || page < 1 || typeof query !== 'string' || query.length > 500 || request.listId || request.sort || (request.filters !== undefined && (!request.filters || typeof request.filters !== 'object' || Array.isArray(request.filters) || Object.keys(request.filters).length))) throw new Error('Invalid GenzToons search')
+        const page = request.page ?? 1, query = request.query ?? '', genres = selectedGenres(request.filters)
+        if (!Number.isSafeInteger(page) || page < 1 || typeof query !== 'string' || query.length > 500 || request.listId || request.sort) throw new Error('Invalid GenzToons search')
         if (page > 1 || request.context?.allowedContentRatings?.length === 0) return { results: [], isLastPage: true }
-        const items = listing(await this.document(DOMAIN + '/series')).filter(value => value.title.toLowerCase().includes(query.trim().toLowerCase()) && ratingAllowed(value.contentRating, request.context))
+        const items = listing(await this.document(DOMAIN + '/series'), genres).filter(value => value.title.toLowerCase().includes(query.trim().toLowerCase()) && ratingAllowed(value.contentRating, request.context))
         this.issue(items.map(value => value.cover), this.covers)
         return { results: items.map(value => ({ ...value, context: request.context })), isLastPage: true }
     }

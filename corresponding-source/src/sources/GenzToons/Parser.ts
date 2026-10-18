@@ -8,6 +8,7 @@ import { Chapter,
     ContentRating,
     ContentType,
     Highlight,
+    Option,
     PublicationStatus,
     ReadingMode,
     staff } from '@mana-app/types'
@@ -58,8 +59,32 @@ function rating(genres: string[]): ContentRating | undefined {
     if (values.some(value => ['adult', 'mature'].includes(value))) return ContentRating.MATURE
     return undefined
 }
-export function listing(html: string): Highlight[] {
-    const $ = load(html), rows = $('#searched_series_page > button'), seen = new Set<string>(), result: Highlight[] = []
+const validGenreId = (id: string): boolean => id.length > 0 && id.length <= 100 && ![...id].some(char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)
+export type GenreSelection = { included: string[], excluded: string[] }
+export function selectedGenres(filters: unknown): GenreSelection {
+    const empty: GenreSelection = { included: [], excluded: [] }
+    if (filters === undefined) return empty
+    if (!filters || typeof filters !== 'object' || Array.isArray(filters) || Object.keys(filters).some(key => key !== 'genres')) throw new Error('Invalid GenzToons search filters')
+    const value: unknown = (filters as { genres?: unknown }).genres
+    if (value === undefined) return empty
+    if (!value || typeof value !== 'object') throw new Error('Invalid GenzToons genre selection')
+    const options = (items: unknown): string[] => {
+        if (!Array.isArray(items) || items.length > 100) throw new Error('Invalid GenzToons genre options')
+        return [...new Set(items.map((item: unknown) => {
+            if (!item || typeof item !== 'object' || Array.isArray(item) || !('id' in item) || typeof item.id !== 'string' || !validGenreId(item.id) || Object.keys(item).some(key => !['id', 'title', 'subtitle', 'image', 'contentRating', 'isNonInteractive'].includes(key))) throw new Error('Invalid GenzToons genre identity')
+            return item.id.toLowerCase()
+        }))]
+    }
+    if (Array.isArray(value)) return { ...empty, included: options(value) }
+    if ('id' in value) return { ...empty, included: options([value]) }
+    if (!Object.keys(value).length || Object.keys(value).some(key => !['included', 'excluded'].includes(key))) throw new Error('Invalid GenzToons genre selection')
+    const selection = value as { included?: unknown, excluded?: unknown }
+    const result = { included: options(selection.included === undefined ? [] : selection.included), excluded: options(selection.excluded === undefined ? [] : selection.excluded) }
+    if (result.included.some(id => result.excluded.includes(id))) throw new Error('Conflicting GenzToons genre selection')
+    return result
+}
+export function listing(html: string, selection: GenreSelection = { included: [], excluded: [] }): Highlight[] {
+    const $ = load(html), rows = $('#searched_series_page > button'), seen = new Set<string>(), knownGenres = new Set<string>(), result: Highlight[] = []
     if (!rows.length || $('link[rel="canonical"]').attr('href') !== DOMAIN + '/series') throw new Error('Incomplete GenzToons catalog')
     rows.each((_, node) => {
         const row = $(node), type = row.attr('data-type') ?? ''
@@ -70,9 +95,23 @@ export function listing(html: string): Highlight[] {
         seen.add(id)
         const genres: unknown = JSON.parse(row.attr('tags') ?? '[]')
         if (!Array.isArray(genres) || genres.some(value => typeof value !== 'string')) throw new Error('Invalid GenzToons catalog genres')
-        result.push({ id, title, cover: cover(row.find('[style*="background-image"]').first().attr('style') ?? ''), webUrl: seriesURL(id), contentRating: nativeRating(rating(genres)), subtitle: type })
+        const genreIds = (genres as string[]).map(value => value.toLowerCase())
+        genreIds.forEach(value => knownGenres.add(value))
+        const item = { id, title, cover: cover(row.find('[style*="background-image"]').first().attr('style') ?? ''), webUrl: seriesURL(id), contentRating: nativeRating(rating(genres)), subtitle: type }
+        if (selection.included.every(value => genreIds.includes(value)) && !selection.excluded.some(value => genreIds.includes(value))) result.push(item)
     })
+    if ([...selection.included, ...selection.excluded].some(value => !knownGenres.has(value))) throw new Error('Unknown GenzToons genre')
     return result
+}
+export function genreOptions(html: string): Option[] {
+    listing(html) // Validate the complete comic inventory before exposing its taxonomy.
+    const $ = load(html), options = new Map<string, string>()
+    $('#searched_series_page > button').each((_, node) => {
+        if ($(node).attr('data-type') === 'novel') return
+        const labels = JSON.parse($(node).attr('tags') ?? '[]') as string[]
+        labels.forEach(title => { if (validGenreId(title)) options.set(title.toLowerCase(), title) })
+    })
+    return [...options].map(([id, title]) => ({ id, title })).sort((a, b) => a.title.localeCompare(b.title))
 }
 function field($: ReturnType<typeof load>, name: string): string {
     return text($('div > span').filter((_, node) => text($(node).text()) === name).first().parent().next('div').text())
