@@ -11,7 +11,7 @@ import ts from 'typescript';
 import { discoverSources } from './test-sources.mjs';
 import { isolatedSourceLayout } from './source-dependencies.mjs';
 const approved = ['GourmetScans', 'GenzToons'];
-const infrastructure = ['.github/workflows/live-tests.yaml', 'scripts/additive-source-gate.mjs', 'scripts/additive-source-gate.test.mjs', 'scripts/additive-source-live.mjs'];
+const infrastructure = ['.github/workflows/live-tests.yaml', 'scripts/additive-source-gate.mjs', 'scripts/additive-source-gate.test.mjs', 'scripts/additive-source-live.mjs', 'scripts/additive-source-http.mjs', 'scripts/additive-source-http.test.mjs'];
 const digest = value => createHash('sha256').update(value).digest('hex');
 const git = args => execFileSync('git', args, { maxBuffer: 32 * 1024 * 1024 });
 const text = (sha, path) => git(['show', `${sha}:${path}`]).toString();

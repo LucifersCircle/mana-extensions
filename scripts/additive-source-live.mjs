@@ -8,6 +8,7 @@ import { createManaRuntime, installManaHTTP, redactText } from './mana-runtime.m
 import { testNativeContract, createContractTransport } from './native-contracts.mjs';
 import { sourceContracts } from './native-contract-sources.mjs';
 import { discoverSources } from './test-sources.mjs';
+import { diagnosticFetch } from './additive-source-http.mjs';
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const proof = JSON.parse(readFileSync('bundles/live-status/additive-proof.json'));
 assert.equal(proof.schemaVersion, 1);
@@ -27,9 +28,9 @@ const manifest = JSON.parse(readFileSync('dist/sources.json'));
 const results = { ...proof, completedAt: null, sources: {} };
 let failed = false;
 for (const name of proof.selectedSources) {
-  const tests = [], notApplicable = [], config = sourceContracts[name];
+  const tests = [], notApplicable = [], httpDiagnostics = [], config = sourceContracts[name];
   assert(config, 'Missing native contract');
-  const transport = createContractTransport(fetch, { documentLimit: config.documentLimit ?? 12, imageLimit: config.imageLimit ?? 3 });
+  const transport = createContractTransport(diagnosticFetch(fetch, httpDiagnostics), { documentLimit: config.documentLimit ?? 12, imageLimit: config.imageLimit ?? 3 });
   let host;
   const expectedChecks = [], expectedNotApplicable = [];
   // Discover labels from the unchanged native contract without invoking a single
@@ -51,9 +52,9 @@ for (const name of proof.selectedSources) {
     } });
     assert.deepEqual(tests.map(test => test.name), expectedChecks, 'Incomplete/duplicate native capability set');
     for (const entry of expectedNotApplicable) assert(notApplicable.some(actual => actual.capability === entry.capability && actual.reason === entry.reason), 'Missing native not-applicable disclosure');
-    results.sources[name] = { tests, notApplicable, requests: transport.stats() };
+    results.sources[name] = { tests, notApplicable, httpDiagnostics, requests: transport.stats() };
   } catch (error) {
-    failed = true; results.sources[name] = { tests, notApplicable, requests: transport.stats(), error: redactText(error.stack ?? String(error)), remainingChecks: 'not run' };
+    failed = true; results.sources[name] = { tests, notApplicable, httpDiagnostics, requests: transport.stats(), error: redactText(error.stack ?? String(error)), remainingChecks: 'not run' };
   } finally { if (host) await host.close(); }
 }
 results.completedAt = new Date().toISOString();
