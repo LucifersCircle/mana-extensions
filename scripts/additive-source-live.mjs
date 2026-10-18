@@ -8,6 +8,7 @@ import { createManaRuntime, installManaHTTP, redactText } from './mana-runtime.m
 import { testNativeContract, createContractTransport } from './native-contracts.mjs';
 import { sourceContracts } from './native-contract-sources.mjs';
 import { discoverSources } from './test-sources.mjs';
+import { createGourmetTestTransport } from './additive-gourmet-transport.mjs';
 import { diagnosticFetch } from './additive-source-http.mjs';
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const proof = JSON.parse(readFileSync('bundles/live-status/additive-proof.json'));
@@ -30,7 +31,8 @@ let failed = false;
 for (const name of proof.selectedSources) {
   const tests = [], notApplicable = [], httpDiagnostics = [], config = sourceContracts[name];
   assert(config, 'Missing native contract');
-  const transport = createContractTransport(diagnosticFetch(fetch, httpDiagnostics), { documentLimit: config.documentLimit ?? 12, imageLimit: config.imageLimit ?? 3 });
+  const browser = name === 'GourmetScans' ? createGourmetTestTransport({ fetchImpl: fetch, solverURL: process.env.ADDITIVE_BROWSER_URL, diagnostics: httpDiagnostics, limit: config.documentLimit ?? 12 }) : null;
+  const transport = createContractTransport(browser?.fetch ?? diagnosticFetch(fetch, httpDiagnostics), { documentLimit: config.documentLimit ?? 12, imageLimit: config.imageLimit ?? 3 });
   let host;
   const expectedChecks = [], expectedNotApplicable = [];
   // Discover labels from the unchanged native contract without invoking a single
@@ -52,10 +54,10 @@ for (const name of proof.selectedSources) {
     } });
     assert.deepEqual(tests.map(test => test.name), expectedChecks, 'Incomplete/duplicate native capability set');
     for (const entry of expectedNotApplicable) assert(notApplicable.some(actual => actual.capability === entry.capability && actual.reason === entry.reason), 'Missing native not-applicable disclosure');
-    results.sources[name] = { tests, notApplicable, httpDiagnostics, requests: transport.stats() };
+    results.sources[name] = { tests, notApplicable, httpDiagnostics, browserAssistance: browser?.traffic ?? null, requests: transport.stats() };
   } catch (error) {
-    failed = true; results.sources[name] = { tests, notApplicable, httpDiagnostics, requests: transport.stats(), error: redactText(error.stack ?? String(error)), remainingChecks: 'not run' };
-  } finally { if (host) await host.close(); }
+    failed = true; results.sources[name] = { tests, notApplicable, httpDiagnostics, browserAssistance: browser?.traffic ?? null, requests: transport.stats(), error: redactText(error.stack ?? String(error)), remainingChecks: 'not run' };
+  } finally { try { if (host) await host.close(); } finally { if (browser) await browser.close(); } }
 }
 results.completedAt = new Date().toISOString();
 writeFileSync('bundles/live-status/additive-results.json', JSON.stringify(results, null, 2));

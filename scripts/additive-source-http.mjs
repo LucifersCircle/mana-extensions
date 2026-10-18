@@ -20,7 +20,7 @@ function routeKind(input) {
   } catch { return 'invalid'; }
 }
 async function failureMarkers(response) {
-  const flags = { bodyCloudflareMarker: false, explicitDenialMarker: false, inspectedBytes: 0, bodyInspection: 'not-needed' };
+  const flags = { bodyCloudflareMarker: false, explicitDenialMarker: false, inspectedBytes: 0, bodyInspection: 'not-needed', bodyComplete: false };
   if (![403, 503].includes(response.status) || !/^text\/html(?:;|$)/i.test(response.headers.get('content-type') ?? '')) return flags;
   let reader;
   try {
@@ -28,7 +28,7 @@ async function failureMarkers(response) {
     if (!reader) return { ...flags, bodyInspection: 'no-body' };
     const parts = []; let reads = 0;
     while (flags.inspectedBytes < 8192 && reads++ < 64) {
-      const { value, done } = await reader.read(); if (done) break;
+      const { value, done } = await reader.read(); if (done) { flags.bodyComplete = true; break; }
       const part = value.subarray(0, 8192 - flags.inspectedBytes);
       parts.push(Buffer.from(part)); flags.inspectedBytes += part.byteLength;
     }
