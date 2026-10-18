@@ -44,11 +44,30 @@ jobs:
           npm run lint
           npm run build -- --output dist
           npm run verify:bundles
+      - name: Prove approved additive source boundary
+        id: additive
+        run: node scripts/additive-source-gate.mjs
+      - name: Start isolated additive browser host
+        if: steps.additive.outputs.gourmetBrowser == 'true'
+        run: |
+          docker build -t mana-additive-base:local scripts/flaresolverr
+          docker build -f scripts/additive-gourmet.Dockerfile -t mana-additive-gourmet:local .
+          docker compose -f compose.yaml -f scripts/additive-gourmet.compose.yaml up -d --no-build --wait --wait-timeout 90
+      - name: Run approved new-source native checks
+        if: steps.additive.outputs.active == 'true'
+        env:
+          ADDITIVE_BROWSER_URL: http://127.0.0.1:8191
+        run: |
+          set -o pipefail
+          node scripts/additive-source-live.mjs 2>&1 | tee bundles/live-status/additive.log
       - name: Select PR live sources (all sources on other events)
+        if: steps.additive.outcome == 'success' && steps.additive.outputs.active != 'true'
         run: node scripts/changed-sources.mjs
       - name: Start test-only Chromium transport
+        if: steps.additive.outcome == 'success' && steps.additive.outputs.active != 'true'
         run: docker compose up -d --build --wait --wait-timeout 90
       - name: Run Mana live tests
+        if: steps.additive.outcome == 'success' && steps.additive.outputs.active != 'true'
         id: tests
         env:
           FLARESOLVERR_URL: http://127.0.0.1:8191
@@ -59,14 +78,14 @@ jobs:
           rm -f bundles/live-test-results.json
           npm run test:extensions 2>&1 | tee bundles/live-status/mana.log
       - name: Capture timestamped results
-        if: always()
+        if: always() && (github.event_name != 'pull_request' || steps.additive.outcome == 'success') && steps.additive.outputs.active != 'true'
         env:
           TEST_OUTCOME: ${{ steps.tests.outcome }}
           TEST_STARTED_AT: ${{ steps.started.outputs.timestamp }}
           TESTED_SHA: ${{ github.sha }}
         run: node scripts/test-status.mjs capture
       - name: Collect structured report
-        if: always()
+        if: always() && (github.event_name != 'pull_request' || steps.additive.outcome == 'success') && steps.additive.outputs.active != 'true'
         run: |
           mkdir -p bundles/live-status
           if [ -f bundles/live-test-results.json ]; then
@@ -80,8 +99,11 @@ jobs:
           retention-days: 7
           path: bundles/live-status/
 
+      - name: Stop isolated additive browser host
+        if: always() && steps.additive.outputs.gourmetBrowser == 'true'
+        run: docker compose -f compose.yaml -f scripts/additive-gourmet.compose.yaml down
       - name: Stop test-only Chromium transport
-        if: always()
+        if: always() && (github.event_name != 'pull_request' || steps.additive.outcome == 'success') && steps.additive.outputs.active != 'true'
         run: docker compose down
 
   publish-status:

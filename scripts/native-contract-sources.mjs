@@ -1,3 +1,4 @@
+import { createHash, createDecipheriv } from 'node:crypto';
 // Small source-specific seeds/oracles for the same native method contract.
 // Oracles inspect consumed live responses only; they do not fetch reference copies.
 import assert from 'node:assert/strict';
@@ -77,6 +78,68 @@ function madara(host, sample) {
   };
 }
 export const sourceContracts = {
+  GourmetScans: {
+    sample: 'tcit', chapter: 'chapter-12_1', section: 'manga',
+    // One Discover + three search + two (detail, refreshed inventory, reader) + one filter = 11 documents.
+    issuedImageOwnership: false, methods: [...methods, ...controls], controls: true, documentLimit: 11,
+    filter(state, fields) {
+      const option = fields.find(field => field.id === 'genres')?.options?.find(value => value.id === 'romance');
+      assert(option, 'GourmetScans genre taxonomy lacks the seed genre');
+      state.filterQuery = state.content.title; state.filterExpectedID = state.id;
+      return { genres: option };
+    },
+    filtered(state, _result, filter) {
+      assert(state.transport.requests.slice(state.filterRequestStart).some(request => new URL(request.url).searchParams.get('genre[]') === filter.genres.id), 'Native genre filter was not transmitted');
+    },
+    detail(state) {
+      const expected = `https://gourmetsupremacy.com/project/${state.id}/`, $ = html(state, url => url.href === expected);
+      assert.equal(state.content.webUrl, expected); assert.equal($('link[rel="canonical"]').attr('href'), expected);
+      const heading = $('.post-title h1').first().clone(); heading.children().remove();
+      assert.equal(state.content.title, norm(heading.text()));
+      const genres = $('.tab-summary .genres-content a').toArray().map(a => [$(a).attr('href').split('/').filter(Boolean).at(-1), norm($(a).text())]);
+      assert.deepEqual(Array.from(state.content.tags, tag => [tag.id, tag.title]), genres);
+      const ids = genres.map(([id]) => id);
+      const expectedRating = ids.some(id => ['smut', 'hentai', 'erotica'].includes(id)) ? 3 : ids.some(id => ['adult', 'mature'].includes(id)) ? 2 : 1;
+      assert.equal(state.content.contentRating, expectedRating, 'Native rating differs from source metadata or documented unknown fallback');
+    },
+    inventory(state) {
+      const $ = html(state, url => url.href === `https://gourmetsupremacy.com/project/${state.id}/`);
+      const rows = $('.wp-manga-chapter').toArray(), ids = rows.map(node => $(node).children('a').first().attr('href').split('/').filter(Boolean).at(-1));
+      const count = Number(norm($('.tab-summary .post-content_item').filter((_, node) => norm($(node).find('.summary-heading').text()) === 'Chapters').find('.summary-content').text()));
+      assert.equal(rows.length, count); assert.equal(new Set(ids).size, count);
+      const freeIDs = rows.filter(node => {
+        const row = $(node);
+        return !row.is('.premium, .locked, .paid, .login-required, .required-login, [data-price], [data-coin]') && !row.find('.fa-lock, .fa-user-lock, .ion-locked, .chapter-premium, .login-required, .required-login, [data-price], [data-coin]').length && !/(?:premium|locked|paid)/i.test(row.attr('class') ?? '');
+      }).map(node => $(node).children('a').first().attr('href').split('/').filter(Boolean).at(-1));
+      assert.deepEqual(chapterIDs(state.chapters), freeIDs.reverse(), 'Native inventory must include every free source chapter in chronological display order');
+    },
+    async reader(state) {
+      const verify = state => {
+      const expected = `https://gourmetsupremacy.com/project/${state.id}/${state.chapter.chapterId}/`, $ = html(state, url => url.href === expected);
+      assert.equal($('link[rel="canonical"]').attr('href'), expected); assert.equal($('#wp-manga-current-chap').val(), state.chapter.chapterId);
+      const script = $('script').toArray().map(node => $(node).text()).find(value => value.includes('var chapter_data='));
+      assert(script, 'Missing consumed public reader envelope');
+      const payload = JSON.parse(script.match(/var chapter_data='([^']+)';/)[1]);
+      const nonce = script.match(/var wpmangaprotectornonce='([^']+)';/)[1];
+      let block = Buffer.alloc(0), material = Buffer.alloc(0);
+      while (material.length < 32) { block = createHash('md5').update(Buffer.concat([block, Buffer.from(nonce), Buffer.from(payload.s, 'hex')])).digest(); material = Buffer.concat([material, block]); }
+      const cipher = createDecipheriv('aes-256-cbc', material.subarray(0, 32), Buffer.from(payload.iv, 'hex'));
+      const pages = JSON.parse(JSON.parse(Buffer.concat([cipher.update(Buffer.from(payload.ct, 'base64')), cipher.final()]).toString('utf8')));
+      assert.equal(pages.length, $('.reading-content .page-break[id^="chapter-img-"]').length);
+      assert.deepEqual(Array.from(state.reader.pages, page => page.url), pages, 'Native crypto/reader manifest differs from independent Node decoder');
+      };
+      verify(state);
+      // A second real consumed reader checks positional occurrences, not URL uniqueness.
+      const id = 'the-struggle-of-being-reincarnated-as-the-marquesss-daughter-ill-deal-with-whats-coming-to-me-bahasa-indonesia';
+      await state.source.getContent(id, state.context);
+      const inventory = await state.source.getChapters(id);
+      const chapter = inventory.find(item => item.chapterId === 'chapter-1');
+      assert(chapter, 'Reader occurrence sample is absent from the validated free inventory');
+      const reader = await state.source.getChapterData(id, chapter.chapterId, chapter);
+      verify({ ...state, id, chapter, reader });
+      console.log(`Gourmet occurrence oracle: ${reader.pages.length} ordered page occurrences`);
+    },
+  },
   GenzToons: {
     sample: 'senior-disciple-lee-hwe', chapter: 'chapter/6518be2bf4d-6519a16a0b5', methods: [...methods, 'getSearchForm'], controls: true, documentLimit: 8, imageLimit: 3,
     filter(state, fields) {

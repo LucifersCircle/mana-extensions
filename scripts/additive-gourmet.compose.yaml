@@ -1,0 +1,3 @@
+services:
+  flaresolverr:
+    image: mana-additive-gourmet:local
