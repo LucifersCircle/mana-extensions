@@ -59,8 +59,6 @@ import {
 } from './ManhwaNexParser'
 
 const SETTING = 'ManhwaNex.excludeNSFW'
-const IMAGE_STORE = 'ManhwaNex.issuedImages'
-let imageStoreQueue = Promise.resolve()
 const TTL = 300_000
 const GENRES = VERIFIED_GENRES
 const STATUSES = new Set(['on-going', 'end', 'canceled', 'on-hold', 'upcoming'])
@@ -72,7 +70,7 @@ class ExcludedContentError extends Error {}
 
 export class Target implements ContentSource, PageLinkResolver, CoverRequestHandler, PageRequestHandler, SourcePreferenceProvider {
     readonly info: SourceInfo = {
-        id: 'ManhwaNex', version: '0.0.1-alpha.11', name: 'ManhwaNex',
+        id: 'ManhwaNex', version: '0.0.1-alpha.12', name: 'ManhwaNex',
         description: 'ManhwaNex with native discovery, search filters and Mana content-rating policy.',
         thumbnail: 'ManhwaNex.png', rating: CatalogRating.MIXED, website: DOMAIN,
         badges: ['Manhwa', 'Manhua', 'Manga'], supportedLanguages: ['en_US'],
@@ -80,6 +78,8 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
     }
     readonly config = { cloudflareResolutionURL: DOMAIN, owningLinks: ['manhwanex.com'] }
     private readonly api = new ManhwaNexApi()
+    private readonly coverClient = this.imageTransport(RequestOrigin.Cover)
+    private readonly pageClient = this.imageTransport(RequestOrigin.Page)
     private revision = 0
     private readonly listings = new Map<string, CacheEntry<Listing>>()
     private readonly metadata = new Map<string, CacheEntry<Series>>()
@@ -94,7 +94,7 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
 
     async getPreferenceMenu(): Promise<Form> {
         return { sections: [UIListSection({ header: 'Content safety',
-            footer: 'Off unless explicitly saved. Mana’s supplied content-rating policy controls search, discovery and details. This optional extra source exclusion requires verified non-adult metadata and applies to chapters and image requests too. Titles without a source age rating use a Suggestive compatibility fallback, not a site-reported rating. Site labels do not guarantee image content or all-ages suitability.',
+            footer: 'Off unless explicitly saved. Mana’s supplied content-rating policy controls search, discovery and details. This optional extra source exclusion requires verified non-adult metadata and applies to chapters too. Public image transport validates URLs and headers, not title permissions; changing a setting does not revoke previously returned image URLs. Titles without a source age rating use a Suggestive compatibility fallback, not a site-reported rating. Site labels do not guarantee image content or all-ages suitability.',
             children: [UIToggle({ id: 'excludeNSFW', title: 'Exclude NSFW content', value: await this.excludeNSFW(), didChange: async (value) => {
                 this.revision += 1
                 await ObjectStore.set(SETTING, value)
@@ -194,7 +194,7 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
             await this.requireAllowed(contentId, exclude)
             const result = parseReader(await this.api.text(chapterURL(contentId, chapterId)), contentId, chapterId)
             this.checkAllowed(contentId, exclude)
-            await this.recordImages((result.pages ?? []).map((page) => ({ url: page.url ?? '', id: contentId })))
+            for (const page of result.pages ?? []) this.checkImage(page.url ?? '')
             return result
         }, (exclude) => this.checkAllowed(contentId, exclude))
     }
@@ -206,36 +206,27 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
         return { content: { id, title: content.title, cover: content.cover, webUrl: content.webUrl, contentRating: content.contentRating } }
     }
 
-    private imageTransport(image: ImageRequest, origin: RequestOrigin.Cover | RequestOrigin.Page): HttpClient {
-        const url = image.url, requestedOrigin = image.origin
-        const policies = new Map<string, { revision: number, exclude: boolean, contentId: string }>()
-        return new HttpClient().addRequestInterceptor(async (request, context) => {
-            if (requestedOrigin !== origin || context.origin !== origin || request.url !== url || request.method !== HttpMethod.Get) throw new Error('Invalid ManhwaNex image request')
-            const revision = this.revision
-            let contentId = ''
-            const policy = await this.withSettings(async (exclude) => {
-                this.checkImage(request.url)
-                const id = await this.issuedImage(request.url)
-                if (!id) throw new Error('ManhwaNex image was not issued by this source; refresh the title or reader')
-                contentId = id
-                await this.requireAllowed(id, exclude)
-                return { revision, exclude, contentId }
-            }, (exclude) => this.checkAllowed(contentId, exclude))
-            policies.set(context.requestId, policy)
+    private imageTransport(origin: RequestOrigin.Cover | RequestOrigin.Page): HttpClient {
+        // Public URLs are not title-access capabilities. Metadata/chapter callbacks
+        // enforce their own policy; image requests need only native transport guards.
+        // Stateless interceptors keep these clients safe to reuse concurrently.
+        return new HttpClient().addRequestInterceptor((request, context) => {
+            if (context.origin !== origin || request.method !== HttpMethod.Get) throw new Error('Invalid ManhwaNex image request')
+            this.checkImage(request.url)
             request.headers.setAll({ Referer: `${DOMAIN}/`, Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5' })
             return request
-        }).addResponseInterceptor(async (response, context) => {
-            const policy = policies.get(context.requestId)
-            policies.delete(context.requestId)
-            if (!policy || await this.issuedImage(response.request.url) !== policy.contentId) throw new Error('ManhwaNex image was not issued by this source; refresh the title or reader')
-            const currentExclude = await this.excludeNSFW()
-            if (policy.revision !== this.revision || policy.exclude !== currentExclude) throw new Error('ManhwaNex settings changed during this request; refresh to continue')
-            this.checkAllowed(policy.contentId, policy.exclude)
-            return response
         })
     }
-    getCoverTransport(request: ImageRequest): HttpClient { return this.imageTransport(request, RequestOrigin.Cover) }
-    getPageTransport(request: ImageRequest): HttpClient { return this.imageTransport(request, RequestOrigin.Page) }
+    getCoverTransport(request: ImageRequest): HttpClient {
+        if (request.origin !== RequestOrigin.Cover) throw new Error('Invalid ManhwaNex image request')
+        this.checkImage(request.url)
+        return this.coverClient
+    }
+    getPageTransport(request: ImageRequest): HttpClient {
+        if (request.origin !== RequestOrigin.Page) throw new Error('Invalid ManhwaNex image request')
+        this.checkImage(request.url)
+        return this.pageClient
+    }
 
     private checkHome(link: PageLink): void { if (link.id !== 'home') throw new Error('Unknown ManhwaNex page') }
     private async excludeNSFW(): Promise<boolean> { return (await ObjectStore.boolean(SETTING)) === true }
@@ -381,7 +372,7 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
             if ((exclude && !this.allowed(metadata)) || !ratingAllowed(metadata.contentRating, context)) return []
             return [{ id: item.id, title: item.title, cover: item.cover, webUrl: item.webUrl, subtitle: item.subtitle, contentRating: nativeRating(metadata.contentRating), context }]
         })
-        await this.recordImages(results.map((item) => ({ url: item.cover, id: item.id })))
+        for (const item of results) this.checkImage(item.cover)
         return results
     }
 
@@ -397,7 +388,7 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
     private async loadContent(id: string, exclude: boolean): Promise<Content> {
         validId(id)
         const key = `${exclude}:${id}`, cached = this.fresh(this.contentCache.get(key))
-        if (cached) { await this.recordImages([{ url: cached.cover, id }]); return cached }
+        if (cached) { this.checkImage(cached.cover); return cached }
         const revision = this.revision
         const html = await this.api.text(seriesURL(id))
         let result = parseContent(html, id, this.fresh(this.metadata.get(key)))
@@ -415,8 +406,9 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
         }
         if (exclude && (!this.allowed(result.metadata) || !this.allowed(this.fresh(this.metadata.get(key))))) throw new ExcludedContentError('This title is excluded by the NSFW setting or its classification could not be verified')
         if (revision !== this.revision) throw new Error('ManhwaNex settings changed; refresh to continue')
+        this.checkImage(result.content.cover)
         this.cacheMetadata(result.metadata, exclude); this.put(this.contentCache, key, result.content)
-        await this.recordImages([{ url: result.content.cover, id }]); return result.content
+        return result.content
     }
 
     private async requireAllowed(id: string, exclude: boolean): Promise<void> {
@@ -432,47 +424,8 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
 
     private checkImage(value: string): void {
         const url = new URL(value)
-        if (/%(?:2f|5c|00|25)/i.test(value) || /\\/.test(value) || url.protocol !== 'https:' || url.username || url.password || url.hash || url.port || url.search
+        if (url.href !== value || /[?#]/.test(value) || /%(?:2f|5c|00|25)/i.test(value) || /\\/.test(value) || url.protocol !== 'https:' || url.username || url.password || url.hash || url.port || url.search
             || !['manhwanex.com', 'cdn.manhwanex.com'].includes(url.hostname)
             || !(url.hostname === 'cdn.manhwanex.com' ? /^\/manga_[a-z0-9]+\//i.test(url.pathname) : url.pathname.startsWith('/wp-content/uploads/'))) throw new Error('Unsupported ManhwaNex image URL')
-    }
-    private withImageStore<T>(operation: (stored: unknown) => Promise<T> | T): Promise<T> {
-        // ObjectStore is shared by native Target instances. Reload inside one
-        // source-wide queue, never save a stale instance's whole-map snapshot.
-        // Serialization covers this bundle, not separate JavaScript contexts.
-        const request = imageStoreQueue.then(async () => operation(await ObjectStore.get(IMAGE_STORE)))
-        // Report this operation's failure, but let a later operation retry.
-        imageStoreQueue = request.then(() => undefined, () => undefined)
-        return request
-    }
-    private issuedImage(url: string): Promise<string | undefined> {
-        return this.withImageStore((stored) => {
-            if (!Array.isArray(stored)) return undefined
-            // Match the bounded map's last valid entry without rebuilding and
-            // validating every unrelated grant. Reload before and after I/O.
-            for (let index = stored.length - 1; index >= Math.max(0, stored.length - 8192); index -= 1) {
-                const entry: unknown = stored[index]
-                if (!Array.isArray(entry) || entry.length !== 2 || entry[0] !== url || typeof entry[1] !== 'string') continue
-                try { this.checkImage(url); validId(entry[1]); return entry[1] } catch { /* Discard invalid persisted entries. */ }
-            }
-            return undefined
-        })
-    }
-    private withIssued<T>(operation: (issued: Map<string, string>) => Promise<T> | T): Promise<T> {
-        return this.withImageStore((stored) => {
-            const issued = new Map<string, string>()
-            for (const entry of Array.isArray(stored) ? stored.slice(-8192) : []) {
-                if (!Array.isArray(entry) || entry.length !== 2 || typeof entry[0] !== 'string' || typeof entry[1] !== 'string') continue
-                try { this.checkImage(entry[0]); validId(entry[1]); issued.set(entry[0], entry[1]) } catch { /* Discard invalid persisted entries. */ }
-            }
-            return operation(issued)
-        })
-    }
-    private async recordImages(images: Array<{ url: string, id: string }>): Promise<void> {
-        await this.withIssued(async (issued) => {
-            for (const { url, id } of images) { this.checkImage(url); validId(id); issued.delete(url); issued.set(url, id) }
-            while (issued.size > 8192) issued.delete(issued.keys().next().value as string)
-            await ObjectStore.set(IMAGE_STORE, [...issued])
-        })
     }
 }

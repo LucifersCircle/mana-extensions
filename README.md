@@ -365,14 +365,23 @@ The [icon](assets/MangaSushi.png) comes from the website's published icon.
 - Covers use the largest valid rendition advertised in the existing response,
   independently of reader image selection. Chapter lists preserve available
   chapters, decimals, labels and dates; actual pagination is traversed.
-- Readers retain ordered source images, with native image-registry safeguards
-  across cached, concurrent and stale requests. Reader checks load actual image bodies.
+- Readers retain ordered source images. Separate reusable Cover/Page SDK clients
+  validate the exact HTTPS URL, trusted host/path and native origin, and provide
+  the required headers. Reader checks load actual image bodies.
 
 **Settings and limitations**
 
-- Native allowed-content-rating policy applies per request. Optional source NSFW
-  exclusion adds verified explicit-label filtering; an unset preference adds no
-  silent adult cap. Known warnings remain authoritative across in-flight work.
+- Native allowed-content-rating policy applies to search, discovery and details.
+  Optional source NSFW exclusion also checks chapter access against verified
+  metadata; an unset preference adds no silent adult cap. Known warnings remain
+  authoritative across in-flight metadata and chapter work.
+- Public images no longer require a persisted URL-to-title permission record.
+  Unissued but valid public image URLs work. This extension no longer rechecks
+  title policy or revokes returned URLs/in-flight images when settings change. Image transport
+  does not read ObjectStore or refetch title metadata. Old `ManhwaNex.issuedImages`
+  data is ignored and left untouched, with no library or global-cache migration.
+  This intentionally removes the extra image-stage replay/revocation checks; it
+  does not assert that Mana's native cache or UI implements equivalent checks.
 - The website has no verified granular age taxonomy: non-adult/unknown titles use
   the explained Suggestive compatibility bucket and actual adult warnings use Explicit.
 - Long punctuated searches can return unrelated native matches; some numeric

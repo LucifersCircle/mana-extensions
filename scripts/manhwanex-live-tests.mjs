@@ -598,9 +598,11 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
       assert(nativeSearch('.c-tabs-item__content').toArray().some((node) => canonicalID(nativeSearch(node).find('.post-title a').attr('href')) === target), 'Post-warning native search no longer contains the selected canonical probe');
       assert(!ids(safeSearch.results).includes(target), 'A later safe search row erased the observed adult warning');
       assert.equal(cold.metadata.get(`true:${target}`).at, observedAt, 'A contrary safe row extended the warning lifetime');
-      for (const operation of [() => cold.getContent(target), () => cold.getChapters(target), () => cold.getChapterData(target, cachedChapters.at(-1).chapterId), () => authorizeTestImage(cold, cachedDetail.cover, { origin: 'cover' }), () => authorizeTestImage(cold, cachedReader.pages[0].url, { origin: 'page' })]) {
+      for (const operation of [() => cold.getContent(target), () => cold.getChapters(target), () => cold.getChapterData(target, cachedChapters.at(-1).chapterId)]) {
         await assert.rejects(operation, /excluded|classification/);
       }
+      assert.equal((await authorizeTestImage(cold, cachedDetail.cover, { origin: 'cover' })).url, cachedDetail.cover);
+      assert.equal((await authorizeTestImage(cold, cachedReader.pages[0].url, { origin: 'page' })).url, cachedReader.pages[0].url);
       assert.equal(cold.metadata.get(`true:${target}`).at, observedAt, 'Reusing the warning extended its lifetime');
       cold.metadata.get(`true:${target}`).at = 0;
       assert(ids((await cold.search({ page: 1, query: verifiedQuery })).results).includes(target), 'Expired warning did not reset under current verified native metadata');
@@ -705,62 +707,32 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
         && genres[0].options.filter((option) => option.id === tag.id && option.title === tag.title).length === 1), 'Main genres must remain interactive native search options');
     }
   });
-  await check('Source-issued images stay coherent across stale readers, cached writers, concurrent instances and store failures', async () => {
-    assert(nativeStore && detailResponses.size, 'Missing native store or live detail responses for image-registry checks');
-    const globalID = 'global-class-change-i-am-the-invincible-shadow-monarch';
-    for (const id of [sample, globalID]) assert(detailResponses.has(JSON.stringify([`${domain}/manga/${id}/`])), 'Missing captured native detail response');
+  await check('Public image transport ignores obsolete permission records and performs no storage or metadata work', async () => {
+    assert(nativeStore && content?.cover, 'Missing native store or live detail cover');
     const key = 'ManhwaNex.issuedImages', saved = await nativeStore.get(key), before = requests.length;
-    const replay = () => {
-      const target = freshSource();
-      target.api.text = async (...args) => {
-        const value = detailResponses.get(JSON.stringify(args));
-        assert.equal(typeof value, 'string', 'Image-registry check attempted an uncaptured provider request');
-        return value;
-      };
-      return target;
-    };
     const originalGet = nativeStore.get, originalSet = nativeStore.set;
+    let ledgerReads = 0, ledgerWrites = 0;
     try {
-      await nativeStore.set(key, []);
-      const writer = replay(), staleReader = replay();
-      await writer.getContent(globalID);
-      await staleReader.getContent(globalID);
-      const issued = await replay().getContent(sample);
-      assert.equal((await authorizeTestImage(replay(), issued.cover, { origin: 'cover' })).url, issued.cover);
-      assert.equal((await authorizeTestImage(staleReader, issued.cover, { origin: 'cover' })).url, issued.cover, 'A stale reader lost another instance\'s source-issued image');
-      await writer.getContent(globalID);
-      assert.equal((await authorizeTestImage(replay(), issued.cover, { origin: 'cover' })).url, issued.cover, 'A stale cached writer removed another instance\'s image');
-
-      await nativeStore.set(key, []);
-      await assert.rejects(() => authorizeTestImage(staleReader, issued.cover, { origin: 'cover' }), /image was not issued by this source/, 'A stale reader authorized an evicted image');
-      await nativeStore.set(key, [[issued.cover, '../bad'], [issued.cover], [issued.cover, null], ['https://example.com/not-issued.png', sample]]);
-      await assert.rejects(() => authorizeTestImage(staleReader, issued.cover, { origin: 'cover' }), /image was not issued by this source/, 'Malformed persisted entries authorized an image');
-      await nativeStore.set(key, [[issued.cover, sample]]);
-      assert.equal((await authorizeTestImage(replay(), issued.cover, { origin: 'cover' })).url, issued.cover, 'Valid legacy persisted entries stopped working');
-
-      await nativeStore.set(key, []);
-      const pair = await Promise.all([replay().getContent(sample), replay().getContent(globalID)]);
-      for (const item of pair) assert.equal((await authorizeTestImage(replay(), item.cover, { origin: 'cover' })).url, item.cover, 'Concurrent native writers lost an image');
-
-      let failWrite = true;
-      nativeStore.set = async (name, value) => {
-        if (name === key && failWrite) { failWrite = false; throw new Error('Intentional image-registry write failure'); }
-        return originalSet.call(nativeStore, name, value);
-      };
-      await assert.rejects(() => replay().getContent(sample), /Intentional image-registry write failure/);
-      nativeStore.set = originalSet;
-      await replay().getContent(globalID);
-      assert.equal((await authorizeTestImage(replay(), pair[0].cover, { origin: 'cover' })).url, pair[0].cover, 'A failed store write poisoned later image operations');
-
-      let failRead = true;
       nativeStore.get = async (name) => {
-        if (name === key && failRead) { failRead = false; throw new Error('Intentional image-registry read failure'); }
+        if (name === key) { ledgerReads++; throw new Error('Obsolete image registry was read'); }
         return originalGet.call(nativeStore, name);
       };
-      await assert.rejects(() => authorizeTestImage(replay(), pair[0].cover, { origin: 'cover' }), /Intentional image-registry read failure/);
-      nativeStore.get = originalGet;
-      assert.equal((await authorizeTestImage(replay(), pair[0].cover, { origin: 'cover' })).url, pair[0].cover, 'A failed store read poisoned later image operations');
-      assert.equal(requests.length, before, 'Response-derived image-registry checks added provider requests');
+      nativeStore.set = async (name, value) => {
+        if (name === key) { ledgerWrites++; throw new Error('Obsolete image registry was written'); }
+        return originalSet.call(nativeStore, name, value);
+      };
+      for (const legacy of [[], [[content.cover, sample]], [[content.cover, '../bad'], null]]) {
+        await originalSet.call(nativeStore, key, legacy);
+        const cold = freshSource();
+        cold.api.text = async () => { throw new Error('Public image transport fetched title metadata'); };
+        for (const origin of ['cover', 'page']) {
+          assert.equal((await authorizeTestImage(cold, content.cover, { origin })).url, content.cover);
+          assert.equal((await authorizeTestImage(freshSource(), content.cover, { origin })).url, content.cover);
+        }
+        assert.deepEqual(await originalGet.call(nativeStore, key), legacy, 'Public image transport changed legacy state');
+      }
+      assert.equal(ledgerReads, 0); assert.equal(ledgerWrites, 0);
+      assert.equal(requests.length, before, 'Transport-only controls added provider requests');
     } finally {
       nativeStore.get = originalGet; nativeStore.set = originalSet;
       if (saved === null) await nativeStore.remove(key); else await nativeStore.set(key, saved);
@@ -813,18 +785,10 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
     const expected = $('.reading-content img.wp-manga-chapter-img').toArray().map((node) => ($(node).attr('data-src') || $(node).attr('src')).trim());
     assert.deepEqual(pages, expected);
     await imageBytes(cold, pages[0], 'page');
-    const snapshot = await nativeStore.get('ManhwaNex.issuedImages');
-    for (const [url, origin, factory, nativeOrigin] of [[content.cover, 'cover', 'getCoverTransport', 1], [pages[0], 'page', 'getPageTransport', 2]]) {
-      const client = cold[factory]({ url, origin: nativeOrigin });
+    for (const [url, factory, origin] of [[content.cover, 'getCoverTransport', 1], [pages[0], 'getPageTransport', 2]]) {
+      const client = cold[factory]({ url, origin });
       assert(client && typeof client.then !== 'function', 'Image transport factories must be synchronous');
-      let outgoing = 0;
-      try {
-        await assert.rejects(fetchTestImage(cold, url, { origin, fetchImpl: async () => {
-          outgoing += 1; await nativeStore.set('ManhwaNex.issuedImages', []);
-          return new Response('This controlled body must never escape revoked image policy', { status: 200 });
-        } }), /image was not issued/);
-        assert.equal(outgoing, 1, 'Revocation test must reach exactly one authorized image transport');
-      } finally { await nativeStore.set('ManhwaNex.issuedImages', snapshot); }
+      assert.equal(client, cold[factory]({ url, origin }), 'Native image client was not reused');
     }
     if (pages.length > 1) await imageBytes(cold, pages.at(-1), 'page');
     console.log(`READER ${chapter.chapterId}: ${pages.length} pages`);
@@ -852,7 +816,7 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
     const persisted = freshSource(); await authorizeTestImage(persisted, knownImage, { origin: 'cover' });
     const resumed = freshSource(), before = requests.length;
     await Promise.all(Array.from({ length: 12 }, () => authorizeTestImage(resumed, content.cover, { origin: 'cover' })));
-    assert.equal(requests.length - before, 2, 'Concurrent persisted image callbacks reintroduced per-image metadata N+1');
+    assert.equal(requests.length - before, 0, 'Public image callbacks must not refetch title metadata');
   });
   await check('Unknown and explicit classifications fail closed without treating BL/demographics as adult labels', async () => {
     await source.search({ page: 1 });
@@ -874,10 +838,11 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
         if (mutation === 'encoded-separator') target.attr('href', `${domain}/manga-genre/action%2fadult/`);
         return $.html();
       };
-      for (const operation of [() => gated.getContent(sample), () => gated.getChapters(sample), () => gated.getChapterData(sample, 'chapter-360'), () => authorizeTestImage(gated, content.cover, { origin: 'cover' })]) {
+      for (const operation of [() => gated.getContent(sample), () => gated.getChapters(sample), () => gated.getChapterData(sample, 'chapter-360')]) {
         await assert.rejects(operation, /taxonomy/i);
       }
       await assert.rejects(() => gated.search({ page: 1 }), /taxonomy/i);
+      assert.equal((await authorizeTestImage(gated, content.cover, { origin: 'cover' })).url, content.cover);
     }
     for (const mode of ['unknown', 'explicit']) {
       const gated = freshSource(), original = gated.api.metadata.bind(gated.api);
@@ -885,7 +850,8 @@ export async function testManhwaNex({ source, check, requests, freshSource, nati
       await assert.rejects(() => gated.getContent(sample), /excluded|classification/i);
       await assert.rejects(() => gated.getChapters(sample), /excluded|classification/i);
       await assert.rejects(() => gated.getChapterData(sample, 'chapter-360'), /excluded|classification/i);
-      await assert.rejects(() => authorizeTestImage(gated, content.cover, { origin: 'cover' }), /excluded|classification/i);
+      // Metadata/chapter access still fails closed; public URL transport is not a second title policy.
+      assert.equal((await authorizeTestImage(gated, content.cover, { origin: 'cover' })).url, content.cover);
     }
   });
   await check('IDs, image origins and exact read-only POST routes reject unsafe inputs', async () => {
