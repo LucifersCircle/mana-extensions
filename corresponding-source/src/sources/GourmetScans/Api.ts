@@ -8,8 +8,8 @@ import { DOMAIN,
     imageURL } from './Parser'
 export function documentURL(value: string): string {
     const url = new URL(value)
-    if (url.origin !== DOMAIN || url.username || url.password || url.hash || /[\\\s]/.test(value) || url.href !== value || !/^(?:\/(?:page\/[1-9]\d*\/)?|\/project\/[a-z0-9-]+\/(?:[a-z0-9-]+\/)?)$/.test(url.pathname)) throw new Error('Unsupported GourmetScans document URL')
-    if (url.pathname.startsWith('/project/') && url.search) throw new Error('Unexpected GourmetScans document query')
+    if (url.origin !== DOMAIN || url.username || url.password || url.hash || /[\\\s]/.test(value) || url.href !== value || !/^(?:\/(?:page\/[1-9]\d*\/)?|\/project\/[a-z0-9-]+\/(?:[a-z0-9-]+\/)?|\/tag\/(?:manga|manhwa|manhua)\/(?:page\/[1-9]\d*\/)?)$/.test(url.pathname)) throw new Error('Unsupported GourmetScans document URL')
+    if ((url.pathname.startsWith('/project/') || url.pathname.startsWith('/tag/')) && url.search) throw new Error('Unexpected GourmetScans document query')
     return value
 }
 function challenge(response: HttpResponse, body = ''): void {

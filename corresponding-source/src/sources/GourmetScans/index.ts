@@ -32,6 +32,7 @@ import { assertRatingPolicy,
 import { Api,
     imageClient } from './Api'
 import { chapters,
+    comicListing,
     detail,
     DOMAIN,
     imageURL,
@@ -42,9 +43,10 @@ import { chapters,
     text,
     UnsupportedNovelError } from './Parser'
 const SORTS = [{ id: 'latest', title: 'Latest Updated' }, { id: 'new-manga', title: 'New' }, { id: 'alphabet', title: 'A–Z' }, { id: 'views', title: 'Most Viewed' }]
+const COMIC_LISTS = [{ id: 'manga', title: 'Manga' }, { id: 'manhwa', title: 'Manhwa' }, { id: 'manhua', title: 'Manhua' }]
 type Filters = { genres?: Option }
 export class Target implements ChapterSource, PageLinkResolver, CoverRequestHandler, PageRequestHandler {
-    readonly info: SourceInfo = { id: 'GourmetScans', name: 'GourmetScans', version: '0.0.1-alpha.5', website: DOMAIN, thumbnail: 'GourmetScans.png', rating: CatalogRating.MIXED,
+    readonly info: SourceInfo = { id: 'GourmetScans', name: 'GourmetScans', version: '0.0.1-alpha.6', website: DOMAIN, thumbnail: 'GourmetScans.png', rating: CatalogRating.MIXED,
         description: 'Gourmet Scans public comics, adapted from Inkdex. Novels, login-only and paid chapters are not supported. Search may show unclassified novels until their details identify them. Unclassified titles use a Suggestive compatibility fallback, not a verified age rating. Missing chapter dates are unknown.',
         supportedLanguages: ['en_US'], badges: ['Manga', 'Manhwa'], developers: [{ name: 'Lucifers Circle', github: 'https://github.com/LucifersCircle' }, { name: 'Inkdex', github: 'https://github.com/inkdex' }] }
     readonly config = { owningLinks: ['gourmetsupremacy.com'] }
@@ -81,6 +83,11 @@ export class Target implements ChapterSource, PageLinkResolver, CoverRequestHand
     async search(request: SearchRequest<Filters>): Promise<PagedSearchResult> {
         assertRatingPolicy(request.context)
         const page = request.page ?? 1, sort = request.sort?.id ?? 'latest', query = request.query ?? '', filters = request.filters ?? {}
+        if (request.listId) {
+            if (!COMIC_LISTS.some(value => value.id === request.listId) || !Number.isSafeInteger(page) || page < 1 || page > 100 || query !== '' || sort !== 'latest' || !filters || typeof filters !== 'object' || Array.isArray(filters) || Object.keys(filters).length) throw new Error('Invalid GourmetScans comic catalog request')
+            const result = comicListing(await this.document(`${DOMAIN}/tag/${request.listId}/${page > 1 ? `page/${page}/` : ''}`), request.listId, page)
+            return { results: result.items.filter(value => !this.knownNovels.has(value.id) && ratingAllowed(value.contentRating, request.context)).map(value => ({ ...value, context: request.context })), isLastPage: result.ended }
+        }
         if (!Number.isSafeInteger(page) || page < 1 || page > 100 || typeof query !== 'string' || query.length > 500 || request.listId || !SORTS.some(value => value.id === sort) || !filters || typeof filters !== 'object' || Array.isArray(filters) || Object.keys(filters).some(key => key !== 'genres')) throw new Error('Invalid GourmetScans search')
         const genre = filters.genres?.id ?? ''
         if (filters.genres && (typeof genre !== 'string' || typeof filters.genres !== 'object')) throw new Error('Invalid GourmetScans genre')
@@ -91,11 +98,12 @@ export class Target implements ChapterSource, PageLinkResolver, CoverRequestHand
     async getSectionsForPage(link: PageLink): Promise<PageSection[]> {
         assertRatingPolicy(link.context)
         if (link.id !== 'home') throw new Error('Unknown GourmetScans page')
-        return [{ id: 'latest', title: 'Latest Updated', style: SectionStyle.SimpleSingleRow }]
+        return COMIC_LISTS.map(value => ({ ...value, style: SectionStyle.SimpleSingleRow }))
     }
     async resolvePageSection(link: PageLink, sectionId: string): Promise<ResolvedPageSection> {
-        if (link.id !== 'home' || sectionId !== 'latest') throw new Error('Unknown GourmetScans section')
-        return { items: (await this.search({ page: 1, context: link.context })).results }
+        if (link.id !== 'home' || !COMIC_LISTS.some(value => value.id === sectionId)) throw new Error('Unknown GourmetScans section')
+        const result = await this.search({ page: 1, listId: sectionId, context: link.context })
+        return { items: result.results, viewMoreLink: result.isLastPage ? undefined : { request: { page: 1, listId: sectionId, context: link.context } } }
     }
     async getContent(id: string, context?: SourceContext): Promise<Content> {
         slug(id); assertRatingPolicy(context)

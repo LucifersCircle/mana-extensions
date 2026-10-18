@@ -137,3 +137,26 @@ export function reader(html: string, id: string, chapterId: string): ChapterData
     if (!Array.isArray(pages) || !count || pages.length !== count || pages.length > 1000 || pages.some(value => typeof value !== 'string') || new Set(pages).size !== pages.length) throw new Error('GourmetScans reader page inventory is incomplete')
     return { pages: pages.map(value => ({ url: imageURL(value as string) })) }
 }
+
+export function comicListing(html: string, tag: string, page: number): { items: Highlight[], ended: boolean } {
+    const $ = load(html), args = html.match(/var\s+manga_args\s*=\s*(\{[^\n]+\});/)
+    if (!args) throw new Error('GourmetScans comic catalog metadata is missing')
+    const data = JSON.parse(args[1] as string) as { paged?: number, term?: string, taxonomy?: string, template?: string, orderby?: string, order?: string, posts_per_page?: number }
+    if (data.paged !== page || data.term !== tag || data.taxonomy !== 'wp-manga-tag' || data.template !== 'archive' || data.orderby !== 'latest' || data.order !== 'DESC' || data.posts_per_page !== 12) throw new Error('GourmetScans returned the wrong comic catalog')
+    if ($('#loop-content').length !== 1) throw new Error('GourmetScans comic catalog container is missing or ambiguous')
+    const rows = $('#loop-content .page-item-detail'), items: Highlight[] = [], seen = new Set<string>()
+    if (!rows.length) throw new Error('GourmetScans comic catalog returned no verifiable cards')
+    if (rows.length > data.posts_per_page) throw new Error('GourmetScans comic catalog exceeded its page size')
+    rows.each((_, node) => {
+        const root = $(node), anchor = root.find('.post-title a').first(), href = anchor.attr('href') ?? '', id = href.match(/^https:\/\/gourmetsupremacy\.com\/project\/([^/]+)\/$/)?.[1]
+        if (!id || !text(anchor.text())) throw new Error('GourmetScans comic catalog identity is missing')
+        slug(id)
+        if (seen.has(id)) throw new Error('GourmetScans repeated a comic catalog identity')
+        seen.add(id)
+        if (!root.hasClass('manga') || root.hasClass('text') || root.find('.manga-title-badges .text').toArray().some(value => text($(value).text()).toLowerCase() === 'novel')) return
+        const rowGenres: Option[] = []
+        root.find('.genres-content a, .mg_genres a').each((_, value) => { rowGenres.push({ id: ($(value).attr('href') ?? '').match(/\/genre\/([^/]+)\/$/)?.[1] ?? '', title: text($(value).text()) }) })
+        items.push({ id, title: text(anchor.text()), cover: image($, root.find('.item-thumb img').first().get(0)), webUrl: href, contentRating: nativeRating(rating(rowGenres)), subtitle: text(root.find('.list-chapter .chapter').first().text()) || undefined })
+    })
+    return { items, ended: rows.length < data.posts_per_page }
+}
