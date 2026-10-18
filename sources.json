@@ -3,6 +3,41 @@
   "thumbnail": "https://avatars.githubusercontent.com/LucifersCircle",
   "sources": [
     {
+      "id": "GenzToons",
+      "name": "GenzToons",
+      "version": "0.0.1-alpha.4",
+      "website": "https://genztoons.org",
+      "thumbnail": "GenzToons.png",
+      "rating": 1,
+      "description": "Genz Toons public comics, adapted from nicartjay and keiyoushi. Novels and paid chapters are excluded. Unclassified titles use a Suggestive compatibility fallback, not a verified age rating. Relative or missing dates are unknown. Draft: image MIME compatibility is unverified.",
+      "supportedLanguages": [
+        "en_US"
+      ],
+      "badges": [
+        "Manga",
+        "Manhwa",
+        "Manhua"
+      ],
+      "developers": [
+        {
+          "name": "Lucifers Circle",
+          "github": "https://github.com/LucifersCircle"
+        },
+        {
+          "name": "nicartjay",
+          "github": "https://github.com/Nicartjay"
+        },
+        {
+          "name": "keiyoushi",
+          "github": "https://github.com/keiyoushi"
+        }
+      ],
+      "path": "GenzToons",
+      "environment": "source",
+      "intents": 106957832,
+      "hash": "7f41bc447f41bc447f41bc447f41bc447f41bc447f41bc447f41bc447f41bc44"
+    },
+    {
       "id": "Hijala",
       "version": "0.0.1-alpha.8",
       "name": "Hijala",
@@ -30,7 +65,7 @@
       "path": "Hijala",
       "environment": "source",
       "intents": 106961929,
-      "hash": "4e32a57c4e32a57c4e32a57c4e32a57c4e32a57c4e32a57c4e32a57c4e32a57c"
+      "hash": "5991e1285991e1285991e1285991e1285991e1285991e1285991e1285991e128"
     },
     {
       "id": "Kagane",
@@ -59,7 +94,7 @@
       "path": "Kagane",
       "environment": "source",
       "intents": 106961929,
-      "hash": "02a3f9ab02a3f9ab02a3f9ab02a3f9ab02a3f9ab02a3f9ab02a3f9ab02a3f9ab"
+      "hash": "5adf73625adf73625adf73625adf73625adf73625adf73625adf73625adf7362"
     },
     {
       "id": "MangaStash",
@@ -86,7 +121,7 @@
       "path": "MangaStash",
       "environment": "source",
       "intents": 106961929,
-      "hash": "2e9ec8fc2e9ec8fc2e9ec8fc2e9ec8fc2e9ec8fc2e9ec8fc2e9ec8fc2e9ec8fc"
+      "hash": "299cad21299cad21299cad21299cad21299cad21299cad21299cad21299cad21"
     },
     {
       "id": "MangaSushi",
@@ -111,7 +146,7 @@
       "path": "MangaSushi",
       "environment": "source",
       "intents": 106961929,
-      "hash": "4a61a0c84a61a0c84a61a0c84a61a0c84a61a0c84a61a0c84a61a0c84a61a0c8"
+      "hash": "5d62e8ce5d62e8ce5d62e8ce5d62e8ce5d62e8ce5d62e8ce5d62e8ce5d62e8ce"
     },
     {
       "id": "MangaTaro",
@@ -142,7 +177,7 @@
       "path": "MangaTaro",
       "environment": "source",
       "intents": 106961928,
-      "hash": "7634d6f37634d6f37634d6f37634d6f37634d6f37634d6f37634d6f37634d6f3"
+      "hash": "318f613c318f613c318f613c318f613c318f613c318f613c318f613c318f613c"
     },
     {
       "id": "ManhwaNex",
@@ -169,7 +204,7 @@
       "path": "ManhwaNex",
       "environment": "source",
       "intents": 106961929,
-      "hash": "65ef43fc65ef43fc65ef43fc65ef43fc65ef43fc65ef43fc65ef43fc65ef43fc"
+      "hash": "41d4f05541d4f05541d4f05541d4f05541d4f05541d4f05541d4f05541d4f055"
     },
     {
       "id": "Marumaru",
@@ -194,7 +229,7 @@
       "path": "Marumaru",
       "environment": "source",
       "intents": 102761480,
-      "hash": "6f755eaa6f755eaa6f755eaa6f755eaa6f755eaa6f755eaa6f755eaa6f755eaa"
+      "hash": "173992d5173992d5173992d5173992d5173992d5173992d5173992d5173992d5"
     },
     {
       "id": "QiScans",
@@ -225,7 +260,7 @@
       "path": "QiScans",
       "environment": "source",
       "intents": 106961928,
-      "hash": "5e60f7805e60f7805e60f7805e60f7805e60f7805e60f7805e60f7805e60f780"
+      "hash": "06252f1306252f1306252f1306252f1306252f1306252f1306252f1306252f13"
     },
     {
       "id": "VortexScans",
@@ -252,7 +287,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 106961928,
-      "hash": "4a561e474a561e474a561e474a561e474a561e474a561e474a561e474a561e47"
+      "hash": "5d6e18ed5d6e18ed5d6e18ed5d6e18ed5d6e18ed5d6e18ed5d6e18ed5d6e18ed"
     }
   ]
 }
