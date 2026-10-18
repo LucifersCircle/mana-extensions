@@ -40,19 +40,19 @@ import { assertRatingPolicy,
     nativeRating,
     ratingAllowed } from '../../ContentRatingPolicy'
 import { MangaSushiApi } from './MangaSushiApi'
-import { authorizeImage,
-    changeImagePolicy,
-    beginImageEvidence,
-    ensureImageEvidence,
-    imageEvidenceAllowed,
-    ImageEvidence,
-    observeImageEvidence,
-    imagePolicyRevision,
-    issueImages } from './MangaSushiImages'
+import { changeSetting,
+    checkTitles,
+    beginClassificationEvidence,
+    ensureClassificationEvidence,
+    classificationAllowed,
+    ClassificationEvidence,
+    observeClassificationEvidence,
+    policyRevision } from './MangaSushiPolicy'
 import { englishTitle,
     searchTitle } from './MangaSushiTitles'
 import {
     assertGenreSearch,
+    checkImageURL,
     DOMAIN,
     GenreSelection,
     genreSelection,
@@ -86,7 +86,7 @@ class ExcludedContentError extends Error {}
 export class Target implements ContentSource, PageLinkResolver, CoverRequestHandler, PageRequestHandler, SourcePreferenceProvider {
     readonly info: SourceInfo = {
         id: 'MangaSushi',
-        version: '0.0.1-alpha.12',
+        version: '0.0.1-alpha.13',
         name: 'MangaSushi',
         description: 'MangaSushi with native discovery, search filters and Mana content-rating policy.',
         thumbnail: 'MangaSushi.png',
@@ -98,12 +98,14 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
     }
     readonly config = { cloudflareResolutionURL: DOMAIN, owningLinks: ['mangasushi.org'] }
     private readonly api = new MangaSushiApi()
+    private readonly coverClient = this.imageTransport(RequestOrigin.Cover)
+    private readonly pageClient = this.imageTransport(RequestOrigin.Page)
     private readonly listings = new Map<string, CacheEntry<Listing>>()
     private settingsRevision = 0
-    private readonly evidence = new WeakMap<Series, ImageEvidence>()
-    private readonly listingEvidence = new WeakMap<Listing, ImageEvidence>()
+    private readonly evidence = new WeakMap<Series, ClassificationEvidence>()
+    private readonly listingEvidence = new WeakMap<Listing, ClassificationEvidence>()
     private readonly observed = new WeakSet<Series>()
-    private markListing(listing: Listing, evidence: ImageEvidence): Listing {
+    private markListing(listing: Listing, evidence: ClassificationEvidence): Listing {
         this.listingEvidence.set(listing, evidence)
         for (const item of listing.items) this.evidence.set(item, evidence)
         return listing
@@ -121,14 +123,14 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
     async getPreferenceMenu(): Promise<Form> {
         return { sections: [UIListSection({
             header: 'Content safety',
-            footer: 'Off unless explicitly saved. Mana’s supplied content-rating policy controls search, discovery and details. This optional extra source exclusion uses the site’s non-adult filter and verified genres and applies to chapters and reading too. Titles without a source age rating use a Suggestive compatibility fallback, not a site-reported rating. Site labels do not guarantee image content.',
+            footer: 'Off unless explicitly saved. Mana’s supplied content-rating policy controls search, discovery and details. This optional extra source exclusion uses the site’s non-adult filter and verified genres and applies to chapters and reading too. Titles without a source age rating use a Suggestive compatibility fallback, not a site-reported rating. Public image URLs are not revoked by this setting; image transport validates supported URLs and headers, not title permissions. Site labels do not guarantee image content.',
             children: [UIToggle({
                 id: 'excludeNSFW',
                 title: 'Exclude NSFW content',
                 value: await this.excludeNSFW(),
                 didChange: async (value) => {
                     this.settingsRevision += 1
-                    await changeImagePolicy(value)
+                    await changeSetting(value)
                     this.listings.clear()
                     this.metadata.clear()
                     this.pendingListings.clear()
@@ -168,7 +170,7 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
 
     async search(request: SearchRequest<Filters>): Promise<PagedSearchResult> {
         assertRatingPolicy(request.context)
-        return this.withSettings((exclude) => this.searchPage(request, exclude), (result) => result.results.map((item) => ({ url: item.cover ?? '', id: item.id })))
+        return this.withSettings((exclude) => this.searchPage(request, exclude), (result) => result.results.map((item) => item.id))
     }
 
     private async searchPage(request: SearchRequest<Filters>, exclude: boolean): Promise<PagedSearchResult> {
@@ -196,7 +198,7 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
             if (noRawProgress >= 10 && !listing.ended) throw new Error('MangaSushi provider repeated catalog pages without new raw series IDs; refresh or narrow your search')
             for (const item of listing.items) seen.add(item.id)
             const candidates = fresh.map((item) => this.fresh(this.metadata.get(`${exclude}:${item.id}`)) ?? item)
-            const eligible = await Promise.all(candidates.map(async (item) => !exclude || (item.classified && !item.explicit && await imageEvidenceAllowed(item.id, this.evidence.get(item)))))
+            const eligible = await Promise.all(candidates.map(async (item) => !exclude || (item.classified && !item.explicit && await classificationAllowed(item.id, this.evidence.get(item)))))
             const results = home
                 ? await this.visible(fresh, exclude, first, physicalPage, physicalPage === 1 ? home.latest.items.length + home.popular.items.length : undefined, request.context)
                 : candidates.filter((item, index) => !EDITORIAL_IDS.has(item.id) && eligible[index]
@@ -246,12 +248,12 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
                 additionalInfo: result.additionalInfo?.filter((section) => section.id !== 'content-rating-metadata') } : result
             if (!ratingAllowed(content.contentRating, context)) throw new ExcludedContentError('This title is excluded by Mana’s content-rating policy')
             return content
-        }, (content) => [{ url: content.cover ?? '', id: contentId }])
+        }, () => [contentId])
     }
 
     private async content(contentId: string, exclude: boolean): Promise<Content> {
         if (EDITORIAL_IDS.has(contentId)) throw new ExcludedContentError('This MangaSushi entry is an editorial notice, not a series')
-        const detailEvidence = await beginImageEvidence()
+        const detailEvidence = await beginClassificationEvidence()
         const html = await this.api.text(seriesURL(contentId))
         const title = text(load(html)('.post-title h1').first().text())
         const detail = parseDetailMetadata(html, contentId)
@@ -288,16 +290,16 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
         return this.withSettings(async (exclude) => {
             await this.requireAllowed(contentId, exclude)
             return parseChapters(await this.api.text(`${seriesURL(contentId)}ajax/chapters/`, ''), contentId)
-        })
+        }, () => [contentId])
     }
 
     async getChapterData(contentId: string, chapterId: string): Promise<ChapterData> {
         return this.withSettings(async (exclude) => {
             await this.requireAllowed(contentId, exclude)
-            if (!chapterId || /[/?#]/.test(chapterId)) throw new Error('Invalid MangaSushi chapter ID')
+            if (!chapterId || chapterId.length > 512 || /[/?#\\]/.test(chapterId) || [...chapterId].some((char) => char.charCodeAt(0) < 32)) throw new Error('Invalid MangaSushi chapter ID')
             const result = parseReader(await this.api.text(`${seriesURL(contentId)}${encodeURIComponent(chapterId)}/`), contentId, chapterId)
             return result
-        }, (result) => (result.pages ?? []).map((page) => ({ url: page.url ?? '', id: contentId, chapterId })))
+        }, () => [contentId])
     }
 
     async handleURL(url: string): Promise<DeepLinkContext | null> {
@@ -308,54 +310,45 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
         return { content: { id, title: content.title, cover: content.cover, webUrl: content.webUrl, contentRating: content.contentRating } }
     }
 
-    private imageTransport(image: ImageRequest, origin: RequestOrigin.Cover | RequestOrigin.Page): HttpClient {
-        const url = image.url, requestedOrigin = image.origin
-        const policies = new Map<string, { revision: number, exclude: boolean, key: string }>()
-        return new HttpClient().addRequestInterceptor(async (request, context) => {
-            if (requestedOrigin !== origin || context.origin !== origin || request.url !== url || request.method !== HttpMethod.Get) throw new Error('Invalid MangaSushi image request')
-            const revision = this.settingsRevision, exclude = await this.excludeNSFW(), key = await this.imageContext(exclude)
-            await authorizeImage(request.url, key, exclude)
-            if (revision !== this.settingsRevision) throw new Error('MangaSushi settings changed; refresh to continue')
-            policies.set(context.requestId, { revision, exclude, key })
+    private imageTransport(origin: RequestOrigin.Cover | RequestOrigin.Page): HttpClient {
+        return new HttpClient().addRequestInterceptor((request, context) => {
+            if (context.origin !== origin || request.method !== HttpMethod.Get) throw new Error('Invalid MangaSushi image request')
+            checkImageURL(request.url)
             request.headers.setAll({ Referer: `${DOMAIN}/`, Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5' })
             return request
-        }).addResponseInterceptor(async (response, context) => {
-            const policy = policies.get(context.requestId)
-            policies.delete(context.requestId)
-            if (!policy) throw new Error('MangaSushi image authorization is missing')
-            await authorizeImage(response.request.url, policy.key, policy.exclude)
-            if (policy.revision !== this.settingsRevision) throw new Error('MangaSushi settings changed; refresh to continue')
-            return response
         })
     }
-    getCoverTransport(request: ImageRequest): HttpClient { return this.imageTransport(request, RequestOrigin.Cover) }
-    getPageTransport(request: ImageRequest): HttpClient { return this.imageTransport(request, RequestOrigin.Page) }
+    getCoverTransport(request: ImageRequest): HttpClient {
+        if (request.origin !== RequestOrigin.Cover) throw new Error('Invalid MangaSushi image request')
+        checkImageURL(request.url)
+        return this.coverClient
+    }
+    getPageTransport(request: ImageRequest): HttpClient {
+        if (request.origin !== RequestOrigin.Page) throw new Error('Invalid MangaSushi image request')
+        checkImageURL(request.url)
+        return this.pageClient
+    }
 
     private async excludeNSFW(): Promise<boolean> { return (await ObjectStore.boolean(SETTING)) === true }
 
-    private async withSettings<T>(operation: (exclude: boolean) => Promise<T>, images?: (result: T) => Array<{ url: string, id: string, chapterId?: string }>): Promise<T> {
+    private async withSettings<T>(operation: (exclude: boolean) => Promise<T>, titles?: (result: T) => string[]): Promise<T> {
         const revision = this.settingsRevision
         const exclude = await this.excludeNSFW()
-        const imageRevision = await imagePolicyRevision()
-        await ensureImageEvidence()
+        const savedRevision = await policyRevision()
+        await ensureClassificationEvidence()
         const result = await operation(exclude)
         const currentExclude = await this.excludeNSFW()
-        if (revision !== this.settingsRevision || exclude !== currentExclude || imageRevision !== await imagePolicyRevision()) {
+        if (revision !== this.settingsRevision || exclude !== currentExclude || savedRevision !== await policyRevision()) {
             throw new Error('MangaSushi settings changed during this request; refresh to continue')
         }
-        if (images) {
-            await issueImages(images(result).filter((item) => item.url).map((item) => {
-                const meta = this.fresh(this.metadata.get(`${exclude}:${item.id}`))
-                return { ...item, classified: meta?.classified === true, explicit: meta?.explicit === true, evidence: meta ? this.evidence.get(meta) : undefined }
-            }), JSON.stringify([exclude, imageRevision]))
-            if (revision !== this.settingsRevision || exclude !== await this.excludeNSFW() || imageRevision !== await imagePolicyRevision()) throw new Error('MangaSushi settings changed during this request; refresh to continue')
+        if (titles) {
+            await checkTitles([...new Set(titles(result))].map((id) => {
+                const meta = this.fresh(this.metadata.get(`${exclude}:${id}`))
+                return { id, classified: meta?.classified === true, explicit: meta?.explicit === true, evidence: meta ? this.evidence.get(meta) : undefined }
+            }), exclude, savedRevision)
+            if (revision !== this.settingsRevision || exclude !== await this.excludeNSFW() || savedRevision !== await policyRevision()) throw new Error('MangaSushi settings changed during this request; refresh to continue')
         }
         return result
-    }
-
-    private async imageContext(exclude: boolean): Promise<string> {
-        if (exclude !== await this.excludeNSFW()) throw new Error('MangaSushi settings changed; refresh to continue')
-        return JSON.stringify([exclude, await imagePolicyRevision()])
     }
 
     private checkHome(link: PageLink): void {
@@ -374,7 +367,7 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
         const evidence = this.evidence.get(item)
         if (!evidence) throw new Error('MangaSushi metadata has no source evidence')
         if (!this.observed.has(item)) {
-            await observeImageEvidence(item.id, item.classified && !item.explicit, evidence)
+            await observeClassificationEvidence(item.id, item.classified && !item.explicit, evidence)
             this.observed.add(item)
         }
         const key = `${exclude}:${item.id}`, prior = this.metadata.get(key)?.value
@@ -389,7 +382,7 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
         const key = `${exclude}:${url}`
         const cached = this.fresh(this.listings.get(key))
         if (cached) { assertGenreSearch(cached, genres, true); return cached }
-        const evidence = await beginImageEvidence()
+        const evidence = await beginClassificationEvidence()
         const html = await this.api.text(url)
         if (!html.includes('search-advanced-form')) throw new Error('MangaSushi search page is incomplete')
         const result = this.markListing(parseListing(html), evidence)
@@ -433,7 +426,7 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
         if (pending) return pending
         const revision = this.settingsRevision
         const request = (async () => {
-            const evidence = await beginImageEvidence()
+            const evidence = await beginClassificationEvidence()
             const result = this.markListing(await this.api.more(first.next as NonNullable<Listing['next']>, page, selector), evidence)
             for (const item of result.items) if (item.explicit) await this.cacheMetadata(item, exclude)
             assertGenreSearch(result, genres)
@@ -457,7 +450,7 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
         if (pending) return pending
         const revision = this.settingsRevision
         const request = (async () => {
-            const evidence = await beginImageEvidence()
+            const evidence = await beginClassificationEvidence()
             const html = await this.api.text(`${DOMAIN}/`)
             const $ = load(html)
             if (!/popular series/i.test($('.popular-slider .heading').text()) || !/what.s new/i.test($('.c-blog__heading h1').text())) {
@@ -510,7 +503,7 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
         if (pending) { await pending; return }
         const revision = this.settingsRevision
         const request = (async () => {
-            const evidence = await beginImageEvidence()
+            const evidence = await beginClassificationEvidence()
             const result = this.markListing(await this.api.more({ template: 'madara-core/content/content-search', vars }, page, '.c-tabs-item__content'), evidence)
             if (revision !== this.settingsRevision) throw new Error('MangaSushi settings changed during this request; refresh to continue')
             this.listings.set(key, { at: Date.now(), value: result })
@@ -548,7 +541,7 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
     private async resolveMetadata(id: string, title: string, exclude: boolean): Promise<Series> {
         if (EDITORIAL_IDS.has(id)) throw new ExcludedContentError('This MangaSushi entry is an editorial notice, not a series')
         let found = this.fresh(this.metadata.get(`${exclude}:${id}`))
-        let lastEvidence: ImageEvidence | undefined
+        let lastEvidence: ClassificationEvidence | undefined
         if (!found) {
             if (!title) throw new ExcludedContentError('MangaSushi title cannot be verified')
             // WordPress sometimes fails to match its own typographic punctuation.
@@ -560,7 +553,7 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
                 found = listing.items.find((item) => item.id === id)
                 const seen = new Set(listing.items.map((item) => item.id))
                 for (let page = 2; !found && listing.next && page <= 50; page += 1) {
-                    const evidence = await beginImageEvidence()
+                    const evidence = await beginClassificationEvidence()
                     const next = this.markListing(await this.api.more(listing.next, page, '.c-tabs-item__content'), evidence)
                     lastEvidence = evidence
                     if (next.items.length && next.items.every((item) => seen.has(item.id))) {
@@ -576,8 +569,8 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
                 if (found) break
             }
         }
-        if (!found || (exclude && (!found.classified || found.explicit || !await imageEvidenceAllowed(id, this.evidence.get(found))))) {
-            if (!found && lastEvidence) await observeImageEvidence(id, false, lastEvidence)
+        if (!found || (exclude && (!found.classified || found.explicit || !await classificationAllowed(id, this.evidence.get(found))))) {
+            if (!found && lastEvidence) await observeClassificationEvidence(id, false, lastEvidence)
             throw new ExcludedContentError('This title is excluded by the NSFW setting or its classification could not be verified')
         }
         return found
@@ -587,7 +580,7 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
         if (EDITORIAL_IDS.has(id)) throw new ExcludedContentError('This MangaSushi entry is an editorial notice, not a series')
         if (!exclude) { seriesURL(id); return }
         const cached = this.fresh(this.metadata.get(`${exclude}:${id}`))
-        if (cached?.classified && !cached.explicit && await imageEvidenceAllowed(id, this.evidence.get(cached))) return
+        if (cached?.classified && !cached.explicit && await classificationAllowed(id, this.evidence.get(cached))) return
         await this.content(id, exclude)
     }
 }
