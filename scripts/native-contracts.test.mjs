@@ -1,7 +1,7 @@
 // Infrastructure only. No provider fixtures and no extension behavior is mocked.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createContractTransport } from './native-contracts.mjs';
+import { createContractTransport, verifyNativeImageBody } from './native-contracts.mjs';
 
 test('native request budget counts failures and stops before an excess transport', async () => {
   let calls = 0;
@@ -85,4 +85,32 @@ test('native capture stops streaming at the host body cap and cancels oversized 
     pull(controller) { controller.enqueue(new Uint8Array(1)); },
   })));
   await assert.rejects(tiny.fetch('https://example.invalid/too-many-chunks'), /capture read limit/);
+});
+
+
+test('Genz page MIME compatibility remains structurally validated and narrowly scoped', () => {
+  const webp = Buffer.from('UklGRjQAAABXRUJQVlA4ICgAAACQAQCdASoCAAMAAUAmJZACdLoAA5gA/vSIh/VcnYnxw/ubHOLZDAAA', 'base64');
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAIAAAA2iEnWAAAAFElEQVR4nGPUCKhgYGBgYmBgQFAAEdQA9rHw9mwAAAAASUVORK5CYII=', 'base64');
+  const input = { sourceId: 'GenzToons', origin: 'page', url: 'https://cdn.meowing.org/uploads/test.webp', mime: 'text/plain', bytes: webp };
+  assert.deepEqual(verifyNativeImageBody(input), { width: 2, height: 3, format: 'WEBP' });
+  for (const patch of [
+    { sourceId: 'OtherSource' }, { origin: 'cover' }, { mime: 'application/octet-stream' }, { mime: 'text/html' }, { mime: undefined }, { bytes: png },
+    { url: 'https://example.invalid/uploads/test.webp' }, { url: 'http://cdn.meowing.org/uploads/test.webp' },
+    { url: 'https://user@cdn.meowing.org/uploads/test.webp' }, { url: 'https://cdn.meowing.org/uploads/test.webp?q=1' },
+    { url: 'https://cdn.meowing.org/uploads/test.webp#fragment' }, { url: 'https://cdn.meowing.org/uploads/../test.webp' },
+    { url: 'https://cdn.meowing.org/uploads/folder/test.webp' }, { url: 'https://cdn.meowing.org/uploads/test%2ewebp' },
+    { url: 'https://cdn.meowing.org/uploads/test.webp\n' }, { url: 'https://cdn.meowing.org/uploads/' + 'a'.repeat(101) },
+    { bytes: Buffer.from('<html>access denied</html>') }, { bytes: Buffer.from('{"error":"denied"}') },
+    { bytes: webp.subarray(0, webp.length - 1) }, { bytes: Buffer.concat([webp, Buffer.from('trailing')]) }
+  ]) assert.throws(() => verifyNativeImageBody({ ...input, ...patch }));
+  const badChunk = Buffer.from(webp); badChunk.writeUInt32LE(webp.length, 16);
+  assert.throws(() => verifyNativeImageBody({ ...input, bytes: badChunk }));
+  // Existing sources retain exactly their MIME acceptance, with the same byte verifier.
+  for (const sourceId of ['Hijala', 'Kagane', 'MangaStash', 'MangaSushi', 'MangaTaro', 'ManhwaNex', 'Marumaru', 'QiScans', 'VortexScans']) {
+    assert.equal(verifyNativeImageBody({ ...input, sourceId, mime: 'image/webp' }).format, 'WEBP');
+    assert.throws(() => verifyNativeImageBody({ ...input, sourceId }));
+    const cover = { ...input, sourceId, origin: 'cover', mime: 'application/octet-stream' };
+    if (['Marumaru', 'VortexScans'].includes(sourceId)) assert.equal(verifyNativeImageBody(cover).format, 'WEBP');
+    else assert.throws(() => verifyNativeImageBody(cover));
+  }
 });

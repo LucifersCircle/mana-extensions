@@ -106,6 +106,20 @@ export function createContractTransport(fetchImpl, { documentLimit = 12, imageLi
   };
 }
 
+// MIME labels are not pixel-decoding proof. GenzToons serves WebP pages as
+// text/plain; device testing confirmed rendering. This exception preserves the
+// same complete-container structural checks used for image/* responses.
+export function verifyNativeImageBody({ sourceId, origin, url, mime, bytes }) {
+  const metadata = verifyRasterImageBytes(bytes);
+  const target = new URL(url);
+  const genzWebP = sourceId === 'GenzToons' && origin === 'page' && mime === 'text/plain' && metadata.format === 'WEBP'
+    && target.href === url && target.origin === 'https://cdn.meowing.org' && !target.username && !target.password && !target.search && !target.hash
+    && target.pathname.startsWith('/uploads/') && target.pathname.slice(9).length <= 100
+    && /^[A-Za-z0-9_-]+(?:\.(?:avif|webp|png|jpe?g))?$/.test(target.pathname.slice(9));
+  assert(mime?.startsWith('image/') || (origin === 'cover' && ['Marumaru', 'VortexScans'].includes(sourceId) && mime === 'application/octet-stream') || genzWebP, 'Native image MIME is unsupported');
+  return metadata;
+}
+
 async function image(source, url, origin, transport, captureCoverImage) {
   transport.imageURLs.add(url);
   const response = await fetchTestImage(source, url, { origin, fetchImpl: transport.fetch,
@@ -120,11 +134,10 @@ async function image(source, url, origin, transport, captureCoverImage) {
   if (length && (!encoding || encoding === 'identity')) {
     assert(/^\d+$/.test(length)); assert.equal(bytes.length, Number(length), 'Incomplete native image transfer');
   }
-  assert(mime?.startsWith('image/') || (origin === 'cover' && ['Marumaru', 'VortexScans'].includes(source.info.id) && mime === 'application/octet-stream'), 'Native image MIME is unsupported');
-  // Full PNG/JPEG/WebP container and dimension validation, not a header-only
-  // success. Other formats remain unverified until the host can validate them.
-  const { format } = verifyRasterImageBytes(bytes);
-  console.log(`IMAGE ${origin}: ${format}, ${bytes.length} complete bytes`);
+  // Complete PNG/JPEG/WebP containers and dimensions, not per-response pixel
+  // decoding. Preserve the actual MIME in evidence, including compatibility cases.
+  const { format } = verifyNativeImageBody({ sourceId: source.info.id, origin, url, mime, bytes });
+  console.log(`IMAGE ${origin}: ${format}, ${bytes.length} complete bytes, MIME ${mime}, structural validation`);
 }
 
 export async function testNativeContract({ name, source, manifestEntry, check, notApplicable, transport, captureCoverImage }) {
