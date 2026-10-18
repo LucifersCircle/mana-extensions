@@ -19,7 +19,7 @@ try {
   for (const name of names) {
     const tests = [], notApplicable = [], started = performance.now();
     const config = sourceContracts[name];
-    const transport = createContractTransport(testTransport.fetch, { documentLimit: config?.documentLimit ?? 12, imageLimit: 3 });
+    const transport = createContractTransport(testTransport.fetch, { documentLimit: config?.documentLimit ?? 12, imageLimit: config?.imageLimit ?? 3 });
     async function check(label, fn) {
       const start = performance.now();
       try { await fn(); tests.push({ name: label, status: 'pass', duration: performance.now() - start }); console.log(`PASS ${name}: ${label}`); }
@@ -34,7 +34,8 @@ try {
       assert(typeof prelude === 'string' && prelude.length > 0, 'Built source lacks native serialized function helpers');
       const host = installManaHTTP(context); hosts.push(host);
       const source = host.wrapSource(testWebViews.wrapSource(new context.Target(), { serializedFunctionPrelude: prelude }));
-      await testNativeContract({ name, source, manifestEntry: entries[0], check, notApplicable, transport });
+      await testNativeContract({ name, source, manifestEntry: entries[0], check, notApplicable, transport,
+        captureCoverImage: testWebViews.captureCoverImage });
     } catch (error) {
       suiteError = `Source suite aborted before completion; remaining checks were not run.\n${redactText(error.stack ?? String(error))}`;
       console.error(`FAIL ${name}: ${suiteError}`);

@@ -30,6 +30,33 @@ test('native capture preserves the very response the SDK consumes without anothe
   assert.equal(await response.text(), transport.captures[0].text); assert.equal(calls, 1);
 });
 
+test('browser cover resolution counts against the same image budget, including failed attempts', async () => {
+  const cover = 'https://example.invalid/cover', page = 'https://example.invalid/page';
+  let native = 0, browser = 0;
+  const transport = createContractTransport(async () => {
+    native++;
+    if (native === 1) throw new Error('test-only native challenge');
+    return new Response('test-only image bytes');
+  }, { imageLimit: 4 });
+  transport.imageURLs.add(cover); transport.imageURLs.add(page);
+  await assert.rejects(transport.fetch(cover), /native challenge/);
+  const capture = async () => { browser++; return new Response('captured test bytes'); };
+  await transport.captureImage(cover, capture);
+  await transport.fetch(page); await transport.fetch(page);
+  await assert.rejects(transport.captureImage(cover, capture), /budget exceeded/);
+  await assert.rejects(transport.captureImage('https://example.invalid/unrequested', capture), /native image identity/);
+  assert.equal(native, 3); assert.equal(browser, 1);
+  assert.equal(transport.stats().images, 4); assert.equal(transport.stats().blocked, 1);
+  assert.equal(transport.requests[1].transport, 'browser-cover-after-cloudflare');
+  assert.equal(transport.requests[1].status, 200);
+
+  const failed = createContractTransport(async () => new Response('unused'), { imageLimit: 1 });
+  failed.imageURLs.add(cover);
+  await assert.rejects(failed.captureImage(cover, async () => { throw new Error('capture failed'); }), /capture failed/);
+  await assert.rejects(failed.captureImage(cover, capture), /budget exceeded/);
+  assert.equal(failed.stats().images, 1);
+});
+
 test('native capture stops streaming at the host body cap and cancels oversized responses', async () => {
   let pulls = 0, cancellations = 0;
   const transport = createContractTransport(async () => new Response(new ReadableStream({

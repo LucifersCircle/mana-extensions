@@ -608,11 +608,16 @@ uses Chromium's ordinary anonymous browser identity because the provider returns
 HTTP 406 `/seo-gate` to the Node transport. Its advertised reader API has a separate
 anonymous browser session for Cloudflare challenges seen on the CI runner.
 The unchanged native source receives the actual response status, headers and body.
-All Marumaru image transfers stay direct, without browser image fallback: even an
-`application/octet-stream` cover must return its
+Reader images remain direct. After a native cover `CloudflareError` with the exact
+requested URL and a `cf-mitigated: challenge` response, the test host can resolve
+that same cover through the ordinary title-page hero load. The existing resolver
+requires matching network evidence, complete bytes and a decoded image, then
+reruns the source's native image authorization/response interceptors. Its single
+browser capture counts alongside the failed native attempt and two reader images
+against Marumaru's four-transfer limit. An `application/octet-stream` cover must return its
 exact requested URL and pass independent full JPEG/PNG/WebP container/dimension checks.
-The retained test-only WebView/browser image adapter is not part of Marumaru's source
-or native-API proof. Passing the SDK test host is not physical iOS device validation.
+The test-only WebView/browser image adapter is not part of Marumaru's source.
+Passing the SDK test host is not physical iOS device validation.
 Without FLARESOLVERR_URL, local network checks use ordinary direct requests,
 challenges fail visibly, and WebView-dependent checks report a missing real browser
 rather than being skipped or receiving substitute data. New sources must support the exercised contract; unsupported host
