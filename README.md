@@ -279,7 +279,9 @@ GPL attribution and pinned upstream references are in
   inventory retain their canonical routes. Decimal chapter identities are not
   reconstructed from a rounded chapter number.
 - Ordered public-reader images preserve the source's credit pages as well as
-  reading pages. Reader ownership and issued image URLs are checked before use.
+  reading pages. Reader ownership, complete inventory and locked chapters are
+  checked before a reader request; source-advertised image ownership is validated
+  while parsing the metadata and reader response.
 - When bulk chapter dates are unavailable, Mana requires a date, so the extension
   uses an explicitly unknown epoch sentinel, not a claimed 1970 publication date.
   Its visible rendering depends on the app.
@@ -293,6 +295,12 @@ GPL attribution and pinned upstream references are in
   verified Safe metadata; unclassified home/catalog cards cannot bypass that
   choice. A wholly blocked feed explains the policy limitation instead of
   pretending the provider returned no titles.
+- Public-image transport uses two reusable native clients with strict asset-URL,
+  origin and header checks, not persistent image permissions. Unissued valid
+  public URLs are accepted, and returned URLs do not expire or get revoked when
+  settings change. Native rating filtering remains request-local on metadata;
+  the bounded metadata/chapter cache and optional source filter remain intact.
+  This does not promise native app cache invalidation or image-display behavior.
 - Home/catalog cards do not consistently supply individual age ratings. No
   demographic or review score is treated as an age classification, and no
   per-card requests are added just to infer one. Source access restrictions remain.

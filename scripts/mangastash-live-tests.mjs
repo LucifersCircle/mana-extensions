@@ -101,7 +101,7 @@ export async function testMangaStash({ check, referenceFetch = globalThis.fetch 
   const findToggle = async (target) => (await target.getPreferenceMenu()).sections[0].children.find((item) => item.id === 'onlySafe');
   let catalog, content, chapters, reader, home;
   await check('MangaStash native initialization and exact browse controls', async () => {
-    assert.equal(source.info.id, 'MangaStash'); assert.equal(source.info.version, '0.0.1-alpha.7');
+    assert.equal(source.info.id, 'MangaStash'); assert.equal(source.info.version, '0.0.1-alpha.8');
     assert.match(source.info.description, /chapter dates are unavailable/);
     assert.equal((await findToggle(source)).value, false);
     const form = await source.getSearchForm();
@@ -140,7 +140,7 @@ export async function testMangaStash({ check, referenceFetch = globalThis.fetch 
       }
     }
   });
-  await check('Source-proven Kagurabachi alias preserves exact ownership and persisted grants', async () => {
+  await check('Source-proven Kagurabachi alias preserves exact metadata ownership and public transport', async () => {
     const id = 'kagurabachi', pageURL = `${domain}/${id}/`, before = requests.length, pair = host();
     const detail = await pair.source.getContent(id, all), html = responses.get(pageURL), $ = load(html);
     assert.equal(requests.length, before + 1, 'One detail response must supply alias provenance without catalog N+1 requests');
@@ -154,8 +154,8 @@ export async function testMangaStash({ check, referenceFetch = globalThis.fetch 
     assert.equal($('.series-cover img').attr('src'), thumbnail);
     const cold = host(replay(), pair.store).source;
     assert.equal((await authorizeTestImage(cold, detail.cover, { origin: 'cover' })).url, detail.cover);
-    // The other known alias is not issued by this isolated detail response.
-    await assert.rejects(() => authorizeTestImage(cold, thumbnail, { origin: 'cover' }), /issued/);
+    // Public image transport accepts supported URLs without remembered issuance.
+    assert.equal((await authorizeTestImage(cold, thumbnail, { origin: 'cover' })).url, thumbnail);
     for (const owner of ['other', 'kagura-bachi', 'kagura--bachi']) {
       const changed = host(async () => new Response(html.replaceAll(id, owner), { status: 200, headers: { 'content-type': 'text/html' } })).source;
       await assert.rejects(() => changed.getContent(owner, all), /owner/);
@@ -163,8 +163,7 @@ export async function testMangaStash({ check, referenceFetch = globalThis.fetch 
     for (const value of [detail.cover + '?x=1', detail.cover + '#x', detail.cover.replace('.jpg', '.webp'), detail.cover.replace('kagura-bachi', 'kagura--bachi'), detail.cover.replace('mangastash.org', 'other.example')]) {
       const changed = host(async () => new Response(html.replaceAll(detail.cover, value), { status: 200, headers: { 'content-type': 'text/html' } })).source;
       await assert.rejects(() => changed.getContent(id, all), /owner|URL/);
-      await assert.rejects(() => authorizeTestImage(cold, value, { origin: 'cover' }),
-        (error) => error.message === 'Invalid MangaStash image request' || /issued|URL/.test(error.message));
+      if (/[?#]/.test(value) || value.includes('other.example')) await assert.rejects(() => authorizeTestImage(cold, value, { origin: 'cover' }));
     }
     const response = await fetchTestImage(cold, detail.cover, { origin: 'cover', fetchImpl: referenceFetch });
     assert.equal(response.status, 200); assert.match(response.headers.get('content-type'), /^image\/jpe?g(?:;|$)/i);
@@ -380,7 +379,8 @@ export async function testMangaStash({ check, referenceFetch = globalThis.fetch 
       assert.deepEqual(Array.from(pages.pages, ({ url }) => url), Array.from(reader.pages, ({ url }) => url.replace('ayashimon', id)));
       const cold = host(replay(), changed.store).source;
       assert.equal((await authorizeTestImage(cold, detail.cover, { origin: 'cover' })).url, detail.cover);
-      await assert.rejects(() => authorizeTestImage(cold, detail.cover.replace(id, 'ayashimon'), { origin: 'cover' }));
+      // Another valid public URL has no implicit relation to this title callback.
+      await authorizeTestImage(cold, detail.cover.replace(id, 'ayashimon'), { origin: 'cover' });
       await assert.rejects(() => changed.source.getChapterData(id, 'ayashimon/chapter-25.6'));
       assert.equal((await changed.source.handleURL(`${domain}/${id}/chapter-25.6`)).content.id, id);
       assert.equal(routes.length, 2, 'Literal slug roundtrip must use only the exact detail and reader paths');
@@ -401,103 +401,21 @@ export async function testMangaStash({ check, referenceFetch = globalThis.fetch 
     assert.equal((await target.getContent('ayashimon', { allowedContentRatings: [0] })).contentRating, 0);
     await assert.rejects(() => target.getContent('ayashimon', { allowedContentRatings: [1] }), /excluded/);
   });
-  await check('Persisted image grants reject forged URLs, expired evidence and source-setting revocation', async () => {
+  await check('Public images are stateless while chapter access and source settings retain metadata policy', async () => {
     const isolated = host(replay()), target = isolated.source;
     const detail = await target.getContent('ayashimon', all), pages = await target.getChapterData('ayashimon', 'ayashimon/chapter-25.6');
-    const cold = host(replay(), isolated.store).source;
-    await authorizeTestImage(cold, pages.pages[0].url, { origin: 'page' });
-    const snapshot = await isolated.store.get('MangaStash.authorization.v1');
-    for (const [url, origin, factory, nativeOrigin] of [[detail.cover, 'cover', 'getCoverTransport', 1], [pages.pages[0].url, 'page', 'getPageTransport', 2]]) {
-      const client = cold[factory]({ url, origin: nativeOrigin });
-      assert(client && typeof client.then !== 'function', 'Image transport factories must be synchronous');
-      let outgoing = 0;
-      try {
-        await assert.rejects(fetchTestImage(cold, url, { origin, fetchImpl: async () => {
-          outgoing += 1;
-          await isolated.store.set('MangaStash.authorization.v1', { ...snapshot, revision: snapshot.revision + 1, images: [] });
-          return new Response('This controlled body must never escape revoked image policy', { status: 200 });
-        } }), /policy|issued|changed/);
-        assert.equal(outgoing, 1, 'Revocation test must reach exactly one authorized image transport');
-      } finally { await isolated.store.set('MangaStash.authorization.v1', snapshot); }
+    const cold = host(replay()).source;
+    for (const [url, origin] of [[detail.cover, 'cover'], [pages.pages[0].url, 'page']]) {
+      await authorizeTestImage(cold, url, { origin });
+      await authorizeTestImage(cold, url, { origin });
     }
-    for (const bad of [pages.pages[0].url + '?x=1', pages.pages[0].url + '#x', pages.pages[0].url.replace('/ayashimon/', '/other/'), pages.pages[0].url.replace('/001.jpg', '/999.jpg'), pages.pages[0].url.replace('/content/', '/x/../content/'), pages.pages[0].url.replace('/content/', '/x/%2e%2e/content/')]) await assert.rejects(() => authorizeTestImage(cold, bad, { origin: 'page' }));
+    assert.equal((await isolated.store.get('MangaStash.authorization.v1')).images, undefined);
+    for (const bad of [pages.pages[0].url + '?x=1', pages.pages[0].url + '#x', pages.pages[0].url.replace('/content/', '/x/../content/'), pages.pages[0].url.replace('/content/', '/x/%2e%2e/content/')]) await assert.rejects(() => authorizeTestImage(cold, bad, { origin: 'page' }));
     await (await findToggle(target)).didChange(true);
-    await assert.rejects(() => authorizeTestImage(cold, detail.cover, { origin: 'cover' }), /policy|issued|changed/);
-    await target.getContent('ayashimon', all); await authorizeTestImage(cold, detail.cover, { origin: 'cover' });
-    await assert.rejects(() => target.resolvePageSection({ id: 'home', context: all }, 'popular'), /explicitly Safe/);
-    const value = await isolated.store.get('MangaStash.authorization.v1');
-    for (const [, grant] of value.images) { grant.at = Date.now() - 86400001; grant.expires = grant.at + 86400000; }
-    await isolated.store.set('MangaStash.authorization.v1', value);
-    await assert.rejects(() => authorizeTestImage(cold, detail.cover, { origin: 'cover' }), /expired|issued/);
-    // Reuse actual reader URLs in transient detail mutations to exercise both
-    // issuance orders even if today's catalog has no chapter-page cover.
-    for (const order of ['cover-first', 'reader-first']) {
-      const page = pages.pages[0].url, chapter = 'ayashimon/chapter-25.6';
-      const asCover = replay((url, html) => url === `${domain}/ayashimon/` ? html.replace(`property="og:image" content="${detail.cover}"`, `property="og:image" content="${page}"`) : html);
-      const pair = host(order === 'cover-first' ? asCover : replay());
-      await pair.source.getContent('ayashimon', { allowedContentRatings: [0] });
-      if (order === 'reader-first') await pair.source.getChapterData('ayashimon', chapter);
-      let saved = await pair.store.get('MangaStash.authorization.v1');
-      const firstRole = saved.images.find(([url]) => url === page)[1];
-      firstRole.at = Date.now() - 10000; firstRole.expires = firstRole.at + 86400000;
-      const firstBefore = plain(firstRole);
-      await pair.store.set('MangaStash.authorization.v1', saved);
-      if (order === 'cover-first') await pair.source.getChapterData('ayashimon', chapter);
-      else await host(asCover, pair.store).source.getContent('ayashimon', { allowedContentRatings: [0] });
-      saved = await pair.store.get('MangaStash.authorization.v1');
-      const roles = saved.images.filter(([url]) => url === page);
-      assert.deepEqual(roles.map(([, grant]) => grant.chapter).sort(), ['', chapter]);
-      assert.deepEqual(plain(roles.find(([, grant]) => grant.chapter === firstBefore.chapter)[1]), firstBefore, 'Issuing another role must not rewrite existing evidence');
-      const cold = host(replay(), pair.store).source, baseline = plain(saved);
-      await host(asCover, pair.store).source.getContent('ayashimon', all);
-      await cold.getChapterData('ayashimon', chapter);
-      const reissued = await pair.store.get('MangaStash.authorization.v1');
-      assert.deepEqual(plain(reissued.images.filter(([url]) => url === page).sort((a, b) => a[1].chapter.localeCompare(b[1].chapter))), plain(roles.sort((a, b) => a[1].chapter.localeCompare(b[1].chapter))), 'Same-role reissue must retain original policy and expiry too');
-      await authorizeTestImage(cold, page, { origin: 'page' });
-      for (const expiredRole of ['', chapter]) {
-        const state = plain(baseline), grant = state.images.find(([url, grant]) => url === page && grant.chapter === expiredRole)[1];
-        grant.at = Date.now() - 86400001; grant.expires = grant.at + 86400000;
-        await pair.store.set('MangaStash.authorization.v1', state); await authorizeTestImage(cold, page, { origin: 'page' });
-      }
-      const bothExpired = plain(baseline);
-      for (const [url, grant] of bothExpired.images) if (url === page) { grant.at = Date.now() - 86400001; grant.expires = grant.at + 86400000; }
-      await pair.store.set('MangaStash.authorization.v1', bothExpired); await assert.rejects(() => authorizeTestImage(cold, page, { origin: 'page' }), /expired|issued/);
-      for (const unavailable of ['locked', 'missing']) {
-        const state = plain(baseline), title = state.titles.find(([id]) => id === 'ayashimon')[1];
-        if (unavailable === 'locked') title.chapters.find((item) => item.chapterId === chapter).locked = true;
-        else title.chapters = title.chapters.filter((item) => item.chapterId !== chapter);
-        await pair.store.set('MangaStash.authorization.v1', state); await authorizeTestImage(cold, page, { origin: 'page' }); // Independently advertised public cover remains usable.
-        await assert.rejects(() => cold.getChapterData('ayashimon', chapter), /locked|inventory/);
-        state.images = state.images.filter(([url, grant]) => url !== page || grant.chapter);
-        await pair.store.set('MangaStash.authorization.v1', state); await assert.rejects(() => authorizeTestImage(cold, page, { origin: 'page' }), /policy|evidence/);
-      }
-      for (const deniedRole of ['', chapter]) {
-        const state = plain(baseline);
-        state.images.find(([url, grant]) => url === page && grant.chapter === deniedRole)[1].allowed = [2];
-        await pair.store.set('MangaStash.authorization.v1', state); await authorizeTestImage(cold, page, { origin: 'page' });
-      }
-      const currentWarning = plain(baseline);
-      for (const [url, grant] of currentWarning.images) if (url === page) grant.allowed = [0];
-      currentWarning.titles.find(([id]) => id === 'ayashimon')[1].rating = 2;
-      await pair.store.set('MangaStash.authorization.v1', currentWarning); await assert.rejects(() => authorizeTestImage(cold, page, { origin: 'page' }), /policy/);
-      await pair.store.set('MangaStash.authorization.v1', baseline);
-      for (const bad of [page + '?x=1', page.replace('/ayashimon/', '/other/'), page.replace('/001.jpg', '/unissued.jpg')]) await assert.rejects(() => authorizeTestImage(cold, bad, { origin: 'page' }));
-      for (const conflict of ['duplicate-role', 'different-chapter', 'different-owner']) {
-        const state = plain(baseline), record = plain(state.images.find(([url, grant]) => url === page && grant.chapter));
-        if (conflict === 'different-chapter') record[1].chapter = 'ayashimon/chapter-25';
-        if (conflict === 'different-owner') record[1].id = 'other';
-        state.images.push(record); await pair.store.set('MangaStash.authorization.v1', state);
-        if (conflict === 'different-owner') { // Wrong-owner records cannot authorize their own callback.
-          state.images = [record]; await pair.store.set('MangaStash.authorization.v1', state);
-        }
-        await assert.rejects(() => authorizeTestImage(cold, page, { origin: 'page' }));
-      }
-      await pair.store.set('MangaStash.authorization.v1', baseline);
-      await (await findToggle(cold)).didChange(true); await assert.rejects(() => authorizeTestImage(cold, page, { origin: 'page' }), /policy|issued/);
-    }
-    const maxState = { revision: Number.MAX_SAFE_INTEGER, onlySafe: false, titles: [], images: [] };
+    await authorizeTestImage(target, detail.cover, { origin: 'cover' });
+    const maxState = { revision: Number.MAX_SAFE_INTEGER, onlySafe: false, titles: [] };
     await isolated.store.set('MangaStash.authorization.v1', maxState);
-    await assert.rejects(() => (async () => (await findToggle(cold)).didChange(true))(), /revision is exhausted/);
+    await assert.rejects(() => (async () => (await findToggle(target)).didChange(true))(), /revision is exhausted/);
     assert.deepEqual(plain(await isolated.store.get('MangaStash.authorization.v1')), maxState);
   });
   await check('Reader ownership, route, configuration, page count and ordering mutations fail closed', async () => {

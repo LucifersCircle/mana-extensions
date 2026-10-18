@@ -61,6 +61,20 @@ export function imageURL(value: string, id: string, chapter?: string): string {
     }
     return target.href
 }
+// Public transport has no title context. Metadata/reader parsing above still binds
+// returned URLs to their title/chapter; here validate only the supported asset routes.
+export function publicImageURL(value: string): string {
+    const target = url(value)
+    if (target.href !== value || /[?#]/.test(value)) throw new Error('Invalid MangaStash image URL')
+    const cover = target.pathname.match(/^\/content\/covers\/(?:thumbnails\/)?([^/]+)\.[^.]+$/)
+    if (cover) {
+        const id = cover[1]?.toLowerCase() ?? ''
+        return imageURL(value, id === 'kagura-bachi' && target.pathname.endsWith('/kagura-bachi.jpg') ? 'kagurabachi' : id)
+    }
+    const page = target.pathname.match(/^\/content\/([a-z0-9][a-z0-9-]{0,255})\/(chapter-\d+(?:\.\d+)?)\/[^/]+$/)
+    if (!page) throw new Error('Invalid MangaStash image URL')
+    return imageURL(value, page[1] ?? '', `${page[1]}/${page[2]}`)
+}
 function canonical($: CheerioAPI, expected: string): void {
     const nodes = $('link[rel="canonical"]')
     if (nodes.length !== 1 || url(nodes.attr('href') ?? '').href !== expected) throw new Error('MangaStash canonical identity mismatch')
