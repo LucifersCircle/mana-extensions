@@ -43,6 +43,7 @@ import { Card,
     Detail,
     detail,
     home,
+    feedCards,
     imageURL,
     Inventory,
     LoadItem,
@@ -57,7 +58,21 @@ import { Card,
 type Filters = { genres?: Option[], years?: Option[], types?: Option[], statuses?: Option[], genreMatchMode?: Option }
 type Cached<T> = { at: number, value: T }
 const TTL = 180000
-const SECTIONS = [{ id: 'featured', title: 'Featured' }, { id: 'recent', title: 'Recently Added' }]
+const SECTIONS = [
+    { id: 'featured', title: 'Featured' }, { id: 'recent', title: 'Recently Added' },
+    { id: 'popular-chapters', title: 'Popular Chapters · Today' },
+    { id: 'reading', title: 'Manga by Status · Reading' },
+    { id: 'followed-new', title: 'Most Followed New Manga · 7 Days' },
+    { id: 'followed', title: 'Most Followed Manga · Today' },
+    { id: 'popular', title: 'Popular Manga' }, { id: 'highscore', title: 'High Score Manga' },
+    { id: 'completed', title: 'Completed' }
+]
+const FEEDS: Record<string, { path: string, field: 'manga' | 'chapters', key: 'period' | 'status', value: string }> = {
+    'popular-chapters': { path: '/auth/popular-chapters?period=today&limit=15', field: 'chapters', key: 'period', value: 'today' },
+    reading: { path: '/auth/manga-status-slider?status=reading&limit=15', field: 'manga', key: 'status', value: 'reading' },
+    'followed-new': { path: '/auth/most-followed-new-manga?period=7d&limit=15', field: 'manga', key: 'period', value: '7d' },
+    followed: { path: '/auth/most-followed-manga?period=today&limit=15', field: 'manga', key: 'period', value: 'today' }
+}
 const SORTS = [
     { id: 'post_desc', title: 'Latest Updates' }, { id: 'post_asc', title: 'Oldest Updates' },
     { id: 'release_desc', title: 'Newest Release' }, { id: 'release_asc', title: 'Oldest Release' },
@@ -66,7 +81,7 @@ const SORTS = [
 ]
 export class Target implements ChapterSource, PageLinkResolver, CoverRequestHandler, PageRequestHandler {
     readonly info: SourceInfo = {
-        id: 'MangaTaro', name: 'MangaTaro', thumbnail: 'MangaTaro.png', version: '0.0.1-alpha.2', website: DOMAIN, rating: CatalogRating.MIXED,
+        id: 'MangaTaro', name: 'MangaTaro', thumbnail: 'MangaTaro.png', version: '0.0.1-alpha.3', website: DOMAIN, rating: CatalogRating.MIXED,
         description: 'Public manga catalog, site filters and complete image chapters. Unclassified titles use a Suggestive compatibility fallback, not a verified age rating. Relative upload dates are approximate; unavailable dates remain unknown. Text novels and restricted chapters are not supported.',
         supportedLanguages: ['en_US'], badges: ['Manga', 'Manhwa', 'Manhua'],
         developers: [{ name: 'Lucifers Circle', github: 'https://github.com/LucifersCircle' }, { name: 'Inkdex', github: 'https://github.com/inkdex' }]
@@ -91,9 +106,31 @@ export class Target implements ChapterSource, PageLinkResolver, CoverRequestHand
         if (!this.taxonomy || Date.now() - this.taxonomy.at >= TTL) this.taxonomy = { at: Date.now(), value: choices(await this.api.text('/browse')) }
         return this.taxonomy.value
     }
+    private homePending?: Promise<string>
+    private readonly feeds = new Map<string, Cached<Card[]>>()
+    private readonly feedPending = new Map<string, Promise<Card[]>>()
     private async homeHTML(): Promise<string> {
-        if (!this.homePage || Date.now() - this.homePage.at >= TTL) this.homePage = { at: Date.now(), value: await this.api.text('/home') }
-        return this.homePage.value
+        if (this.homePage && Date.now() - this.homePage.at < TTL) return this.homePage.value
+        if (!this.homePending) this.homePending = this.api.text('/home').then(value => {
+            this.homePage = { at: Date.now(), value }
+            return value
+        }).finally(() => { this.homePending = undefined })
+        return this.homePending
+    }
+    private async sectionCards(id: string): Promise<Card[]> {
+        const feed = FEEDS[id]
+        if (!feed) return home(await this.homeHTML(), id)
+        const cached = this.feeds.get(id)
+        if (cached && Date.now() - cached.at < TTL) return cached.value
+        let pending = this.feedPending.get(id)
+        if (!pending) {
+            pending = this.api.json<Record<string, unknown>>(feed.path).then(value => {
+                if (!value || value.success !== true || value[feed.key] !== feed.value) throw new Error('MangaTaro discovery feed identity mismatch')
+                return this.put(this.feeds, id, feedCards(value[feed.field], feed.field === 'chapters'))
+            }).finally(() => { this.feedPending.delete(id) })
+            this.feedPending.set(id, pending)
+        }
+        return pending
     }
     async getSortOptions(): Promise<SortOption[]> { return SORTS }
     async getSearchForm(): Promise<SearchForm> {
@@ -118,7 +155,7 @@ export class Target implements ChapterSource, PageLinkResolver, CoverRequestHand
         assertRatingPolicy(link.context)
         if (link.id !== 'home' || !SECTIONS.some(item => item.id === sectionId)) throw new Error('Unknown MangaTaro section')
         if (link.context?.allowedContentRatings?.length === 0) return { items: [] }
-        return { items: this.cards(home(await this.homeHTML(), sectionId), link.context) }
+        return { items: this.cards(await this.sectionCards(sectionId), link.context) }
     }
     async search(request: SearchRequest<Filters>): Promise<PagedSearchResult> {
         assertRatingPolicy(request.context)

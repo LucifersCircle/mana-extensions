@@ -391,8 +391,12 @@ The [icon](assets/MangaSushi.png) comes from the website's published icon.
 flow adapts the GPL-3.0-or-later [Inkdex MangaTaro implementation](https://github.com/inkdex/general-extensions/tree/0.9/stable/src/MangaTaro),
 Copyright © 2026 Inkdex, with Mana-specific parsing and transport.
 
-- Discover exposes the native HTML’s Featured and Recently Added feeds. Dynamic
-  account/community feeds are not advertised or simulated.
+- Discover preserves Featured, Recently Added, Popular Manga, High Score Manga and
+  Completed from one shared homepage response, plus the public Popular Chapters
+  (Today), Manga by Status (Reading), Most Followed New Manga (7 Days) and Most
+  Followed Manga (Today) feeds. A fresh successful load of all sections uses five document
+  requests, shared within one source instance for three minutes; image loads and
+  retries after a failed load are separate. Personal reading history and account notifications are not used.
 - Public catalog search uses the website’s real JSON POST browse endpoint,
   with complete live tag/year/type/status choices, any/all tag matching and
   both directions of the website’s four sort keys. Text novels are omitted.

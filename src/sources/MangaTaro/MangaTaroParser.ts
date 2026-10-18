@@ -49,7 +49,7 @@ export function labelRating(labels: string[]): ContentRating | undefined {
     if (labels.some(value => /^(?:ecchi|suggestive)$/i.test(text(value)))) return ContentRating.SUGGESTIVE
     return undefined
 }
-export type Card = { id: string, title: string, cover: string, rating?: ContentRating }
+export type Card = { id: string, title: string, cover: string, subtitle?: string, rating?: ContentRating }
 export type LoadItem = { id: string, title: string, url: string, cover: string, type: string }
 export type SourceChapter = { id: string, chapter: string, title: string, date: string, chapter_type: string, language: string, group_id?: string | null, group_name?: string | null, url: string, locked?: boolean, is_locked?: boolean, requires_login?: boolean, price?: number }
 export type Inventory = { success: boolean, chapters: SourceChapter[], total: number, offset: number, limit: number, has_more: boolean }
@@ -73,11 +73,39 @@ export function catalog(items: LoadItem[]): Card[] {
     if (new Set(result.map(item => item.id)).size !== result.length) throw new Error('Duplicate MangaTaro catalog identities')
     return result
 }
+// These are the site's public aggregate lists, not account reading history.
+export function feedCards(value: unknown, chapters = false): Card[] {
+    if (!Array.isArray(value)) throw new Error('Invalid MangaTaro discovery feed')
+    const seen = new Set<string>(), result: Card[] = []
+    for (const item of value) {
+        if (!item || typeof item !== 'object') throw new Error('Invalid MangaTaro discovery item')
+        if (item.manga_type === 'Novel') continue
+        const id = seriesID(chapters ? item.manga_url : item.permalink)
+        const title = text(chapters ? item.manga_title : item.title)
+        if (!title) throw new Error('Missing MangaTaro discovery title')
+        const cover = item.cover === '' || item.cover == null || item.cover === 'https://via.placeholder.com/800x600' ? '' : imageURL(item.cover, true)
+        // A popular-chapter feed can contain several chapters of one title.
+        // Keep its first ranked occurrence without inventing new title IDs.
+        if (seen.has(id)) continue
+        seen.add(id)
+        result.push({ id, title, cover, ...(chapters && typeof item.chapter_number === 'string' && item.chapter_number.trim() ? { subtitle: 'Chapter ' + text(item.chapter_number) } : {}) })
+    }
+    return result
+}
 export function home(html: string, section: string): Card[] {
-    const $ = load(html), selector = section === 'featured' ? '#featured-carousel .carousel-slide' : '#manga-grid > .group'
-    const result = $(selector).toArray().map(node => {
-        const row = $(node), anchor = row.find('a[href*="/manga/"]').first()
-        return { id: seriesID(anchor.attr('href') ?? ''), title: text(row.find('h2').text() || row.find('a[href*="/manga/"]').last().text()), cover: imageURL(row.find('img').first().attr('src') ?? '', true), rating: labelRating(row.find('span').toArray().map(node => $(node).text())) }
+    const $ = load(html)
+    const embedded = section === 'popular' ? '#unified-manga-slider' : section === 'highscore' ? '#highscore-manga-slider' : undefined
+    if (embedded) {
+        const initial = $(embedded).attr('data-initial')
+        if (!initial) throw new Error('MangaTaro embedded discovery feed is missing')
+        return feedCards(JSON.parse(initial))
+    }
+    const selector = section === 'featured' ? '#featured-carousel .carousel-slide' : section === 'recent' ? '#manga-grid > .group' : section === 'completed' ? '#sidebar-completed > a' : undefined
+    if (!selector) throw new Error('Unknown MangaTaro home section')
+    const result = $(selector).toArray().filter(node => !$(node).find('span').toArray().some(span => text($(span).text()) === 'Novel')).map(node => {
+        const row = $(node), anchor = section === 'completed' ? row : row.find('a[href*="/manga/"]').first()
+        const cover = row.find('img').first().attr('src')
+        return { id: seriesID(anchor.attr('href') ?? ''), title: text(row.find('h2,h3').text() || row.find('a[href*="/manga/"]').last().text()), cover: cover ? imageURL(cover, true) : '', rating: labelRating(row.find('span').toArray().map(node => $(node).text())) }
     })
     if (!result.length || result.some(item => !item.title) || new Set(result.map(item => item.id)).size !== result.length) throw new Error('MangaTaro home section is incomplete')
     return result
