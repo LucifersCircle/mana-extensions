@@ -1,0 +1,255 @@
+[
+  {
+    "name": "cheerio",
+    "version": "1.0.0-rc.12",
+    "license": "MIT",
+    "packagePath": "node_modules/cheerio",
+    "notices": [
+      "LICENSE"
+    ],
+    "resolved": "https://registry.npmjs.org/cheerio/-/cheerio-1.0.0-rc.12.tgz",
+    "integrity": "sha512-VqR8m68vM46BNnuZ5NtnGBKIE/DfN0cRIzg9n40EIq9NOv90ayxLBXA8fXC5gquFRGJSTRqBq25Jt2ECLR431Q==",
+    "sha256": {
+      "LICENSE": "61c1e21d3a8ff20f9b69abe15104a75584688080febc22f60a4cbf3854becf4e",
+      "package-metadata.json": "9583556a26d6dcef4474e4f5f3f332d47ccb377e458848f44b933e03303575bf"
+    }
+  },
+  {
+    "name": "cheerio-select",
+    "version": "2.1.0",
+    "license": "BSD-2-Clause",
+    "packagePath": "node_modules/cheerio-select",
+    "notices": [
+      "LICENSE"
+    ],
+    "resolved": "https://registry.npmjs.org/cheerio-select/-/cheerio-select-2.1.0.tgz",
+    "integrity": "sha512-9v9kG0LvzrlcungtnJtpGNxY+fzECQKhK4EGJX2vByejiMX84MFNQw4UxPJl3bFbTMw+Dfs37XaIkCwTZfLh4g==",
+    "sha256": {
+      "LICENSE": "cb992345949ccd6e8394b2cd6c465f7b897c864f845937dbf64e8997f389e164",
+      "package-metadata.json": "d2ec395193c6902c45984f3e238d0ac87d48042a4b980a2d842a4891e27fc78e"
+    }
+  },
+  {
+    "name": "boolbase",
+    "version": "1.0.0",
+    "license": "ISC",
+    "packagePath": "node_modules/boolbase",
+    "notices": [],
+    "upstreamNotice": "../boolbase-LICENSE",
+    "resolved": "https://registry.npmjs.org/boolbase/-/boolbase-1.0.0.tgz",
+    "integrity": "sha512-JZOSA7Mo9sNGB8+UjSgzdLtokWAky1zbztM3WRLCbZ70/3cTANmQmOdR7y2g+J0e2WXywy1yS468tY+IruqEww==",
+    "sha256": {
+      "package-metadata.json": "ca09c0dccbfc43be6be0ac89e9ffa19b64b30f9c74c64da27f719a7244a25e30"
+    }
+  },
+  {
+    "name": "css-select",
+    "version": "5.2.2",
+    "license": "BSD-2-Clause",
+    "packagePath": "node_modules/css-select",
+    "notices": [
+      "LICENSE"
+    ],
+    "resolved": "https://registry.npmjs.org/css-select/-/css-select-5.2.2.tgz",
+    "integrity": "sha512-TizTzUddG/xYLA3NXodFM0fSbNizXjOKhqiQQwvhlspadZokn1KDy0NZFS0wuEubIYAV5/c1/lAr0TaaFXEXzw==",
+    "sha256": {
+      "LICENSE": "cb992345949ccd6e8394b2cd6c465f7b897c864f845937dbf64e8997f389e164",
+      "package-metadata.json": "cfc1e661a525ae821a00994ce4d94790b209c21b35f6e19d54e8d1c61556d303"
+    }
+  },
+  {
+    "name": "css-what",
+    "version": "6.2.2",
+    "license": "BSD-2-Clause",
+    "packagePath": "node_modules/css-what",
+    "notices": [
+      "LICENSE"
+    ],
+    "resolved": "https://registry.npmjs.org/css-what/-/css-what-6.2.2.tgz",
+    "integrity": "sha512-u/O3vwbptzhMs3L1fQE82ZSLHQQfto5gyZzwteVIEyeaY5Fc7R4dapF/BvRoSYFeqfBk4m0V1Vafq5Pjv25wvA==",
+    "sha256": {
+      "LICENSE": "cb992345949ccd6e8394b2cd6c465f7b897c864f845937dbf64e8997f389e164",
+      "package-metadata.json": "c3c772ed1135cead98192983bf582d404d21ced7c09c5219e7bb94cc54dfab27"
+    }
+  },
+  {
+    "name": "domhandler",
+    "version": "5.0.3",
+    "license": "BSD-2-Clause",
+    "packagePath": "node_modules/domhandler",
+    "notices": [
+      "LICENSE"
+    ],
+    "resolved": "https://registry.npmjs.org/domhandler/-/domhandler-5.0.3.tgz",
+    "integrity": "sha512-cgwlv/1iFQiFnU96XXgROh8xTeetsnJiDsTc7TYCLFd9+/WNkIqPTxiM/8pSd8VIrhXGTf1Ny1q1hquVqDJB5w==",
+    "sha256": {
+      "LICENSE": "cb992345949ccd6e8394b2cd6c465f7b897c864f845937dbf64e8997f389e164",
+      "package-metadata.json": "cbb42a446eef285863e04158c7f269e0e7b8e868c1042d6845e996d760f7376c"
+    }
+  },
+  {
+    "name": "domelementtype",
+    "version": "2.3.0",
+    "license": "BSD-2-Clause",
+    "packagePath": "node_modules/domelementtype",
+    "notices": [
+      "LICENSE"
+    ],
+    "resolved": "https://registry.npmjs.org/domelementtype/-/domelementtype-2.3.0.tgz",
+    "integrity": "sha512-OLETBj6w0OsagBwdXnPdN0cnMfF9opN69co+7ZrbfPGrdpPVNBUj02spi6B1N7wChLQiPn4CSH/zJvXw56gmHw==",
+    "sha256": {
+      "LICENSE": "cb992345949ccd6e8394b2cd6c465f7b897c864f845937dbf64e8997f389e164",
+      "package-metadata.json": "4ddf28a1e60ae7ec15f62cda0d72eb06bcae05b3819942d971c841b7cc0b6930"
+    }
+  },
+  {
+    "name": "domutils",
+    "version": "3.2.2",
+    "license": "BSD-2-Clause",
+    "packagePath": "node_modules/domutils",
+    "notices": [
+      "LICENSE"
+    ],
+    "resolved": "https://registry.npmjs.org/domutils/-/domutils-3.2.2.tgz",
+    "integrity": "sha512-6kZKyUajlDuqlHKVX1w7gyslj9MPIXzIFiz/rGu35uC1wMi+kMhQwGhl4lt9unC9Vb9INnY9Z3/ZA3+FhASLaw==",
+    "sha256": {
+      "LICENSE": "cb992345949ccd6e8394b2cd6c465f7b897c864f845937dbf64e8997f389e164",
+      "package-metadata.json": "9a04689cc67f52e9f7323e0dd4d18c8cbe68744c3373ad524d133ddf12bf99ab"
+    }
+  },
+  {
+    "name": "dom-serializer",
+    "version": "2.0.0",
+    "license": "MIT",
+    "packagePath": "node_modules/dom-serializer",
+    "notices": [
+      "LICENSE"
+    ],
+    "resolved": "https://registry.npmjs.org/dom-serializer/-/dom-serializer-2.0.0.tgz",
+    "integrity": "sha512-wIkAryiqt/nV5EQKqQpo3SToSOV9J0DnbJqwK7Wv/Trc92zIAYZ4FlMu+JPFW1DfGFt81ZTCGgDEabffXeLyJg==",
+    "sha256": {
+      "LICENSE": "94cfe87de9b178e8fee313a19178e625129e2ce559db32e772e7bd95114ee6ff",
+      "package-metadata.json": "098603e7fee62c07fb392e31dae4dc151a3e03c72555ce1f9182011fbf898501"
+    }
+  },
+  {
+    "name": "entities",
+    "version": "4.5.0",
+    "license": "BSD-2-Clause",
+    "packagePath": "node_modules/entities",
+    "notices": [
+      "LICENSE"
+    ],
+    "resolved": "https://registry.npmjs.org/entities/-/entities-4.5.0.tgz",
+    "integrity": "sha512-V0hjH4dGPh9Ao5p0MoRY6BVqtwCjhz6vI5LT8AJ55H+4g9/4vbHx1I54fS0XuclLhDHArPQCiMjDxjaL8fPxhw==",
+    "sha256": {
+      "LICENSE": "cb992345949ccd6e8394b2cd6c465f7b897c864f845937dbf64e8997f389e164",
+      "package-metadata.json": "c92f657f679669a91bc32cd98f0b4812b3f4a9c6f3b3af3022a70cb25b7efc7c"
+    }
+  },
+  {
+    "name": "nth-check",
+    "version": "2.1.1",
+    "license": "BSD-2-Clause",
+    "packagePath": "node_modules/nth-check",
+    "notices": [
+      "LICENSE"
+    ],
+    "resolved": "https://registry.npmjs.org/nth-check/-/nth-check-2.1.1.tgz",
+    "integrity": "sha512-lqjrjmaOoAnWfMmBPL+XNnynZh2+swxiX3WUE0s4yEHI6m+AwrK2UZOimIRl3X/4QctVqS8AiZjFqyOGrMXb/w==",
+    "sha256": {
+      "LICENSE": "cb992345949ccd6e8394b2cd6c465f7b897c864f845937dbf64e8997f389e164",
+      "package-metadata.json": "4e6d8f4a3a8170c031465e79d30a3f47c97e115944d6d656dd087086b2da04f1"
+    }
+  },
+  {
+    "name": "htmlparser2",
+    "version": "8.0.2",
+    "license": "MIT",
+    "packagePath": "node_modules/htmlparser2",
+    "notices": [
+      "LICENSE"
+    ],
+    "resolved": "https://registry.npmjs.org/htmlparser2/-/htmlparser2-8.0.2.tgz",
+    "integrity": "sha512-GYdjWKDkbRLkZ5geuHs5NY1puJ+PXwP7+fHPRz06Eirsb9ugf6d8kkXav6ADhcODhFFPMIXyxkxSuMf3D6NCFA==",
+    "sha256": {
+      "LICENSE": "204cfa747341660e4da64cd23e8c876c6b20279d247f48564993d3fc4a2eab47",
+      "package-metadata.json": "59a1ccf2ff631d6c789aab23076f531299100f7d63d3e0b2102c179ff79b8d6b"
+    }
+  },
+  {
+    "name": "parse5",
+    "version": "7.3.0",
+    "license": "MIT",
+    "packagePath": "node_modules/parse5",
+    "notices": [
+      "LICENSE"
+    ],
+    "resolved": "https://registry.npmjs.org/parse5/-/parse5-7.3.0.tgz",
+    "integrity": "sha512-IInvU7fabl34qmi9gY8XOVxhYyMyuH2xUNpb2q8/Y+7552KlejkRvqvD19nMoUW/uQGGbqNpA6Tufu5FL5BZgw==",
+    "sha256": {
+      "LICENSE": "8c535800331e1e4439835555b3f9edc7fe9dee2fab0d8bbbd5a982e8b8343d4d",
+      "package-metadata.json": "8196284780fe95c3245a40e3c17b45fc85ef709f1211775987d037e5e873fe95"
+    }
+  },
+  {
+    "name": "entities",
+    "version": "6.0.1",
+    "license": "BSD-2-Clause",
+    "packagePath": "node_modules/parse5/node_modules/entities",
+    "notices": [
+      "LICENSE"
+    ],
+    "resolved": "https://registry.npmjs.org/entities/-/entities-6.0.1.tgz",
+    "integrity": "sha512-aN97NXWF6AWBTahfVOIrB/NShkzi5H7F9r1s9mD3cDj4Ko5f2qhhVoYMibXF7GlLveb/D2ioWay8lxI97Ven3g==",
+    "sha256": {
+      "LICENSE": "cb992345949ccd6e8394b2cd6c465f7b897c864f845937dbf64e8997f389e164",
+      "package-metadata.json": "2b110e5a5a7a7bcbc843b885105a952630299cb1a7817b4b321d69479cfa7086"
+    }
+  },
+  {
+    "name": "parse5-htmlparser2-tree-adapter",
+    "version": "7.1.0",
+    "license": "MIT",
+    "packagePath": "node_modules/parse5-htmlparser2-tree-adapter",
+    "notices": [
+      "LICENSE"
+    ],
+    "resolved": "https://registry.npmjs.org/parse5-htmlparser2-tree-adapter/-/parse5-htmlparser2-tree-adapter-7.1.0.tgz",
+    "integrity": "sha512-ruw5xyKs6lrpo9x9rCZqZZnIUntICjQAd0Wsmp396Ul9lN/h+ifgVV1x1gZHi8euej6wTfpqX8j+BFQxF0NS/g==",
+    "sha256": {
+      "LICENSE": "8c535800331e1e4439835555b3f9edc7fe9dee2fab0d8bbbd5a982e8b8343d4d",
+      "package-metadata.json": "c4bab08899e9769bd165b370bb01b54ba45430aa397e34f3f57e49b50a82b725"
+    }
+  },
+  {
+    "name": "@mana-app/types",
+    "version": "0.1.0",
+    "license": "MIT",
+    "packagePath": "node_modules/@mana-app/types",
+    "notices": [
+      "LICENSE"
+    ],
+    "resolved": "https://registry.npmjs.org/@mana-app/types/-/types-0.1.0.tgz",
+    "integrity": "sha512-+BQOKHgJLdHXPr4xPMmb6rPUyJ02qljwAYpZDXuEbYXR+5zxkBap1H8SgFlbhAUaYjpVPhPJSFWJ9aHpBi+2dQ==",
+    "sha256": {
+      "LICENSE": "4c78818208a63744bd86dea22c7d2ed726f1fb789a65e53d04e608111b4ef115",
+      "package-metadata.json": "c5aae60aec9e8a81ca709add138e7730a7bfe88185576970c4401e2db2f1ff10"
+    }
+  },
+  {
+    "name": "html-entities",
+    "version": "2.5.2",
+    "license": "MIT",
+    "packagePath": "node_modules/html-entities",
+    "notices": [
+      "LICENSE"
+    ],
+    "resolved": "https://registry.npmjs.org/html-entities/-/html-entities-2.5.2.tgz",
+    "integrity": "sha512-K//PSRMQk4FZ78Kyau+mZurHn3FH0Vwr+H36eE0rPbeYkRRi9YxceYPhuN60UwWorxyKHhqoAJl2OFKa4BVtaA==",
+    "sha256": {
+      "LICENSE": "10b2831912dc4dc91b25429511e6c74f901eebf64b625328f8fd08dd9c3cf8fe",
+      "package-metadata.json": "bff7b8feb44e1a4a11152ab452c47f1b0e628cc26abce43287fad0e6acd97a9b"
+    }
+  }
+]
