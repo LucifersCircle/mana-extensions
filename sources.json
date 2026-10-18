@@ -30,7 +30,7 @@
       "path": "Hijala",
       "environment": "source",
       "intents": 106961929,
-      "hash": "1130c5ac1130c5ac1130c5ac1130c5ac1130c5ac1130c5ac1130c5ac1130c5ac"
+      "hash": "1ea72b6c1ea72b6c1ea72b6c1ea72b6c1ea72b6c1ea72b6c1ea72b6c1ea72b6c"
     },
     {
       "id": "Kagane",
@@ -59,7 +59,7 @@
       "path": "Kagane",
       "environment": "source",
       "intents": 106961929,
-      "hash": "5cbf74255cbf74255cbf74255cbf74255cbf74255cbf74255cbf74255cbf7425"
+      "hash": "2ce77fea2ce77fea2ce77fea2ce77fea2ce77fea2ce77fea2ce77fea2ce77fea"
     },
     {
       "id": "MangaStash",
@@ -86,7 +86,7 @@
       "path": "MangaStash",
       "environment": "source",
       "intents": 106961929,
-      "hash": "71fdc82271fdc82271fdc82271fdc82271fdc82271fdc82271fdc82271fdc822"
+      "hash": "5e2a468b5e2a468b5e2a468b5e2a468b5e2a468b5e2a468b5e2a468b5e2a468b"
     },
     {
       "id": "MangaSushi",
@@ -111,13 +111,13 @@
       "path": "MangaSushi",
       "environment": "source",
       "intents": 106961929,
-      "hash": "1501cd701501cd701501cd701501cd701501cd701501cd701501cd701501cd70"
+      "hash": "1ad623501ad623501ad623501ad623501ad623501ad623501ad623501ad62350"
     },
     {
       "id": "MangaTaro",
       "name": "MangaTaro",
       "thumbnail": "MangaTaro.png",
-      "version": "0.0.1-alpha.2",
+      "version": "0.0.1-alpha.3",
       "website": "https://mangataro.org",
       "rating": 1,
       "description": "Public manga catalog, site filters and complete image chapters. Unclassified titles use a Suggestive compatibility fallback, not a verified age rating. Relative upload dates are approximate; unavailable dates remain unknown. Text novels and restricted chapters are not supported.",
@@ -142,7 +142,7 @@
       "path": "MangaTaro",
       "environment": "source",
       "intents": 106961928,
-      "hash": "3d2eacdc3d2eacdc3d2eacdc3d2eacdc3d2eacdc3d2eacdc3d2eacdc3d2eacdc"
+      "hash": "46a95c4a46a95c4a46a95c4a46a95c4a46a95c4a46a95c4a46a95c4a46a95c4a"
     },
     {
       "id": "ManhwaNex",
@@ -169,7 +169,7 @@
       "path": "ManhwaNex",
       "environment": "source",
       "intents": 106961929,
-      "hash": "068bd98f068bd98f068bd98f068bd98f068bd98f068bd98f068bd98f068bd98f"
+      "hash": "3663cd8c3663cd8c3663cd8c3663cd8c3663cd8c3663cd8c3663cd8c3663cd8c"
     },
     {
       "id": "Marumaru",
@@ -194,7 +194,7 @@
       "path": "Marumaru",
       "environment": "source",
       "intents": 102761480,
-      "hash": "6c7536f56c7536f56c7536f56c7536f56c7536f56c7536f56c7536f56c7536f5"
+      "hash": "63b2d54463b2d54463b2d54463b2d54463b2d54463b2d54463b2d54463b2d544"
     },
     {
       "id": "VortexScans",
@@ -221,7 +221,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 106961928,
-      "hash": "150d4c63150d4c63150d4c63150d4c63150d4c63150d4c63150d4c63150d4c63"
+      "hash": "1acaa4ce1acaa4ce1acaa4ce1acaa4ce1acaa4ce1acaa4ce1acaa4ce1acaa4ce"
     }
   ]
 }
