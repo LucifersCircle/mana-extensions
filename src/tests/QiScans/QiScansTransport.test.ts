@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 import { BridgeOperation,
+    CloudflareError,
     HttpBridge,
     HttpClient,
     imageDispatch,
@@ -12,6 +13,7 @@ import { Target } from '../../sources/QiScans/index'
 const globals = globalThis as unknown as Record<string, unknown>
 const owner = 'the-hero\'s-café', route = '/series/the-hero%27s-caf%C3%A9'
 const series: Series = { slug: owner, title: 'The Hero\'s Café', type: 'MANHWA', status: 'ONGOING', cover: 'https://media.qimanhwa.com/uploads/cover.webp?quality=original' }
+type UnitResponse = { status: number, headers?: Record<string, string>, text: string }
 
 describe('QiScans catalog operations with synthetic unit data', () => {
     afterEach(() => jest.restoreAllMocks())
@@ -55,15 +57,17 @@ describe('QiScans catalog operations with synthetic unit data', () => {
 })
 
 // Exercise the installed SDK against a local bridge; no provider requests are made.
-describe('QiScans image transports', () => {
-    let previous: unknown, sent: Record<string, unknown>[]
+describe('QiScans native HTTP and image transports', () => {
+    let previous: unknown, sent: Record<string, unknown>[], released: string[]
+    let respond: (message: Record<string, unknown>) => Promise<UnitResponse>
     beforeEach(() => {
-        previous = globals.__manaHTTPBridge; sent = []
+        previous = globals.__manaHTTPBridge; sent = []; released = []
+        respond = async message => ({ status: 200, text: String(message.url) })
         const bridge: HttpBridge = { now: () => Date.now(), send: async message => {
-            if (message.operation === BridgeOperation.Release) return {}
+            if (message.operation === BridgeOperation.Release) { released.push(String(message.bodyID)); return {} }
             if (message.operation !== BridgeOperation.Fetch) throw new Error('Unexpected bridge operation')
             sent.push(message)
-            return { bodyID: 'unit-' + sent.length, sessionID: 'unit', url: message.url, status: 200, text: message.url }
+            return { bodyID: 'unit-' + sent.length, sessionID: 'unit', url: message.url, ...await respond(message) }
         } }
         globals.__manaHTTPBridge = bridge
     })
@@ -73,6 +77,48 @@ describe('QiScans image transports', () => {
         const response = await client[imageDispatch](image)
         try { return await response.text() } finally { response.releaseNative() }
     }
+
+    test('advertises the actual API endpoint for Mana native Cloudflare resolution', () => {
+        expect(new Target().config.cloudflareResolutionURL).toBe('https://api.qimanhwa.com/api/v1/home')
+    })
+
+    test.each<UnitResponse>([
+        { status: 403, headers: { server: 'cloudflare', 'content-type': 'text/html' }, text: '<html>cf-chl-test</html>' },
+        { status: 200, headers: { 'CF-Mitigated': 'Challenge' }, text: 'not JSON' },
+        { status: 200, headers: { 'content-type': 'text/html' }, text: '<html><script src="/cdn-cgi/challenge-platform/test"></script></html>' }
+    ])('preserves native Cloudflare errors with the challenged API URL: %#', async response => {
+        respond = async () => response
+        await expect(new QiScansApi().json('/home')).rejects.toMatchObject({ name: 'CloudflareError', resolutionURL: 'https://api.qimanhwa.com/api/v1/home' })
+        expect(sent).toHaveLength(1)
+        expect(released).toContain('unit-1')
+    })
+
+    test.each([RequestOrigin.Cover, RequestOrigin.Page] as const)('hands challenged image host to Mana without rewriting or retrying it: %s', async origin => {
+        const source = new Target(), image = { url: 'https://cdn.qiscans.org/pages/16-1?quality=original', origin }
+        const client = origin === RequestOrigin.Cover ? source.getCoverTransport(image) : source.getPageTransport(image)
+        respond = async () => ({ status: 200, headers: { 'content-type': 'text/html' }, text: '<html>cf-chl-test</html>' })
+        await expect(dispatch(client, image)).rejects.toMatchObject({ name: 'CloudflareError', resolutionURL: image.url })
+        expect(sent).toHaveLength(1)
+        expect(released).toContain('unit-1')
+    })
+
+    test.each([RequestOrigin.Cover, RequestOrigin.Page] as const)('handles case-insensitive challenge headers for image origin %s', async origin => {
+        const source = new Target(), image = { url: 'https://cdn.qiscans.org/pages/16-1', origin }
+        const client = origin === RequestOrigin.Cover ? source.getCoverTransport(image) : source.getPageTransport(image)
+        respond = async () => ({ status: 403, headers: { 'cf-mitigated': 'Challenge' }, text: 'challenge' })
+        await expect(dispatch(client, image)).rejects.toBeInstanceOf(CloudflareError)
+        expect(sent).toHaveLength(1)
+    })
+
+    test('ordinary administrative denials stay HTTP failures and successful API reads release native bodies', async () => {
+        respond = async () => ({ status: 403, headers: { server: 'cloudflare', 'content-type': 'text/html' }, text: '<html>Request forbidden by administrative rules.</html>' })
+        const api = new QiScansApi()
+        await expect(api.json('/home')).rejects.toMatchObject({ name: 'Error', message: 'QiScans API unavailable (HTTP 403)' })
+        expect(sent).toHaveLength(1)
+        respond = async () => ({ status: 200, headers: { 'content-type': 'application/json' }, text: '{"data":[]}' })
+        await expect(api.json('/series?page=1')).resolves.toEqual({ data: [] })
+        expect(released).toEqual(['unit-1', 'unit-2'])
+    })
 
     test('cover and page clients preserve API-provided media queries with their correct request origins', async () => {
         const source = new Target()

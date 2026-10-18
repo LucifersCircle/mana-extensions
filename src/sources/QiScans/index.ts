@@ -32,7 +32,8 @@ import { assertRatingPolicy,
     ratingAllowed } from '../../ContentRatingPolicy'
 import { imageClient,
     QiScansApi } from './QiScansApi'
-import { cards,
+import { API,
+    cards,
     chapters,
     detail,
     DOMAIN,
@@ -60,7 +61,7 @@ export class Target implements ChapterSource, PageLinkResolver, CoverRequestHand
         supportedLanguages: ['en_US'], badges: ['Manga', 'Manhwa', 'Manhua'],
         developers: [{ name: 'Lucifers Circle', github: 'https://github.com/LucifersCircle' }, { name: 'Inkdex', github: 'https://github.com/inkdex' }]
     }
-    readonly config = { owningLinks: ['qimanhwa.com'] }
+    readonly config = { cloudflareResolutionURL: API + '/home', owningLinks: ['qimanhwa.com'] }
     private readonly api = new QiScansApi()
     private readonly coverClient = imageClient(RequestOrigin.Cover)
     private readonly pageClient = imageClient(RequestOrigin.Page)
