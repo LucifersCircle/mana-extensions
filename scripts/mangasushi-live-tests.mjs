@@ -401,7 +401,7 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
     if (value !== undefined) await field.didChange(value);
     return field;
   };
-  let catalog, safeContent, form, unfiltered, home, chapters, knownBlocked, coverEvidence, issuedReaderPages;
+  let catalog, safeContent, form, unfiltered, home, chapters, knownBlocked, coverEvidence, readerPages;
   const homeIDs = {};
   await check('Explicitly saved NSFW exclusion uses native adult=0', async () => {
     assert.equal((await preference()).value, true);
@@ -616,8 +616,8 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
       const parsed = new URL(url);
       assert.equal(parsed.origin, domain); assert.equal(parsed.username, ''); assert.equal(parsed.password, '');
       assert.equal(parsed.search, ''); assert.equal(parsed.hash, ''); assert(parsed.pathname.startsWith('/wp-content/uploads/'));
-      // This is an independent, source-advertised thumbnail reference, not an
-      // image emitted by the extension. It must not manufacture an image grant.
+      // This independent thumbnail reference is actually source-advertised,
+      // not a guessed rendition or the larger image emitted by the extension.
       return { url, headers };
     };
     for (const [image, cover] of samples) {
@@ -762,45 +762,38 @@ export async function testMangaSushi({ source, check, highlights, searchResult, 
       assert(data.pages.length); assert.equal(new Set(data.pages.map((page) => page.url)).size, data.pages.length);
       assert(data.pages.every((page) => new URL(page.url).pathname.includes('/WP-manga/data/')));
       await image(source, data.pages[0].url, 'page'); await image(source, data.pages.at(-1).url, 'page');
-      issuedReaderPages = data.pages.map((page) => page.url);
+      readerPages = data.pages.map((page) => page.url);
       if (chapter.number === 66.1) {
         assert.equal(data.pages.length, 12);
         assert.deepEqual(Array.from(data.pages, (page) => new URL(page.url).pathname.split('/').at(-1)), Array.from({ length: 12 }, (_, i) => `${String(i).padStart(2, '0')}.jpg`));
       }
     }
   });
-  await check('Issued native images survive reload but reject mutation, expiry and actual source-policy changes without requests', async () => {
-    const cold = freshSource(), before = requests.length, page = issuedReaderPages[0];
-    const stored = await nativeStore.get('MangaSushi.issuedImages');
-    assert.equal((await authorizeTestImage(cold, page, { origin: 'page' })).url, page);
-    for (const url of [`${page}?unissued=1`, `${domain}/wp-content/uploads/unissued.jpg`, 'https://example.invalid/unissued.jpg', `${domain}/manga/${sample}/`]) {
-      await assert.rejects(authorizeTestImage(cold, url, { origin: 'page' }), /image|authorization/i);
+  await check('Public images reuse native clients across reloads and settings changes without metadata requests', async () => {
+    const cold = freshSource(), before = requests.length, page = readerPages[0], cover = safeContent.cover;
+    for (const url of [page, `${page}?public=1`, `${domain}/wp-content/uploads/unissued.jpg`]) {
+      assert.equal((await authorizeTestImage(cold, url, { origin: 'page' })).url, url);
     }
-    try {
-      const expired = JSON.parse(JSON.stringify(stored));
-      for (const [, grant] of expired) { grant.at -= 86_400_001; grant.expires -= 86_400_001; }
-      await nativeStore.set('MangaSushi.issuedImages', expired);
-      await assert.rejects(authorizeTestImage(cold, page, { origin: 'page' }), /expired|authorization/i);
-    } finally { await nativeStore.set('MangaSushi.issuedImages', stored); }
-    assert.equal(requests.length, before, 'Image authorization must not fetch per-card metadata');
-    const cover = stored.find(([url, grant]) => grant.id === sample && grant.chapters.includes(''))?.[0];
-    assert(cover, 'Missing source-issued cover for independent cover/page transport checks');
-    for (const [url, origin, factory, nativeOrigin] of [[cover, 'cover', 'getCoverTransport', 1], [page, 'page', 'getPageTransport', 2]]) {
-      const client = cold[factory]({ url, origin: nativeOrigin });
-      assert(client && typeof client.then !== 'function', 'Image transport factories must be synchronous');
-      let outgoing = 0;
-      try {
-        await assert.rejects(fetchTestImage(cold, url, { origin, fetchImpl: async () => {
-          outgoing += 1; await nativeStore.set('MangaSushi.issuedImages', []);
-          return new Response('This controlled body must never escape revoked image policy', { status: 200 });
-        } }), /authorization|expired|settings/);
-        assert.equal(outgoing, 1, 'Revocation test must reach exactly one authorized image transport');
-      } finally { await nativeStore.set('MangaSushi.issuedImages', stored); }
+    for (const url of ['https://example.invalid/unissued.jpg', `${domain}/manga/${sample}/`, `${page}#fragment`]) {
+      await assert.rejects(authorizeTestImage(cold, url, { origin: 'page' }), /image/i);
     }
+    assert.equal(requests.length, before, 'Image dispatch must not fetch per-card metadata');
     const previous = (await preference()).value;
     try {
-      await preference(!previous);
-      await assert.rejects(authorizeTestImage(cold, page, { origin: 'page' }), /settings|authorization/i);
+      for (const [url, origin, factory, nativeOrigin] of [[cover, 'cover', 'getCoverTransport', 1], [page, 'page', 'getPageTransport', 2]]) {
+        const client = cold[factory]({ url, origin: nativeOrigin });
+        assert(client && typeof client.then !== 'function', 'Image transport factories must be synchronous');
+        assert.strictEqual(client, cold[factory]({ url: `${domain}/wp-content/uploads/another-public.jpg`, origin: nativeOrigin }));
+        let outgoing = 0;
+        const response = await fetchTestImage(cold, url, { origin, fetchImpl: async () => {
+          outgoing += 1; await preference(!previous);
+          return new Response('Controlled public-image body', { status: 200 });
+        } });
+        assert.equal(await response.text(), 'Controlled public-image body');
+        assert.equal(outgoing, 1, 'Exactly one public-image request must reach transport');
+        assert.equal((await authorizeTestImage(freshSource(), url, { origin })).url, url);
+        await preference(previous);
+      }
     } finally { await preference(previous); }
   });
   await check('Editorial notices never become reading content, even with exclusion off', async () => {

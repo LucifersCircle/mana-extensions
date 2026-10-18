@@ -341,9 +341,22 @@ Implementation: [`src/sources/MangaStash`](src/sources/MangaStash).
   exclusion adds the site's adult filter and verified explicit genre labels across
   browsing, saved details, chapters and reader entry; an unset preference adds no
   silent adult cap. Incomplete ratings use an explained Suggestive fallback.
-- Setting changes invalidate caches and active results. Filtered or duplicate-only
-  pages are traversed within bounded limits without losing eligible titles.
-  Verified donation/recruitment announcements are excluded as non-reading content.
+- Setting changes invalidate metadata caches and active metadata/chapter results.
+  Bounded, 24-hour title-classification evidence retains response ordering and
+  observed warnings across callbacks; it is not an image permission ledger. One
+  metadata-only generation high-water mark replaces the old image-grant scan on
+  partial metadata resets; erasing all metadata keys is outside that guarantee.
+  Final result checks inspect each title once, not each reader image, without
+  additional provider requests.
+- Public covers and pages reuse one HttpClient per origin, preserving strict
+  source URL validation, GET, Referer and Accept headers. Transport does not read
+  ObjectStore, fetch metadata, require prior issuance, expire URLs, remember native
+  rating scopes or revoke public image bytes on a source-setting change. Legacy
+  `MangaSushi.issuedImages` data is no longer read or written. Native application
+  display, cancellation and cache behavior are not guaranteed by this transport.
+- Filtered or duplicate-only pages are traversed within bounded limits without
+  losing eligible titles. Verified donation/recruitment announcements are excluded
+  as non-reading content.
 - Exact punctuation-sensitive titles use verified source-title fallbacks; ordinary
   partial search is unchanged. Login, paid access and security gates are not bypassed.
 
