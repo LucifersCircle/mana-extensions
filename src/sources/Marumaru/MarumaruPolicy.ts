@@ -7,22 +7,21 @@ import { assertRatingPolicy,
 import { id } from './MarumaruParser'
 const KEY='Marumaru.authorization.v1',ACCESS='Marumaru.access.v2.',EPOCH='Marumaru.access-epoch.v2.',REVOKED='Marumaru.revoked.v2.',ADULT='Marumaru.adult.v2.',TTL=3600000
 type Title={id:string;explicitlyAdult:boolean;at:number};
-type Image={url:string;id:string;episode?:string;at:number;revision:number;allowed?:ContentRating[]};
 type Access={id:string;at:number;allowed?:ContentRating[]};
 type SavedAccess=Access&{revision:number;explicitlyAdult:boolean;epoch:string};
-type State={revision:number;titles:Title[];images:Image[];access:Access[]};
+type State={revision:number;titles:Title[];access:Access[]};
 export type Policy={revision:number;allowed?:ContentRating[];access?:{work:string;epoch:string}};
 let queue:Promise<unknown>=Promise.resolve()
 function serial<T>(work:()=>Promise<T>):Promise<T>{const result=queue.then(work);queue=result.then(()=>undefined,()=>undefined);return result}
 async function read():Promise<State>{
     const state=await ObjectStore.get(KEY) as State|undefined
-    if(!state)return {revision:0,titles:[],images:[],access:[]}
-    if(!Number.isSafeInteger(state.revision)||state.revision<0||!Array.isArray(state.titles)||!Array.isArray(state.images)||state.titles.length>512||state.images.length>8192||!Array.isArray(state.access)||state.access.length>512)throw new Error('Invalid Marumaru policy state')
+    if(!state)return {revision:0,titles:[],access:[]}
+    if(!Number.isSafeInteger(state.revision)||state.revision<0||!Array.isArray(state.titles)||state.titles.length>512||!Array.isArray(state.access)||state.access.length>512)throw new Error('Invalid Marumaru policy state')
     const now=Date.now()
     for(const title of state.titles){id(title.id);if(typeof title.explicitlyAdult!=='boolean'||!Number.isSafeInteger(title.at)||title.at<0||title.at>now)throw new Error('Invalid saved Marumaru title evidence')}
     for(const entry of state.access){id(entry.id);assertRatingPolicy({allowedContentRatings:entry.allowed});if(!Number.isSafeInteger(entry.at)||entry.at<0||entry.at>now)throw new Error('Invalid saved Marumaru access evidence')}
-    for(const image of state.images){id(image.id);validateImage(image.url,image.id,image.episode);assertRatingPolicy({allowedContentRatings:image.allowed});if(!Number.isSafeInteger(image.at)||image.at<0||image.at>now||image.revision!==state.revision)throw new Error('Invalid saved Marumaru image evidence')}
-    return state
+    // Project only metadata fields; obsolete image evidence is ignored, even if malformed.
+    return {revision:state.revision,titles:state.titles,access:state.access}
 }
 function match(state:State,policy:Policy){if(state.revision!==policy.revision)throw new Error('Marumaru content policy changed; refresh to continue')}
 async function readEpoch(work:string):Promise<string>{
@@ -56,7 +55,7 @@ export function beginAccess(work:string,policy:Policy):Promise<Policy>{id(work);
     return {...policy,access:{work,epoch:await advanceEpoch(work)}}
 })}
 // ObjectStore is persistent, but its read/modify/write operations are not a
-// cross-runtime transaction. Catalog/image snapshots must not overwrite a grant.
+// cross-runtime transaction. Catalog snapshots must not overwrite a grant.
 async function readAccess(work:string,state:State):Promise<SavedAccess|undefined>{
     const value=await ObjectStore.get(ACCESS+work) as SavedAccess|undefined|null
     const now=Date.now(),epoch=await readEpoch(work)
@@ -74,7 +73,7 @@ async function readAccess(work:string,state:State):Promise<SavedAccess|undefined
 export function rating(explicitlyAdult:boolean){return explicitlyAdult?ContentRating.EXPLICIT:nativeRating(undefined)}
 export function visible(explicitlyAdult:boolean,policy:Policy){return ratingAllowed(rating(explicitlyAdult),{allowedContentRatings:policy.allowed})}
 // Native rating context applies to this request, not a global setting.
-// Contextless image callbacks use the policy captured when a URL was issued.
+// Contextless chapter callbacks require a separate, unexpired detail-access grant.
 export function enter(context?:SourceContext):Promise<Policy>{
     assertRatingPolicy(context);return serial(async()=>{
         const state=await read()
@@ -93,31 +92,17 @@ export function observe(work:string,explicitlyAdult:boolean,policy:Policy):Promi
         state.titles.push(old?.explicitlyAdult&&!explicitlyAdult?old:{id:work,explicitlyAdult:adult,at:now});state.titles=state.titles.slice(-512);await ObjectStore.set(KEY,state);return adult
     })
 }
-export function issue(work:string,urls:string[],policy:Policy,episode?:string):Promise<void>{
-    id(work);if(episode)id(episode)
-    return serial(async()=>{const state=await read();match(state,policy);const now=Date.now();const title=state.titles.find(t=>t.id===work&&t.at<=now&&t.at+TTL>now)
-        if(!title||!visible(title.explicitlyAdult||await adultEvidence(work),policy))throw new Error('Marumaru images excluded by content policy')
-        for(const url of urls){validateImage(url,work,episode);const scope=JSON.stringify(policy.allowed);state.images=state.images.filter(i=>i.at<=now&&i.at+TTL>now)
-            if(!state.images.some(i=>i.url===url&&JSON.stringify(i.allowed)===scope))state.images.push({url,id:work,episode,at:title.at,revision:policy.revision,allowed:policy.allowed})}
-        state.images=state.images.slice(-8192);await ObjectStore.set(KEY,state)
+export function checkTitle(work:string,policy:Policy):Promise<boolean>{
+    id(work);return serial(async()=>{
+        const state=await read();match(state,policy)
+        if(policy.access&&policy.access.work!==work)throw new Error('Marumaru access title identity mismatch')
+        await matchingAccess(policy)
+        const now=Date.now(),title=state.titles.find(t=>t.id===work&&t.at<=now&&t.at+TTL>now)
+        const explicitlyAdult=title?.explicitlyAdult===true||await adultEvidence(work)
+        if(!title||!visible(explicitlyAdult,policy))throw new Error('Marumaru title has no allowed fresh metadata evidence')
+        return explicitlyAdult
     })
 }
-function validateImage(url:string,work:string,episode?:string){
-    const pattern=episode?'^https://peer\\.storagewebtoon\\.store/api/media/episode/'+id(episode)+'/[1-9]\\d*\\.webp$':'^https://peer\\.storagewebtoon\\.store/(?:manhwa|webtoon)/'+id(work)+'/[A-Za-z0-9._-]+$'
-    if(/\/(?:\.|\.\.)$/.test(url)||!new RegExp(pattern).test(url))throw new Error('Invalid Marumaru issued image identity')
-}
-export function authorize(url:string,policy:Policy):Promise<void>{return serial(async()=>{
-    const state=await read();match(state,policy);const now=Date.now(),images=state.images.filter(i=>i.url===url&&i.revision===policy.revision&&i.at<=now&&i.at+TTL>now)
-    for(const image of images){
-        validateImage(url,image.id,image.episode)
-        const title=state.titles.find(t=>t.id===image.id&&t.at<=now&&t.at+TTL>now)
-        const access=image.episode?await readAccess(image.id,state):undefined
-        const explicitlyAdult=title?.explicitlyAdult===true||access?.explicitlyAdult===true||await adultEvidence(image.id)
-        if(image.episode&&(!access||!visible(explicitlyAdult,{revision:policy.revision,allowed:access.allowed})))continue
-        if((title||access)&&visible(explicitlyAdult,{revision:policy.revision,allowed:image.allowed}))return
-    }
-    throw new Error('Marumaru image was not issued, expired, or excluded by issuing policy')
-})}
 
 export function grant(work:string,policy:Policy):Promise<void>{return serial(async()=>{
     const access=policy.access??{work,epoch:await readEpoch(work)}
@@ -137,7 +122,7 @@ export function revoke(work:string,policy?:Policy):Promise<void>{id(work);return
     // neither resurrect its grant nor invalidate a newer successful native scope.
     await ObjectStore.set(REVOKED+work+'.'+epoch,true)
     if(await readEpoch(work)!==epoch)return
-    const state=await read();state.access=state.access.filter(a=>a.id!==work);state.images=state.images.filter(i=>i.id!==work);await ObjectStore.set(KEY,state)
+    const state=await read();state.access=state.access.filter(a=>a.id!==work);await ObjectStore.set(KEY,state)
 })}
 export function accessPolicy(work:string):Promise<Policy>{id(work);return serial(async()=>{
     const state=await read(),now=Date.now(),entry=await readAccess(work,state),title=state.titles.find(t=>t.id===work&&t.at<=now&&t.at+TTL>now)

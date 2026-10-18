@@ -4,6 +4,8 @@ import { BridgeOperation,
     ContentRating,
     HttpBridge,
     HttpClient,
+    HttpHeaders,
+    HttpBodyKind,
     imageDispatch,
     ImageRequest,
     RequestOrigin,
@@ -12,11 +14,12 @@ import { MarumaruAPI,
     MarumaruService,
     validateAPIURL } from './MarumaruService'
 import { Target } from './index'
+import * as metadata from './MarumaruPolicy'
 import { enter,
     accessPolicy,
     beginAccess,
     grant,
-    issue,
+    checkTitle,
     observe,
     revoke } from './MarumaruPolicy'
 
@@ -48,14 +51,13 @@ describe('Marumaru SDK image transport', () => {
         globals.__manaHTTPBridge = bridge
         const policy = await enter()
         await observe('123', false, policy)
-        await issue('123', [cover], policy)
         await grant('123', policy)
-        await issue('123', [page], policy, '456')
     })
 
     afterEach(() => {
         globals.__manaHTTPBridge = priorBridge
         globals.ObjectStore = priorStore
+        jest.restoreAllMocks()
     })
 
     async function dispatch(client: HttpClient, request: ImageRequest) {
@@ -64,8 +66,11 @@ describe('Marumaru SDK image transport', () => {
         return response
     }
 
-    test('synchronous factories preserve separate origins and the site-domain referrer', async () => {
-        const source = new Target()
+    test('fresh and repeated public images preserve separate origins and headers without ObjectStore', async () => {
+        const unexpected = async () => { throw new Error('Public image transport must not use ObjectStore') }
+        const store = { get: jest.fn(unexpected), set: jest.fn(unexpected), remove: jest.fn(unexpected), boolean: jest.fn(unexpected) }
+        globals.ObjectStore = store
+        const timeouts = jest.spyOn(HttpClient.prototype, 'setTimeoutMs'), source = new Target()
         for (const [url, origin] of [[cover, RequestOrigin.Cover], [page, RequestOrigin.Page]] as const) {
             const request = { url, origin }
             const client = origin === RequestOrigin.Cover ? source.getCoverTransport(request) : source.getPageTransport(request)
@@ -73,44 +78,53 @@ describe('Marumaru SDK image transport', () => {
             const before = sent.length
             await dispatch(client, request)
             expect(sent).toHaveLength(before + 1)
-            expect(sent[before]).toMatchObject({ url, origin })
+            expect(sent[before]).toMatchObject({ url, origin, method: HttpMethod.Get })
+            expect(sent[before]?.timeoutMs).toBeGreaterThan(0)
+            expect(sent[before]?.timeoutMs).toBeLessThanOrEqual(30000)
+            expect(sent[before]?.body).toBeUndefined()
             expect(new Headers(sent[before]?.headers as Record<string, string>).get('referer'))
                 .toBe('https://marumaru105.com/')
             expect(new Headers(sent[before]?.headers as Record<string, string>).has('x-site')).toBe(false)
+            await dispatch(client, request)
         }
+        expect(timeouts.mock.calls).toEqual([[30000], [30000], [30000], [30000]])
+        for (const method of Object.values(store)) expect(method).not.toHaveBeenCalled()
     })
 
-    test('cross-origin, foreign and unissued images fail before transport', async () => {
-        const source = new Target()
-        expect(() => source.getCoverTransport({ url: cover, origin: RequestOrigin.Page })).toThrow(/identity/)
-        expect(() => source.getPageTransport({ url: cover, origin: RequestOrigin.Page })).toThrow(/identity/)
-        expect(() => source.getCoverTransport({ url: 'https://foreign.invalid/cover.webp', origin: RequestOrigin.Cover })).toThrow(/identity/)
-        const request = { url: cover.replace('cover.webp', 'unissued.webp'), origin: RequestOrigin.Cover as const }
-        await expect(dispatch(source.getCoverTransport(request), request)).rejects.toThrow(/not issued/)
+    test('cross-origin and malformed public URLs fail before transport', async () => {
+        const source = new Target(), request = { url: cover, origin: RequestOrigin.Cover as const }
+        expect(() => source.getCoverTransport({ ...request, origin: RequestOrigin.Page })).toThrow(/identity/)
+        expect(() => source.getPageTransport({ ...request, origin: RequestOrigin.Page })).toThrow(/identity/)
+        for (const url of ['https://foreign.invalid/cover.webp', cover.replace('https:', 'http:'), cover.replace('https://', 'https://user@'),
+            cover + '?token=x', cover + '#fragment', cover + '\n', cover.replace('cover.webp', '..'), cover.replace('123', '9007199254740992')])
+            expect(() => source.getCoverTransport({ ...request, url })).toThrow()
+        expect(() => source.getPageTransport({ url: page.replace('456', '9007199254740992'), origin: RequestOrigin.Page })).toThrow()
         expect(sent).toHaveLength(0)
     })
 
-    test('revocation after factory creation is checked before dispatch', async () => {
+    test('revocation blocks chapters but does not revoke a public page before dispatch', async () => {
         const source = new Target(), request = { url: page, origin: RequestOrigin.Page as const }
         const client = source.getPageTransport(request)
         await revoke('123')
-        await expect(dispatch(client, request)).rejects.toThrow(/not issued/)
-        expect(sent).toHaveLength(0)
+        await expect(source.getChapterData('123', '456')).rejects.toThrow(/Refresh Marumaru/)
+        await expect(dispatch(client, request)).resolves.toBeDefined()
+        expect(sent).toHaveLength(1)
     })
 
-    test('revocation during image transport prevents response acceptance', async () => {
+    test('revocation during image transport does not revoke public bytes', async () => {
         const source = new Target(), request = { url: cover, origin: RequestOrigin.Cover as const }
         respond = async () => {
             await revoke('123')
             return { status: 200, headers: { 'content-type': 'image/webp' }, text: 'transport-test-only' }
         }
-        await expect(dispatch(source.getCoverTransport(request), request)).rejects.toThrow(/not issued/)
+        await expect(dispatch(source.getCoverTransport(request), request)).resolves.toBeDefined()
+        await expect(accessPolicy('123')).rejects.toThrow(/Refresh Marumaru/)
         expect(sent).toHaveLength(1)
     })
 
     test('official SDK challenge detection is preserved', async () => {
         const source = new Target(), request = { url: cover, origin: RequestOrigin.Cover as const }
-        respond = async () => ({ status: 403, headers: { 'cf-mitigated': 'challenge' }, text: 'test-only challenge' })
+        respond = async () => ({ status: 200, headers: { 'cf-mitigated': 'challenge' }, text: 'test-only challenge' })
         await expect(dispatch(source.getCoverTransport(request), request)).rejects.toBeInstanceOf(CloudflareError)
         expect(sent).toHaveLength(1)
     })
@@ -121,37 +135,45 @@ describe('Marumaru SDK image transport', () => {
         expect(source.getCoverTransport(coverRequest)).not.toBe(source.getPageTransport(pageRequest))
     })
 
-    test('shared client checks every dispatch URL and native origin', async () => {
-        const source = new Target(), request = { url: cover, origin: RequestOrigin.Cover as const }, client = source.getCoverTransport(request)
+    test('shared clients check every dispatch URL, native origin and GET-without-body constraint', async () => {
+        const interceptors = jest.spyOn(HttpClient.prototype, 'addRequestInterceptor'), source = new Target()
+        const request = { url: cover, origin: RequestOrigin.Cover as const }, client = source.getCoverTransport(request)
         await expect(client.get(cover)).rejects.toThrow(/identity/)
         await expect(dispatch(client, { url: cover, origin: RequestOrigin.Page })).rejects.toThrow(/identity/)
-        await expect(dispatch(client, { ...request, url: cover.replace('cover.webp', 'unissued.webp') })).rejects.toThrow(/not issued/)
+        await expect(dispatch(client, { ...request, url: 'https://foreign.invalid/image.webp' })).rejects.toThrow(/identity/)
+        const index = interceptors.mock.results.findIndex(result => result.type === 'return' && result.value === client)
+        const interceptor = interceptors.mock.calls[index]?.[0]
+        if (!interceptor) throw new Error('Missing image request interceptor')
+        const context = { origin: RequestOrigin.Cover, requestId: 'method-control', attempt: 1, metadata: {} }
+        expect(() => interceptor({ url: cover, method: HttpMethod.Post, headers: new HttpHeaders() }, context)).toThrow(/image request/)
+        expect(() => interceptor({ url: cover, method: HttpMethod.Get, headers: new HttpHeaders(), body: { kind: HttpBodyKind.Text, value: 'unexpected' } }, context)).toThrow(/image request/)
         expect(sent).toHaveLength(0)
     })
 
-    test('concurrent same-origin responses retain independent exact-URL policy evidence', async () => {
-        const source = new Target(), other = 'https://peer.storagewebtoon.store/manhwa/789/cover.webp', policy = await enter()
-        await observe('789', false, policy); await issue('789', [other], policy)
+    test('concurrent public responses and a failed dispatch leave the reusable client independent', async () => {
+        const unexpected = async () => { throw new Error('Public image transport must not use ObjectStore') }
+        globals.ObjectStore = { get: unexpected, set: unexpected, remove: unexpected, boolean: unexpected }
+        const source = new Target(), other = 'https://peer.storagewebtoon.store/manhwa/789/unissued.webp'
         let finish: ((value: {status: number; headers: Record<string, string>; text: string}) => void) | undefined
         let started: (() => void) | undefined
         const waiting = new Promise<void>(resolve => { started = resolve })
         respond = async message => {
             if (message.url === cover) return new Promise(resolve => { finish = resolve; started?.() })
-            return { status: 200, headers: { 'content-type': 'image/webp' }, text: 'transport-test-only' }
+            throw new Error('isolated transport failure')
         }
-        const request = { url: cover, origin: RequestOrigin.Cover as const }
-        const first = dispatch(source.getCoverTransport(request), request)
-        const rejected = expect(first).rejects.toThrow(/not issued/)
+        const request = { url: cover, origin: RequestOrigin.Cover as const }, client = source.getCoverTransport(request)
+        const first = dispatch(client, request)
         await waiting
         const second = { url: other, origin: RequestOrigin.Cover as const }
-        await dispatch(source.getCoverTransport(second), second)
-        await revoke('123')
+        await expect(dispatch(client, second)).rejects.toThrow('isolated transport failure')
+        respond = async () => ({ status: 200, headers: { 'content-type': 'image/webp' }, text: 'transport-test-only' })
+        await dispatch(client, second)
         finish?.({ status: 200, headers: { 'content-type': 'image/webp' }, text: 'transport-test-only' })
-        await rejected
-        expect(sent.map(message => message.url)).toEqual([cover, other])
+        await first
+        expect(sent.map(message => message.url)).toEqual([cover, other, other])
     })
 
-    test('redirected image response is rejected even for another valid issued URL', async () => {
+    test('redirected image response is rejected even for another valid public URL', async () => {
         const source = new Target(), request = { url: cover, origin: RequestOrigin.Cover as const }
         respond = async () => ({ status: 200, headers: { 'content-type': 'image/webp' }, text: 'transport-test-only', url: page })
         await expect(dispatch(source.getCoverTransport(request), request)).rejects.toThrow(/response identity/)
@@ -267,8 +289,8 @@ describe('Marumaru SDK image transport', () => {
         await ObjectStore.set(key, snapshot)
         await expect(accessPolicy('123')).rejects.toThrow(/Refresh Marumaru/)
         const source = new Target(), request = { url: page, origin: RequestOrigin.Page as const }
-        await expect(dispatch(source.getPageTransport(request), request)).rejects.toThrow(/not issued/)
-        expect(sent).toHaveLength(0)
+        await expect(dispatch(source.getPageTransport(request), request)).resolves.toBeDefined()
+        expect(sent).toHaveLength(1)
     })
 
     test('separate persisted access keeps its issuing scope and rejects stronger classification', async () => {
@@ -288,8 +310,8 @@ describe('Marumaru SDK image transport', () => {
         await ObjectStore.set(key, { ...saved, at: Date.now() - 3600000 })
         await expect(accessPolicy('123')).rejects.toThrow(/Refresh Marumaru/)
         const source = new Target(), request = { url: page, origin: RequestOrigin.Page as const }
-        await expect(dispatch(source.getPageTransport(request), request)).rejects.toThrow(/not issued/)
-        expect(sent).toHaveLength(0)
+        await expect(dispatch(source.getPageTransport(request), request)).resolves.toBeDefined()
+        expect(sent).toHaveLength(1)
     })
 
     test('missing access remains fail-closed before chapter network requests', async () => {
@@ -328,6 +350,7 @@ describe('Marumaru SDK image transport', () => {
         const older = await beginAccess('123', await enter())
         const current = await beginAccess('123', await enter({ allowedContentRatings: [ContentRating.SUGGESTIVE] }))
         await grant('123', current)
+        await expect(checkTitle('123', older)).rejects.toThrow(/content policy changed/)
         await expect(grant('123', older)).rejects.toThrow(/content policy changed/)
         await revoke('123', older)
         await expect(accessPolicy('123')).resolves.toEqual(current)
@@ -338,9 +361,85 @@ describe('Marumaru SDK image transport', () => {
         const key = 'Marumaru.authorization.v1', older = JSON.parse(JSON.stringify(await ObjectStore.get(key))) as unknown
         await observe('123', true, await enter())
         await ObjectStore.set(key, older)
+        await expect(checkTitle('123', policy)).rejects.toThrow(/allowed fresh metadata/)
+        await expect(checkTitle('123', await enter())).resolves.toBe(true)
         await expect(grant('123', policy)).rejects.toThrow(/no allowed access/)
         await expect(accessPolicy('123')).rejects.toThrow(/Refresh Marumaru/)
         await expect(observe('123', false, await enter())).resolves.toBe(true)
+        expect(sent).toHaveLength(0)
+    })
+
+    test('title checks require fresh metadata but not a completed detail grant', async () => {
+        const policy = await beginAccess('789', await enter({ allowedContentRatings: [ContentRating.SUGGESTIVE] }))
+        await expect(checkTitle('789', policy)).rejects.toThrow(/allowed fresh metadata/)
+        await observe('789', false, policy)
+        const writes = jest.spyOn(ObjectStore, 'set')
+        await expect(checkTitle('789', policy)).resolves.toBe(false)
+        expect(writes).not.toHaveBeenCalled()
+        await expect(accessPolicy('789')).rejects.toThrow(/Refresh Marumaru/)
+        await expect(checkTitle('123', policy)).rejects.toThrow(/identity mismatch/)
+        await expect(checkTitle('789', { ...policy, revision: policy.revision + 1 })).rejects.toThrow(/content policy changed/)
+        await grant('789', policy)
+        const now = Date.now(), time = jest.spyOn(Date, 'now').mockReturnValue(now + 1800000)
+        writes.mockClear()
+        await expect(checkTitle('789', policy)).resolves.toBe(false)
+        expect(writes).not.toHaveBeenCalled()
+        time.mockReturnValue(now + 3600000)
+        await expect(checkTitle('789', policy)).rejects.toThrow(/allowed fresh metadata/)
+        await expect(accessPolicy('789')).rejects.toThrow(/Refresh Marumaru/)
+        expect(sent).toHaveLength(0)
+    })
+
+    test('legacy images are never read or copied while metadata fields and access survive', async () => {
+        const key = 'Marumaru.authorization.v1', state = await ObjectStore.get(key) as object
+        const legacy = { ...state }
+        Object.defineProperty(legacy, 'images', { enumerable: true, get: () => { throw new Error('Obsolete image data was read') } })
+        await ObjectStore.set(key, legacy)
+        const policy = await enter()
+        await expect(checkTitle('123', policy)).resolves.toBe(false)
+        await expect(accessPolicy('123')).resolves.toMatchObject(policy)
+        await observe('789', false, policy)
+        const projected = await ObjectStore.get(key) as { titles: { id: string }[]; access: { id: string }[] }
+        expect(Object.keys(projected).sort()).toEqual(['access', 'revision', 'titles'])
+        expect(projected.titles.map(title => title.id)).toEqual(['123', '789'])
+        expect(projected.access.map(entry => entry.id)).toEqual(['123'])
+        await ObjectStore.set(key, { ...projected, revision: -1 })
+        await expect(enter()).rejects.toThrow(/Invalid Marumaru policy state/)
+    })
+
+    test('detail and search return the final stronger title classification', async () => {
+        const card = { id: '123', title: 'Title', cover, genres: [], explicitlyAdult: false }
+        jest.spyOn(MarumaruService.prototype, 'detail').mockResolvedValue({ ...card, chapters: [], episodesUrl: 'https://api.storagewebtoon.store/api/v1/reader/A2/works/123' })
+        jest.spyOn(MarumaruService.prototype, 'catalog').mockResolvedValue({ items: [card] })
+        const original = observe
+        jest.spyOn(metadata, 'observe').mockImplementation(async (work, adult, policy) => {
+            const first = await original(work, adult, policy)
+            await original(work, true, policy)
+            return first
+        })
+        const source = new Target()
+        await expect(source.getContent('123')).resolves.toMatchObject({ contentRating: ContentRating.EXPLICIT })
+        await ObjectStore.set('Marumaru.adult.v2.123', undefined)
+        await ObjectStore.set('Marumaru.authorization.v1', { revision: 0, titles: [], access: [] })
+        await expect(source.search({ page: 1 })).resolves.toMatchObject({ results: [{ contentRating: ContentRating.EXPLICIT }] })
+        expect(sent).toHaveLength(0)
+    })
+
+    test('reader completion checks stronger metadata once without per-image requests', async () => {
+        const policy = await enter({ allowedContentRatings: [ContentRating.SUGGESTIVE] })
+        await grant('123', policy)
+        jest.spyOn(MarumaruService.prototype, 'detail').mockResolvedValue({ id: '123', title: 'Title', cover, genres: [], explicitlyAdult: false,
+            chapters: [{ id: '456', workId: '123', sourceNumber: 1, title: 'Chapter', date: new Date(0) }],
+            episodesUrl: 'https://api.storagewebtoon.store/api/v1/reader/A2/works/123' })
+        const reader = jest.spyOn(MarumaruService.prototype, 'reader').mockImplementation(async () => {
+            await observe('123', true, await enter())
+            return [page, page.replace('1.webp', '2.webp')]
+        })
+        const checked = jest.spyOn(metadata, 'checkTitle')
+        await expect(new Target().getChapterData('123', '456')).rejects.toThrow(/allowed fresh metadata/)
+        expect(reader).toHaveBeenCalledTimes(1)
+        // One detail boundary and one post-reader boundary, independent of page count.
+        expect(checked).toHaveBeenCalledTimes(2)
         expect(sent).toHaveLength(0)
     })
 
