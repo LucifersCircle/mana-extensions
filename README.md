@@ -446,14 +446,25 @@ Image checks consume the full response body and validate PNG/JPEG/WebP container
 boundaries and dimensions. Other formats fail as unverified rather than passing
 from a file signature alone; these checks are not native pixel-rendering proof.
 
-The default budget is 12 document/API requests and three image transfers per
-source. Failed transport attempts count too. Kagane has a documented 20-document
-budget for native taxonomy, editions, its complete multi-page chapter inventory
-and reader bootstrap. Requests stop before exceeding the limit; chapter lists
-are never truncated to make a budget pass. The report retains measured request
-counts and the reason for any exception. Method outputs, native source caches
-and the exact consumed responses are reused; no duplicate reference fetches,
-per-card detail sweeps, all-section loops or automatic retry loops are added.
+The default native SDK budget is 12 document/API calls and three image-transfer
+calls per source. Failed SDK attempts count too. These counters are not total
+provider-request counts: helper warm-up navigations, browser-loaded subresources
+and helper-internal resends (if used) are outside them. Kagane has a documented
+20-document native-call budget for native taxonomy, editions, its complete
+multi-page chapter inventory and reader bootstrap. SDK calls stop before exceeding
+the limit; chapter lists are never truncated to make a budget pass. The report
+retains measured native-call counts and the reason for any exception. Method
+outputs, native source caches and the exact consumed responses are reused; no
+duplicate reference fetches, per-card detail sweeps or all-section loops are added.
+
+An optional [bounded passive Cloudflare assistance path](scripts/flaresolverr/CLOUDFLARE_ASSISTANCE.md)
+now covers verified public GET routes for other sources after a positive native
+Cloudflare response only. It permits at most three assistance operations per source,
+never invokes the CAPTCHA solver, and reports its own `cloudflareAssistance` counters
+separately. Ordinary 406/network/access-denial failures are not retried through it.
+Actual unsuccessful replays remain failed native responses; unavailable helper output
+leaves the original challenge visible. This is browser-assisted test transport, not
+proof of identical native app cookies or User-Agent state.
 
 Layout, exact section counts, all-sort/filter permutations and broader regression
 sweeps are developer-only diagnostics, available separately with `npm run
