@@ -54,6 +54,17 @@ export function redactText(value) {
 
 // The optional CI browser transport is limited to these exact public read-only
 // routes. Reader image/token URLs intentionally stay on the ordinary transport.
+export function assertPublicMarumaruRequest(request) {
+    const page = '(?:0|[1-9]\\d*)'
+    const route = `(?:works/[1-9]\\d*|works\\?mediaType=MANHWA&page=${page}&size=49|search\\?q=(?:[A-Za-z0-9_.!~*'()-]|%[0-9A-F]{2})+&page=${page}&media=MANHWA&sort=LATEST)`
+    if (request.method !== 'GET' || request.body != null || typeof request.url !== 'string'
+        || !(new RegExp(`^https://marumaru105\\.com/api/${route}$`).test(request.url)
+            || /^https:\/\/api\.storagewebtoon\.store\/api\/v1\/reader\/A2\/(?:works|episodes)\/[1-9]\d*$/.test(request.url))
+        || /[\s\\]/.test(request.url)) {
+        throw new Error('Live test browser rejects unsupported Marumaru operation')
+    }
+}
+
 export function assertPublicKaganeRequest(request) {
     const target = new URL(request.url)
     const reject = () => { throw new Error('Live test browser rejects unsupported Kagane operation') }

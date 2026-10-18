@@ -585,8 +585,9 @@ build/serve commands, not a dedicated live source test suite. Its build-time
 emulator rejects network access, so it is not used as live-test evidence. The live host supplies the official HTTP runtime with operation-scoped body storage, cancellation, and constrained real transport; it does not reimplement HttpClient. This adapter is not
 the iOS app: it does not validate native UI rendering, persistent cookies/stores,
 WKWebView-specific behavior or interactive Cloudflare/vShield resolution. CI explicitly opts into a test-only
-Chromium transport for Kagane's exact public API routes and cover images, using an
-anonymous, short-lived FlareSolverr session. JSON POST bodies and actual binary
+Chromium transport for Kagane's exact public API routes and cover images and
+Marumaru's public catalog/search/work and advertised reader GET routes, using
+separate anonymous, short-lived FlareSolverr sessions for each host. JSON POST bodies and actual binary
 image bytes are preserved. Warm-up waits for ordinary noninteractive managed
 checks only: CAPTCHA controls are never clicked, and an explicit CAPTCHA or browser
 security warning stops the test. TLS verification stays enabled. The native source
@@ -620,12 +621,21 @@ not claim native display, cancellation or cache behavior. The SDK's native Cloud
 challenge handling is unchanged. API and image clients send the Marumaru site origin as Referer;
 X-Site remains limited to the Marumaru site API. The source does not replace the native host's User-Agent: the
 current Mana SDK has no Paperback-style default-UA getter, so a Node-host check
-must not be reported as proof of the iOS host's identity. Marumaru live checks
-exercise direct native HTTP only, without
-browser image fallback: even an `application/octet-stream` cover must return its
+must not be reported as proof of the iOS host's identity. In CI, the catalog API
+uses Chromium's ordinary anonymous browser identity because the provider returns
+HTTP 406 `/seo-gate` to the Node transport. Its advertised reader API has a separate
+anonymous browser session for Cloudflare challenges seen on the CI runner.
+The unchanged native source receives the actual response status, headers and body.
+Reader images remain direct. After a native cover `CloudflareError` with the exact
+requested URL and a `cf-mitigated: challenge` response, the test host can resolve
+that same cover through the ordinary title-page hero load. The existing resolver
+requires matching network evidence, complete bytes and a decoded image, then
+reruns the source's native image authorization/response interceptors. Its single
+browser capture counts alongside the failed native attempt and two reader images
+against Marumaru's four-transfer limit. An `application/octet-stream` cover must return its
 exact requested URL and pass independent full JPEG/PNG/WebP container/dimension checks.
-The retained test-only WebView/browser image adapter is not part of Marumaru's source
-or native-API proof. Passing the SDK test host is not physical iOS device validation.
+The test-only WebView/browser image adapter is not part of Marumaru's source.
+Passing the SDK test host is not physical iOS device validation.
 Without FLARESOLVERR_URL, local network checks use ordinary direct requests,
 challenges fail visibly, and WebView-dependent checks report a missing real browser
 rather than being skipped or receiving substitute data. New sources must support the exercised contract; unsupported host

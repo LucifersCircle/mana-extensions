@@ -290,6 +290,8 @@ export const sourceContracts = {
   },
   Marumaru: {
     sample: '17155', query: '라멘 아카네코', methods, controls: false, documentLimit: 12,
+    imageLimit: 4,
+    budgetReason: 'Up to four measured image transfers: a native cover challenge, one exact title-page browser cover capture, and the first/last direct reader images. Failed attempts count; no repeated challenge resolution or substitute cover is allowed.',
     detail(state) {
       const raw = json(state, url => url.pathname === `/api/works/${state.id}`); assert.equal(String(raw.work.id), state.id);
       assert.equal(state.content.title, raw.work.title); assert.equal(state.content.webUrl, `https://marumaru105.com/manhwa/${state.id}`);

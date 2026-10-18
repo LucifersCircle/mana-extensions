@@ -53,18 +53,29 @@ function formFields(form) {
 export function createContractTransport(fetchImpl, { documentLimit = 12, imageLimit = 3 } = {}) {
   const captures = [], requests = [], imageURLs = new Set();
   let documents = 0, images = 0, captureBytes = 0, blocked = 0;
+  function reserve(url, init, image) {
+    if ((image ? images >= imageLimit : documents >= documentLimit)) {
+      blocked++;
+      throw new Error(`Native request budget exceeded (${image ? imageLimit + ' images' : documentLimit + ' documents'}); inventory was not truncated`);
+    }
+    if (image) images++; else documents++;
+    const request = { url, method: init.method ?? 'GET', body: init.body, image, status: undefined };
+    requests.push(request);
+    return request;
+  }
   return {
     captures, requests, imageURLs,
     stats: () => ({ documents, images, documentLimit, imageLimit, blocked }),
+    async captureImage(url, capture) {
+      assert(imageURLs.has(url), 'Browser image capture must retain a requested native image identity');
+      const request = reserve(url, { method: 'GET' }, true);
+      request.transport = 'browser-cover-after-cloudflare';
+      const response = await capture(url); request.status = response.status;
+      return response;
+    },
     async fetch(input, init = {}) {
       const url = String(input), image = imageURLs.has(url);
-      if ((image ? images >= imageLimit : documents >= documentLimit)) {
-        blocked++;
-        throw new Error(`Native request budget exceeded (${image ? imageLimit + ' images' : documentLimit + ' documents'}); inventory was not truncated`);
-      }
-      if (image) images++; else documents++;
-      const request = { url, method: init.method ?? 'GET', body: init.body, image, status: undefined };
-      requests.push(request);
+      const request = reserve(url, init, image);
       const response = await fetchImpl(input, init); request.status = response.status;
       if (!image && response.ok) {
         const copy = response.clone(), reader = copy.body?.getReader(), parts = [];
@@ -95,9 +106,10 @@ export function createContractTransport(fetchImpl, { documentLimit = 12, imageLi
   };
 }
 
-async function image(source, url, origin, transport) {
+async function image(source, url, origin, transport, captureCoverImage) {
   transport.imageURLs.add(url);
-  const response = await fetchTestImage(source, url, { origin, fetchImpl: transport.fetch });
+  const response = await fetchTestImage(source, url, { origin, fetchImpl: transport.fetch,
+    captureCoverImage: typeof captureCoverImage === 'function' ? target => transport.captureImage(target, captureCoverImage) : undefined });
   assert.equal(response.status, 200, 'Native image HTTP status');
   assert.equal(response.requestedImageURL, url, 'Native image identity changed');
   assert.equal(response.url, url, 'Native image redirected to another resource');
@@ -115,7 +127,7 @@ async function image(source, url, origin, transport) {
   console.log(`IMAGE ${origin}: ${format}, ${bytes.length} complete bytes`);
 }
 
-export async function testNativeContract({ name, source, manifestEntry, check, notApplicable, transport }) {
+export async function testNativeContract({ name, source, manifestEntry, check, notApplicable, transport, captureCoverImage }) {
   const config = sourceContracts[name];
   assert(config, `No native contract configuration for ${name}`);
   const context = { allowedContentRatings: [0, 1, 2, 3] }, state = { source, transport, context, config };
@@ -157,7 +169,7 @@ export async function testNativeContract({ name, source, manifestEntry, check, n
     if (content.contentRating !== undefined) assert([0, 1, 2, 3].includes(content.contentRating), 'Invalid detail content rating');
     if (content.tags !== undefined) { assert(Array.isArray(content.tags)); for (const tag of content.tags) { text(tag.id, 'Tag ID'); text(tag.title, 'Tag title'); } }
     await config.detail?.(state);
-    await image(source, content.cover, 'cover', transport);
+    await image(source, content.cover, 'cover', transport, captureCoverImage);
     if (source.handleURL) {
       const link = await source.handleURL(content.webUrl);
       assert.equal(link?.content?.id, id, 'Native deep link changed the selected content identity');

@@ -1,7 +1,7 @@
 // Test-only Chromium transport. Nothing under src/ imports this file.
 // Opt in explicitly; ordinary local requests retain the native Cloudflare failure.
 import { randomUUID } from 'node:crypto';
-import { assertPublicKaganeRequest } from './mana-runtime.mjs';
+import { assertPublicKaganeRequest, assertPublicMarumaruRequest } from './mana-runtime.mjs';
 
 export function createManaTestTransport({ solverURL = process.env.FLARESOLVERR_URL, fetchImpl = globalThis.fetch } = {}) {
   if (!solverURL) return { fetch: fetchImpl, close: async () => {} };
@@ -10,11 +10,11 @@ export function createManaTestTransport({ solverURL = process.env.FLARESOLVERR_U
       || solver.pathname !== '/' || solver.search || solver.hash) {
     throw new Error('The live-test browser must use a loopback HTTP FlareSolverr URL');
   }
-  const session = randomUUID();
-  let warmup, stopped, created = false, closed = false, queue = Promise.resolve();
-  const serial = (operation) => {
-    const result = queue.then(operation);
-    queue = result.catch(() => {});
+  const sites = new Map();
+  let stopped, closed = false;
+  const serial = (site, operation) => {
+    const result = site.queue.then(operation);
+    site.queue = result.catch(() => {});
     return result;
   };
   async function command(path, payload, signal) {
@@ -38,37 +38,45 @@ export function createManaTestTransport({ solverURL = process.env.FLARESOLVERR_U
     }
     return result;
   }
-  async function warm() {
-    warmup ??= (async () => {
-      await command('/v1', { cmd: 'sessions.create', session });
-      created = true;
-      await command('/browser/warm', { session });
+  async function warm(site) {
+    site.warmup ??= (async () => {
+      await command('/v1', { cmd: 'sessions.create', session: site.session });
+      site.created = true;
+      const result = await command('/browser/warm', { session: site.session, site: site.host });
+      if (result.ready !== true) throw new Error('Live-test Chromium did not confirm source readiness');
     })();
-    return warmup;
+    return site.warmup;
   }
   return {
     async fetch(input, init = {}) {
       const target = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
       // CDN and actual reader image-byte checks never go through a helper.
-      if (target.hostname !== 'kagane.org') return fetchImpl(input, init);
+      if (!['kagane.org', 'marumaru105.com', 'api.storagewebtoon.store'].includes(target.hostname)) return fetchImpl(input, init);
       const method = init.method ?? (input instanceof Request ? input.method : 'GET');
       const body = init.body ?? null;
-      assertPublicKaganeRequest({ url: target.href, method, body });
+      const marumaru = target.hostname !== 'kagane.org', catalog = target.hostname === 'marumaru105.com';
+      (marumaru ? assertPublicMarumaruRequest : assertPublicKaganeRequest)({
+        url: typeof input === 'string' ? input : target.href, method, body,
+      });
       const headers = new Headers(init.headers ?? (input instanceof Request ? input.headers : undefined));
-      const allowed = new Set(['accept', 'content-type', 'origin', 'referer', 'user-agent', 'x-integrity-token']);
+      const allowed = new Set(['accept', 'content-type', 'origin', 'referer', 'user-agent',
+        ...(catalog ? ['x-site'] : marumaru ? [] : ['x-integrity-token'])]);
       for (const key of headers.keys()) {
         if (!allowed.has(key) || (key === 'x-integrity-token' && (method !== 'POST' || !/^\/api\/v2\/books\/[A-Za-z0-9-]+$/.test(target.pathname)))) {
           throw new Error('Live-test browser rejects account credentials and unsupported headers');
         }
       }
+      if (catalog && headers.get('x-site') !== 'marumaru') throw new Error('Live-test browser requires the Marumaru site header');
       if (closed) throw new Error('Live-test browser session is closed');
-      return serial(async () => {
+      if (!sites.has(target.hostname)) sites.set(target.hostname, { host: target.hostname, session: randomUUID(), queue: Promise.resolve(), created: false });
+      const site = sites.get(target.hostname);
+      return serial(site, async () => {
         if (stopped) throw stopped;
         init.signal?.throwIfAborted();
-        await warm();
+        await warm(site);
         init.signal?.throwIfAborted();
         const data = await command('/browser/request', {
-          session, url: target.href, method, headers: Object.fromEntries(headers), body,
+          session: site.session, url: target.href, method, headers: Object.fromEntries(headers), body,
         }, init.signal);
         if (data.url !== target.href || !Number.isInteger(data.status) || data.status < 200 || data.status > 599 || typeof data.body !== 'string' || data.encoding !== 'base64'
             || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data.body)) {
@@ -85,9 +93,9 @@ export function createManaTestTransport({ solverURL = process.env.FLARESOLVERR_U
     },
     async close() {
       closed = true;
-      await serial(async () => {
-        if (created) await command('/v1', { cmd: 'sessions.destroy', session });
-      });
+      await Promise.all(Array.from(sites.values(), site => serial(site, async () => {
+        if (site.created) await command('/v1', { cmd: 'sessions.destroy', session: site.session });
+      })));
     },
   };
 }
