@@ -140,6 +140,42 @@ export const sourceContracts = {
       for (const page of state.reader.pages) assert.equal(new URL(page.url).origin, new URL(manifest.cache_url || 'https://kagane.org').origin, 'Native reader changed the advertised image server');
     },
   },
+  MangaTaro: {
+    sample: 'eleceed', chapter: '1224', issuedImageOwnership: false, methods: [...methods, ...controls], controls: true, documentLimit: 12,
+    filter(state, fields) {
+      const option = (key, id) => { const value = fields.find(field => field.id === key)?.options?.find(item => item.id === id); assert(value, 'Missing live MangaTaro filter'); return value; };
+      state.filterQuery = state.content.title; state.filterExpectedID = state.id;
+      return { genres: [option('genres', '7')], years: [option('years', '2018')], types: [option('types', 'Manhwa')], statuses: [option('statuses', 'Ongoing')], genreMatchMode: option('genreMatchMode', 'all') };
+    },
+    filtered(state) {
+      const requests = state.transport.requests.slice(state.filterRequestStart);
+      const sent = requests.find(request => request.url === 'https://mangataro.org/wp-json/manga/v1/load'); assert(sent);
+      assert.deepEqual(JSON.parse(sent.body), { page: 1, search: state.content.title, years: '[2018]', genres: '[7]', types: '["Manhwa"]', statuses: '["Ongoing"]', sort: 'post_desc', genreMatchMode: 'all' });
+    },
+    detail(state) {
+      const expected = `https://mangataro.org/manga/${state.id}`, $ = html(state, url => url.href === expected);
+      assert.equal(state.content.webUrl, expected); assert.equal($('link[rel="canonical"]').attr('href'), expected);
+      assert.equal(state.content.title, norm($('h1').last().text()));
+      assert.equal(state.content.cover, $('button[data-manga-cover]').first().attr('data-manga-cover'));
+      assert.equal(norm(state.content.summary), norm($('#description-content-tab').text()), 'Native summary must preserve complete source description');
+      assert.equal(state.content.contentRating, 1, 'Unclassified Eleceed must use explicit Suggestive compatibility, not Safe');
+    },
+    inventory(state) {
+      const captures = state.transport.captures.filter(item => new URL(item.url).pathname === '/auth/manga-chapters');
+      assert(captures.length, 'Native public chapter inventory was not consumed');
+      const responses = captures.map(item => JSON.parse(item.text)).sort((a, b) => a.offset - b.offset);
+      const rows = []; for (const response of responses) { assert.equal(response.success, true); assert.equal(response.offset, rows.length); rows.push(...response.chapters); }
+      assert.equal(responses.at(-1).has_more, false); assert.equal(rows.length, responses.at(-1).total);
+      const media = rows.filter(item => item.chapter_type === 'media' && !item.locked && !item.is_locked && !item.requires_login && !(Number(item.price) > 0)).reverse();
+      assert.deepEqual(chapterIDs(state.chapters), media.map(item => item.id), 'Native chapter inventory must retain every public media identity in source order');
+      assert.deepEqual(Array.from(state.chapters, item => item.webUrl), media.map(item => item.url));
+    },
+    reader(state) {
+      const raw = json(state, url => url.pathname === '/auth/chapter-content' && url.searchParams.get('chapter_id') === state.chapter.chapterId);
+      assert.equal(raw.success, true); assert.equal(String(raw.chapter_id), state.chapter.chapterId); assert.equal(raw.chapter_type, 'media');
+      assert.equal(raw.images.length, raw.total); assert.deepEqual(Array.from(state.reader.pages, page => page.url), raw.images, 'Native reader must preserve the complete source image manifest');
+    },
+  },
   MangaSushi: madara('mangasushi.org', 'welcome-to-the-cheap-restaurant-of-outcasts'),
   ManhwaNex: madara('manhwanex.com', 'logging-10000-years-into-the-future'),
   MangaStash: {

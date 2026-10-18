@@ -161,6 +161,7 @@ Add this repository URL in Mana:
 - [Kagane](src/sources/Kagane)
 - [MangaStash](src/sources/MangaStash)
 - [MangaSushi](src/sources/MangaSushi)
+- [MangaTaro](src/sources/MangaTaro)
 - [ManhwaNex](src/sources/ManhwaNex)
 - [VortexScans](src/sources/VortexScans)
 
@@ -380,6 +381,48 @@ Implementation: [`src/sources/MangaStash`](src/sources/MangaStash).
 
 Implementation: [`src/sources/MangaSushi`](src/sources/MangaSushi).
 The [icon](assets/MangaSushi.png) comes from the website's published icon.
+
+</details>
+
+<details>
+<summary>MangaTaro</summary>
+
+[MangaTaro](https://mangataro.org/home) is a native Mana source. Its chapter
+flow adapts the GPL-3.0-or-later [Inkdex MangaTaro implementation](https://github.com/inkdex/general-extensions/tree/0.9/stable/src/MangaTaro),
+Copyright © 2026 Inkdex, with Mana-specific parsing and transport.
+
+- Discover exposes the native HTML’s Featured and Recently Added feeds. Dynamic
+  account/community feeds are not advertised or simulated.
+- Public catalog search uses the website’s real JSON POST browse endpoint,
+  with complete live tag/year/type/status choices, any/all tag matching and
+  both directions of the website’s four sort keys. Text novels are omitted.
+  Pagination follows the website’s empty-page terminator, not a guessed count.
+- Details preserve full descriptions, alternate titles, creator credit, original
+  release year and separately labeled MangaTaro user score. MAL identity is a
+  tracker ID, not a replacement for the website’s user score.
+- Full chapter pagination uses the public website’s timestamp/UTC-hour token,
+  not login credentials. IDs, advertised totals and continuation progress are
+  checked; subtitles, decimal numbers, special labels and group credits survive.
+  Relative dates are approximate and unavailable dates use the unknown-date sentinel.
+- The image reader preserves the complete ordered source manifest. Text chapters,
+  locked/paid/login-only chapters and failed access responses are not bypassed.
+- Covers and pages use reusable native HttpClient transports with the website
+  Referer and explicit public URL validation. Actual advertised image URLs are
+  retained without thumbnail rewriting. When a catalog card has no cover, the
+  website’s exact placeholder is retained; it is not claimed to be a real cover.
+  Public image handling has no persistent permission ledger.
+- Adult/Hentai/Smut/18+/19+ labels are Explicit, Mature is Mature and Ecchi is
+  Suggestive. Adult Cast, demographics and relationship labels do not imply an
+  adult rating. Unclassified items use the documented Suggestive compatibility
+  fallback, never an invented Safe label.
+
+The eight compact native live checks cover discovery, paginated/text/combined
+search, complete details/chapter inventory, reader order, real cover and first/last
+image bytes, and guards. The host uses the official SDK, not a physical Mana
+installation; device verification is separate. No account login is needed.
+
+Implementation: [`src/sources/MangaTaro`](src/sources/MangaTaro).
+The [icon](assets/MangaTaro.png) comes from the website’s published logo.
 
 </details>
 

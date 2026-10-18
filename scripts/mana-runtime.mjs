@@ -39,7 +39,7 @@ function logRequest({ url, status, durationMs, error }) {
 // but never write those bearer values into workflow artifacts.
 export function redactURL(value) {
     const url = new URL(value)
-    for (const key of ['token', 'access_token']) {
+    for (const key of ['token', 'access_token', '_t']) {
         if (url.searchParams.has(key)) url.searchParams.set(key, '[redacted]')
     }
     return url.href
@@ -48,7 +48,7 @@ export function redactURL(value) {
 export function redactText(value) {
     return String(value).replace(/(https?:\/\/[^\s"'<>]+)/g, (url) => {
         try { return redactURL(url) } catch { return url }
-    }).replace(/([?&](?:token|access_token)=)[^&\s"'<>)]*/g, '$1[redacted]')
+    }).replace(/([?&](?:token|access_token|_t)=)[^&\s"'<>)]*/g, '$1[redacted]')
 }
 
 // The optional CI browser transport is limited to these exact public read-only
@@ -77,6 +77,7 @@ function assertReadOnlyPost(request) {
     const target = new URL(request.url)
     if (target.origin === 'https://kagane.org') return assertReadOnlyKaganePost(request)
     if (target.origin === 'https://manhwanex.com') return assertReadOnlyManhwaNexPost(request)
+    if (target.origin === 'https://mangataro.org') return assertReadOnlyMangaTaroPost(request)
     return assertReadOnlyMangaSushiPost(request)
 }
 
@@ -194,4 +195,24 @@ export function assertReadOnlyManhwaNexPost(request) {
     const hasSafety = safe.some((key) => body.has(key))
     if (hasSafety && (body.get(safe[0]) !== 'AND' || body.get(safe[1]) !== 'manga_adult_content' || body.get(safe[2]) !== '')) return reject()
     if (keys.some((key) => !Object.prototype.hasOwnProperty.call(exact, key) && key !== 'vars[posts_per_page]' && !idKeys.includes(key) && !(hasSafety && safe.includes(key)))) return reject()
+}
+
+// MangaTaro's public browse form POSTs JSON-stringified filter arrays. This
+// permits that one catalog read only, never account, upload or mutation routes.
+export function assertReadOnlyMangaTaroPost(request) {
+    const reject = () => { throw new Error('Live test host rejects unsupported MangaTaro operation') }
+    if (request.method !== 'POST' || request.url !== 'https://mangataro.org/wp-json/manga/v1/load' || typeof request.body !== 'string') return reject()
+    let body
+    try { body = JSON.parse(request.body) } catch { return reject() }
+    const keys = ['page', 'search', 'years', 'genres', 'types', 'statuses', 'sort', 'genreMatchMode']
+    if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== keys.length || Object.keys(body).some(key => !keys.includes(key))
+        || !Number.isSafeInteger(body.page) || body.page < 1 || body.page > 10000 || typeof body.search !== 'string' || body.search.length > 500
+        || typeof body.sort !== 'string' || !/^(?:post|release|title|popular)_(?:asc|desc)$/.test(body.sort) || !['any', 'all'].includes(body.genreMatchMode)) return reject()
+    for (const key of ['years', 'genres', 'types', 'statuses']) {
+        let values
+        try { if (typeof body[key] !== 'string') return reject(); values = JSON.parse(body[key]) } catch { return reject() }
+        if (!Array.isArray(values) || new Set(values).size !== values.length || values.length > 500) return reject()
+        if (['years', 'genres'].includes(key) ? values.some(value => !Number.isSafeInteger(value) || value < 1 || value > (key === 'years' ? 9999 : 2147483647))
+            : values.some(value => typeof value !== 'string' || !(key === 'types' ? ['Manga', 'Manhwa', 'Manhua'] : ['Ongoing', 'Completed']).includes(value))) return reject()
+    }
 }
