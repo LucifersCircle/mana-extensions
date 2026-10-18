@@ -17,6 +17,32 @@ const methods = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'];
 const probeReached = new Error('Image authorization probe reached transport');
 const imageDispatch = Symbol.for('mana.http.image.v1');
 
+// Bounded diagnostics only: no new requests, retained bodies, cookies or header values.
+export function marumaruFailureDiagnostic(request, raw, bytes) {
+    const url = new URL(request.url);
+    if (raw.status === 200 || url.origin !== 'https://marumaru105.com'
+        || !/^\/api\/(?:search|works(?:\/[1-9]\d*)?)$/.test(url.pathname)) return undefined;
+    const mime = (raw.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
+    const result = {
+        method: request.method === 'GET' ? 'GET' : 'other',
+        route: url.origin + url.pathname.replace(/\/\d+$/, '/:id'),
+        userAgent: new Headers(request.headers).has('user-agent') ? 'source-supplied' : 'transport-default',
+        contentType: ['application/json', 'text/html'].includes(mime) ? mime : 'other',
+        cloudflareChallenge: raw.headers.get('cf-mitigated')?.toLowerCase() === 'challenge',
+    };
+    if (mime === 'application/json' && bytes.byteLength <= 4096) {
+        try {
+            const value = JSON.parse(new TextDecoder().decode(bytes));
+            if (value && typeof value === 'object' && !Array.isArray(value)) {
+                if (Number.isInteger(value.status) && value.status >= 400 && value.status <= 599) result.errorStatus = value.status;
+                // Never retain arbitrary provider messages or paths; these can contain secrets.
+                if (value.path === '/seo-gate') result.errorPath = '/seo-gate';
+            }
+        } catch { /* Invalid JSON remains an ordinary failed response. */ }
+    }
+    return result;
+}
+
 function abortError() { const error = new Error('HTTP operation ended or was cancelled'); error.name = 'AbortError'; return error; }
 function own(object, key) { return Object.prototype.hasOwnProperty.call(object, key); }
 function responseHeaders(headers) { return Object.fromEntries(new Headers(headers)); }
@@ -119,7 +145,8 @@ export function createHTTPBridge({ fetchImpl, logger, assertRequest, redactURL, 
             transfer.signal.throwIfAborted();
             const native = saveBody(message.operationID, bytes, metadata, request);
             if (mode && message.origin !== 0) mode.native.bodyID = native.bodyID;
-            logger({ url: redactURL(target.href), status, durationMs: Math.round(performance.now() - started) });
+            const diagnostic = marumaruFailureDiagnostic(request, raw, bytes);
+            logger({ url: redactURL(target.href), status, durationMs: Math.round(performance.now() - started), ...(diagnostic ? { diagnostic } : {}) });
             return native;
         } catch (error) {
             logger({ url: redactURL(target.href), status, durationMs: Math.round(performance.now() - started), error: redactText(error?.message ?? error) });
