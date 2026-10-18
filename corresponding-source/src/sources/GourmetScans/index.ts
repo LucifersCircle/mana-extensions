@@ -5,7 +5,6 @@ import { CatalogRating,
     ChapterData,
     ChapterSource,
     Content,
-    ContentType,
     CoverRequestHandler,
     DeepLinkContext,
     HttpClient,
@@ -37,16 +36,16 @@ import { chapters,
     DOMAIN,
     imageURL,
     listing,
-    novelDocument,
     reader,
     seriesURL,
     slug,
-    text } from './Parser'
+    text,
+    UnsupportedNovelError } from './Parser'
 const SORTS = [{ id: 'latest', title: 'Latest Updated' }, { id: 'new-manga', title: 'New' }, { id: 'alphabet', title: 'A–Z' }, { id: 'views', title: 'Most Viewed' }]
 type Filters = { genres?: Option }
 export class Target implements ChapterSource, PageLinkResolver, CoverRequestHandler, PageRequestHandler {
-    readonly info: SourceInfo = { id: 'GourmetScans', name: 'GourmetScans', version: '0.0.1-alpha.4', website: DOMAIN, thumbnail: 'GourmetScans.png', rating: CatalogRating.MIXED,
-        description: 'Gourmet Scans public comics and an experimental novel document reader, adapted from Inkdex. Login-only and paid chapters are not supported. Unclassified titles use a Suggestive compatibility fallback, not a verified age rating. Missing chapter dates are unknown.',
+    readonly info: SourceInfo = { id: 'GourmetScans', name: 'GourmetScans', version: '0.0.1-alpha.5', website: DOMAIN, thumbnail: 'GourmetScans.png', rating: CatalogRating.MIXED,
+        description: 'Gourmet Scans public comics, adapted from Inkdex. Novels, login-only and paid chapters are not supported. Search may show unclassified novels until their details identify them. Unclassified titles use a Suggestive compatibility fallback, not a verified age rating. Missing chapter dates are unknown.',
         supportedLanguages: ['en_US'], badges: ['Manga', 'Manhwa'], developers: [{ name: 'Lucifers Circle', github: 'https://github.com/LucifersCircle' }, { name: 'Inkdex', github: 'https://github.com/inkdex' }] }
     readonly config = { owningLinks: ['gourmetsupremacy.com'] }
     private readonly api = new Api()
@@ -54,6 +53,7 @@ export class Target implements ChapterSource, PageLinkResolver, CoverRequestHand
     private readonly pageClient = imageClient(RequestOrigin.Page)
     private readonly documents = new Map<string, { at: number, html: string }>()
     private readonly contexts = new Map<string, SourceContext | undefined>()
+    private readonly knownNovels = new Set<string>()
     private genres?: Option[]
     private async document(url: string, refresh = false): Promise<string> {
         const cached = this.documents.get(url)
@@ -86,7 +86,7 @@ export class Target implements ChapterSource, PageLinkResolver, CoverRequestHand
         if (filters.genres && (typeof genre !== 'string' || typeof filters.genres !== 'object')) throw new Error('Invalid GourmetScans genre')
         if (genre) { await this.getSearchForm(); if (!this.genres?.some(value => value.id === genre)) throw new Error('Unknown GourmetScans genre') }
         const result = listing(await this.document(this.searchURL(query.trim().replace(/[\u2018\u2019]/g, '\'').replace(/[\u201C\u201D]/g, '"'), sort, page, genre)), page)
-        return { results: result.items.filter(value => ratingAllowed(value.contentRating, request.context)).map(value => ({ ...value, context: request.context })), isLastPage: result.ended }
+        return { results: result.items.filter(value => !this.knownNovels.has(value.id) && ratingAllowed(value.contentRating, request.context)).map(value => ({ ...value, context: request.context })), isLastPage: result.ended }
     }
     async getSectionsForPage(link: PageLink): Promise<PageSection[]> {
         assertRatingPolicy(link.context)
@@ -102,7 +102,14 @@ export class Target implements ChapterSource, PageLinkResolver, CoverRequestHand
         this.contexts.set(id, context ? { ...context, ...(context.allowedContentRatings ? { allowedContentRatings: [...context.allowedContentRatings] } : {}) } : undefined)
         while (this.contexts.size > 128) this.contexts.delete(this.contexts.keys().next().value as string)
         if (context?.allowedContentRatings?.length === 0) throw new Error('GourmetScans title is excluded by content policy')
-        const content = detail(await this.document(seriesURL(id)), id)
+        let content: Content
+        try { content = detail(await this.document(seriesURL(id)), id) } catch (error) {
+            if (error instanceof UnsupportedNovelError) {
+                this.knownNovels.add(id)
+                while (this.knownNovels.size > 256) this.knownNovels.delete(this.knownNovels.values().next().value as string)
+            }
+            throw error
+        }
         if (!ratingAllowed(content.contentRating, context)) throw new Error('GourmetScans title is excluded by content policy')
         return content
     }
@@ -119,7 +126,6 @@ export class Target implements ChapterSource, PageLinkResolver, CoverRequestHand
         if (!ratingAllowed(content.contentRating, this.contexts.get(id))) throw new Error('GourmetScans title is excluded by content policy')
         const selected = chapters(html, id).find(value => value.chapterId === chapterId)
         if (!selected || (chapter && (chapter.chapterId !== chapterId || chapter.number !== selected.number || (chapter.webUrl && chapter.webUrl !== selected.webUrl)))) throw new Error('GourmetScans chapter is absent, paid or mismatched')
-        if (content.contentType === ContentType.NOVEL) return { document: await this.api.novel(seriesURL(id) + chapterId + '/', body => novelDocument(body, id, chapterId)) }
         return reader(await this.document(seriesURL(id) + chapterId + '/', true), id, chapterId)
     }
     getCoverTransport(request: ImageRequest): HttpClient { if (request.origin !== RequestOrigin.Cover) throw new Error('Invalid GourmetScans cover origin'); imageURL(request.url); return this.coverClient }
