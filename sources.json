@@ -30,7 +30,7 @@
       "path": "Hijala",
       "environment": "source",
       "intents": 106961929,
-      "hash": "7f9d09097f9d09097f9d09097f9d09097f9d09097f9d09097f9d09097f9d0909"
+      "hash": "4b0bd6564b0bd6564b0bd6564b0bd6564b0bd6564b0bd6564b0bd6564b0bd656"
     },
     {
       "id": "Kagane",
@@ -59,7 +59,7 @@
       "path": "Kagane",
       "environment": "source",
       "intents": 106961929,
-      "hash": "34d44b4534d44b4534d44b4534d44b4534d44b4534d44b4534d44b4534d44b45"
+      "hash": "69657da269657da269657da269657da269657da269657da269657da269657da2"
     },
     {
       "id": "MangaStash",
@@ -86,7 +86,7 @@
       "path": "MangaStash",
       "environment": "source",
       "intents": 106961929,
-      "hash": "0391855c0391855c0391855c0391855c0391855c0391855c0391855c0391855c"
+      "hash": "3822b7d43822b7d43822b7d43822b7d43822b7d43822b7d43822b7d43822b7d4"
     },
     {
       "id": "MangaSushi",
@@ -111,7 +111,7 @@
       "path": "MangaSushi",
       "environment": "source",
       "intents": 106961929,
-      "hash": "7c91eeba7c91eeba7c91eeba7c91eeba7c91eeba7c91eeba7c91eeba7c91eeba"
+      "hash": "4edcde2c4edcde2c4edcde2c4edcde2c4edcde2c4edcde2c4edcde2c4edcde2c"
     },
     {
       "id": "MangaTaro",
@@ -142,7 +142,7 @@
       "path": "MangaTaro",
       "environment": "source",
       "intents": 106961928,
-      "hash": "0064fd6e0064fd6e0064fd6e0064fd6e0064fd6e0064fd6e0064fd6e0064fd6e"
+      "hash": "34f62fcf34f62fcf34f62fcf34f62fcf34f62fcf34f62fcf34f62fcf34f62fcf"
     },
     {
       "id": "ManhwaNex",
@@ -169,12 +169,13 @@
       "path": "ManhwaNex",
       "environment": "source",
       "intents": 106961929,
-      "hash": "67e069cf67e069cf67e069cf67e069cf67e069cf67e069cf67e069cf67e069cf"
+      "hash": "334f3491334f3491334f3491334f3491334f3491334f3491334f3491334f3491"
     },
     {
       "id": "Marumaru",
       "name": "Marumaru",
-      "version": "0.0.1-alpha.8",
+      "version": "0.0.1-alpha.9",
+      "thumbnail": "Marumaru.png",
       "website": "https://marumaru105.com",
       "rating": 1,
       "supportedLanguages": [
@@ -193,7 +194,7 @@
       "path": "Marumaru",
       "environment": "source",
       "intents": 102761480,
-      "hash": "0623143906231439062314390623143906231439062314390623143906231439"
+      "hash": "3299d3853299d3853299d3853299d3853299d3853299d3853299d3853299d385"
     },
     {
       "id": "VortexScans",
@@ -220,7 +221,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 106961928,
-      "hash": "7c86705f7c86705f7c86705f7c86705f7c86705f7c86705f7c86705f7c86705f"
+      "hash": "4ee860eb4ee860eb4ee860eb4ee860eb4ee860eb4ee860eb4ee860eb4ee860eb"
     }
   ]
 }
