@@ -22,3 +22,9 @@ catalog/detail/chapter/reader parsing rules are adapted from
 commit `410d7e9aa659070d08458b889368b3eb6c746aa1`, copyright © 2026 Lucifers Circle,
 licensed GPL-3.0-or-later. The integration uses native Mana interfaces and does not
 execute downloaded site scripts. These adaptations remain GPL-3.0-or-later. See LICENSE.
+
+## Marumaru
+
+Marumaru's icon is the unmodified source-brand PNG also distributed by
+[LucifersCircle/pirate.vodka-extensions](https://github.com/LucifersCircle/pirate.vodka-extensions/blob/29e05c0fed61973ed41492cda624e1a718b2eef7/src/Marumaru/static/icon.png).
+The source's branding is retained without redesign.
