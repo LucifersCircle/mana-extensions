@@ -440,6 +440,9 @@ The [icon](assets/ManhwaNex.png) comes from the website's published icon.
   with its existing card image as fallback.
 - Ordered public reader pages, source headers and deep links are supported.
   Native reader checks verify complete first/last image bodies.
+- Cover and page transport each reuse one role-bound client per source instance,
+  preserving the existing Referer and Accept headers without capturing image URLs.
+  Same-role public URLs and SDK fragment stripping no longer require an exact URL match.
 - Details may legitimately have no description. The extension does not invent a
   synopsis or substitute generic search-engine text.
 

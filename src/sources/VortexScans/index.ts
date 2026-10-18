@@ -109,7 +109,7 @@ export class Target implements
     PageRequestHandler {
     readonly info: SourceInfo = {
         id: 'VortexScans',
-        version: '0.0.1-alpha.13',
+        version: '0.0.1-alpha.14',
         name: 'VortexScans',
         description: 'Read manga, manhwa, and manhua from VortexScans.',
         thumbnail: 'VortexScans.png',
@@ -131,6 +131,8 @@ export class Target implements
     }
 
     private readonly api = new VortexScansApi()
+    private readonly coverClient = this.imageTransport(RequestOrigin.Cover)
+    private readonly pageClient = this.imageTransport(RequestOrigin.Page)
     private readonly parser = new VortexScansParser()
     private readonly sparseLists = new Map<string, { at: number, value: Promise<Highlight[]> }>()
     private readonly rawPages = new Map<string, { at: number, value: { items: Highlight[], ids: string[], last: boolean, total?: number } }>()
@@ -334,20 +336,21 @@ export class Target implements
     }
 
     getCoverTransport(request: ImageRequest): HttpClient {
-        return this.imageTransport(request, RequestOrigin.Cover)
+        if (request.origin !== RequestOrigin.Cover) throw new Error('Invalid VortexScans image origin')
+        return this.coverClient
     }
 
     getPageTransport(request: ImageRequest): HttpClient {
-        return this.imageTransport(request, RequestOrigin.Page)
+        if (request.origin !== RequestOrigin.Page) throw new Error('Invalid VortexScans image origin')
+        return this.pageClient
     }
 
-    private imageTransport(image: ImageRequest, origin: RequestOrigin.Cover | RequestOrigin.Page): HttpClient {
-        const imageURL = image.url, imageOrigin = image.origin
+    private imageTransport(origin: RequestOrigin.Cover | RequestOrigin.Page): HttpClient {
         return new HttpClient()
             .addHeader('Referer', `${VORTEX_DOMAIN}/`)
             .addHeader('Accept', 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5')
             .addRequestInterceptor((request, context) => {
-                if (imageOrigin !== origin || context.origin !== origin || request.url !== imageURL) throw new Error('Invalid VortexScans image origin')
+                if (context.origin !== origin) throw new Error('Invalid VortexScans image origin')
                 return request
             })
     }
