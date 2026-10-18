@@ -45,7 +45,7 @@ import { chapters,
 const SORTS = [{ id: 'latest', title: 'Latest Updated' }, { id: 'new-manga', title: 'New' }, { id: 'alphabet', title: 'A–Z' }, { id: 'views', title: 'Most Viewed' }]
 type Filters = { genres?: Option }
 export class Target implements ChapterSource, PageLinkResolver, CoverRequestHandler, PageRequestHandler {
-    readonly info: SourceInfo = { id: 'GourmetScans', name: 'GourmetScans', version: '0.0.1-alpha.3', website: DOMAIN, thumbnail: 'GourmetScans.png', rating: CatalogRating.MIXED,
+    readonly info: SourceInfo = { id: 'GourmetScans', name: 'GourmetScans', version: '0.0.1-alpha.4', website: DOMAIN, thumbnail: 'GourmetScans.png', rating: CatalogRating.MIXED,
         description: 'Gourmet Scans public comics and an experimental novel document reader, adapted from Inkdex. Login-only and paid chapters are not supported. Unclassified titles use a Suggestive compatibility fallback, not a verified age rating. Missing chapter dates are unknown.',
         supportedLanguages: ['en_US'], badges: ['Manga', 'Manhwa'], developers: [{ name: 'Lucifers Circle', github: 'https://github.com/LucifersCircle' }, { name: 'Inkdex', github: 'https://github.com/inkdex' }] }
     readonly config = { owningLinks: ['gourmetsupremacy.com'] }

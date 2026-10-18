@@ -143,19 +143,25 @@ function readerDocument(html: string, id: string, chapterId: string): ReturnType
 export function novelDocument(html: string, id: string, chapterId: string): string {
     const $ = readerDocument(html, id, chapterId)
     const blocks = $('.chapter-type-text .reading-content > .translation-block')
-    if (blocks.length !== 1) throw new Error('GourmetScans novel text is missing or ambiguous')
+    if (!blocks.length) throw new Error('GourmetScans novel text container is missing')
+    if (blocks.length !== 1) throw new Error('GourmetScans novel text container is duplicated')
     const escape = (value: string): string => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
     const serialize = (node: cheerio.Element): string => {
         if (node.type === 'text') return escape(node.data ?? '')
         if (node.type !== 'tag') return ''
-        if (!['p', 'strong', 'em', 'b', 'i', 'br'].includes(node.name ?? '')) {
-            if (!['script', 'style', 'iframe', 'object', 'embed', 'svg', 'math'].includes(node.name ?? '') && text($(node).text())) throw new Error('Unsupported GourmetScans novel text structure')
+        if (!['p', 'strong', 'em', 'b', 'i', 'br', 'span', 'div'].includes(node.name ?? '')) {
+            if (!['script', 'style', 'iframe', 'object', 'embed', 'svg', 'math'].includes(node.name ?? '') && text($(node).text())) {
+                const category = node.name === 'a' ? 'link' : /^h[1-6]$/.test(node.name ?? '') ? 'heading' : ['ul', 'ol', 'li'].includes(node.name ?? '') ? 'list' : ['table', 'tbody', 'tr', 'td', 'th'].includes(node.name ?? '') ? 'table' : 'other element'
+                throw new Error(`Unsupported GourmetScans novel text structure: ${category}`)
+            }
             return ''
         }
         if (node.name === 'br') return '<br>'
+        if (node.name === 'span') return (node.children ?? []).map(child => serialize(child)).join('')
         return `<${node.name}>${(node.children ?? []).map(child => serialize(child)).join('')}</${node.name}>`
     }
     const body = blocks.contents().toArray().map(node => serialize(node)).join('')
-    if (!text(load(body).root().text()) || body.length > 500_000 || !blocks.children('p').length) throw new Error('Invalid GourmetScans novel text')
+    const output = load(body)
+    if (!text(output.root().text()) || body.length > 500_000 || !output('p').length) throw new Error('Invalid GourmetScans novel text')
     return '<!doctype html><html><head><meta charset="utf-8"></head><body>' + body + '</body></html>'
 }
