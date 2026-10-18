@@ -28,7 +28,7 @@ for (const [aborted, partial] of [['Kagane', false], ['ManhwaNex', true]]) {
       }
       symlinkSync(fileURLToPath(new URL('../node_modules', import.meta.url)), join(dir, 'node_modules'));
       put('scripts/mana-test-browser.mjs', `export function createManaTestTransport() {
-        return { fetch() { throw new Error('Unexpected network access'); }, close: async () => {} };
+        return { fetch() { throw new Error('Unexpected network access'); }, stats: () => ({ assistanceAttempts: 0 }), close: async () => {} };
       }`);
       for (const name of names) {
         put(`src/sources/${name}/index.ts`, '');

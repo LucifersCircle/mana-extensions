@@ -2,9 +2,11 @@
 // Opt in explicitly; ordinary local requests retain the native Cloudflare failure.
 import { randomUUID } from 'node:crypto';
 import { assertPublicKaganeRequest } from './mana-runtime.mjs';
+import { createCloudflareAssistance } from './cloudflare-assistance.mjs';
 
 export function createManaTestTransport({ solverURL = process.env.FLARESOLVERR_URL, fetchImpl = globalThis.fetch } = {}) {
-  if (!solverURL) return { fetch: fetchImpl, close: async () => {} };
+  const assistance = createCloudflareAssistance({ solverURL, fetchImpl });
+  if (!solverURL) return assistance;
   const solver = new URL(solverURL);
   if (solver.protocol !== 'http:' || solver.hostname !== '127.0.0.1' || solver.username || solver.password
       || solver.pathname !== '/' || solver.search || solver.hash) {
@@ -50,7 +52,7 @@ export function createManaTestTransport({ solverURL = process.env.FLARESOLVERR_U
     async fetch(input, init = {}) {
       const target = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
       // CDN and actual reader image-byte checks never go through a helper.
-      if (target.hostname !== 'kagane.org') return fetchImpl(input, init);
+      if (target.hostname !== 'kagane.org') return assistance.fetch(input, init);
       const method = init.method ?? (input instanceof Request ? input.method : 'GET');
       const body = init.body ?? null;
       assertPublicKaganeRequest({ url: target.href, method, body });
@@ -83,11 +85,14 @@ export function createManaTestTransport({ solverURL = process.env.FLARESOLVERR_U
         return response;
       });
     },
+    stats: assistance.stats,
     async close() {
       closed = true;
-      await serial(async () => {
-        if (created) await command('/v1', { cmd: 'sessions.destroy', session });
-      });
+      try {
+        await serial(async () => {
+          if (created) await command('/v1', { cmd: 'sessions.destroy', session });
+        });
+      } finally { await assistance.close(); }
     },
   };
 }

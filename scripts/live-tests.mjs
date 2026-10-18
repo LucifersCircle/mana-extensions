@@ -41,7 +41,7 @@ try {
     } finally {
       const requests = transport.stats();
       console.log(`REQUESTS ${name}: ${JSON.stringify(requests)}`);
-      report[name] = { tests, notApplicable, requests, ...(config?.budgetReason ? { budgetReason: config.budgetReason } : {}),
+      report[name] = { tests, notApplicable, requests, cloudflareAssistance: testTransport.stats(name), ...(config?.budgetReason ? { budgetReason: config.budgetReason } : {}),
         summary: { total: tests.length, passed: tests.filter(test => test.status === 'pass').length, failed: tests.filter(test => test.status === 'fail').length, duration: performance.now() - started },
         ...(suiteError ? { error: suiteError } : {}) };
     }
@@ -50,6 +50,8 @@ try {
   try { await Promise.all([testTransport.close(), testWebViews.close(), ...hosts.map(host => host.close())]); }
   catch (error) { console.error(redactText(error.message)); process.exitCode = 1; }
 }
+// Include shutdown cleanup/retry calls in the final helper counters.
+for (const [name, source] of Object.entries(report)) source.cloudflareAssistance = testTransport.stats(name);
 mkdirSync('bundles', { recursive: true });
 writeFileSync('bundles/live-test-results.json', `${JSON.stringify(report, null, 2)}\n`);
 if (failedSources(report, names).length) process.exitCode = 1;
