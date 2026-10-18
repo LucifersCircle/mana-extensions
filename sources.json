@@ -35,7 +35,37 @@
       "path": "GenzToons",
       "environment": "source",
       "intents": 106957832,
-      "hash": "172164e8172164e8172164e8172164e8172164e8172164e8172164e8172164e8"
+      "hash": "57cb10a657cb10a657cb10a657cb10a657cb10a657cb10a657cb10a657cb10a6"
+    },
+    {
+      "id": "GourmetScans",
+      "name": "GourmetScans",
+      "version": "0.0.1-alpha.8",
+      "website": "https://gourmetsupremacy.com",
+      "thumbnail": "GourmetScans.png",
+      "rating": 1,
+      "description": "Gourmet Scans public comics, adapted from Inkdex. Novels, login-only and paid chapters are not supported. Search may show unclassified novels until their details identify them. Unclassified titles use a Suggestive compatibility fallback, not a verified age rating. Missing chapter dates are unknown.",
+      "supportedLanguages": [
+        "en_US"
+      ],
+      "badges": [
+        "Manga",
+        "Manhwa"
+      ],
+      "developers": [
+        {
+          "name": "Lucifers Circle",
+          "github": "https://github.com/LucifersCircle"
+        },
+        {
+          "name": "Inkdex",
+          "github": "https://github.com/inkdex"
+        }
+      ],
+      "path": "GourmetScans",
+      "environment": "source",
+      "intents": 106961928,
+      "hash": "70d189aa70d189aa70d189aa70d189aa70d189aa70d189aa70d189aa70d189aa"
     },
     {
       "id": "Hijala",
@@ -65,7 +95,7 @@
       "path": "Hijala",
       "environment": "source",
       "intents": 106961929,
-      "hash": "3e4dc4d53e4dc4d53e4dc4d53e4dc4d53e4dc4d53e4dc4d53e4dc4d53e4dc4d5"
+      "hash": "7ef773b97ef773b97ef773b97ef773b97ef773b97ef773b97ef773b97ef773b9"
     },
     {
       "id": "Kagane",
@@ -94,7 +124,7 @@
       "path": "Kagane",
       "environment": "source",
       "intents": 106961929,
-      "hash": "0d40e3da0d40e3da0d40e3da0d40e3da0d40e3da0d40e3da0d40e3da0d40e3da"
+      "hash": "3368c8263368c8263368c8263368c8263368c8263368c8263368c8263368c826"
     },
     {
       "id": "MangaStash",
@@ -121,7 +151,7 @@
       "path": "MangaStash",
       "environment": "source",
       "intents": 106961929,
-      "hash": "3e83ad083e83ad083e83ad083e83ad083e83ad083e83ad083e83ad083e83ad08"
+      "hash": "0226537f0226537f0226537f0226537f0226537f0226537f0226537f0226537f"
     },
     {
       "id": "MangaSushi",
@@ -146,7 +176,7 @@
       "path": "MangaSushi",
       "environment": "source",
       "intents": 106961929,
-      "hash": "3a7cbff73a7cbff73a7cbff73a7cbff73a7cbff73a7cbff73a7cbff73a7cbff7"
+      "hash": "7b26bd957b26bd957b26bd957b26bd957b26bd957b26bd957b26bd957b26bd95"
     },
     {
       "id": "MangaTaro",
@@ -177,7 +207,7 @@
       "path": "MangaTaro",
       "environment": "source",
       "intents": 106961928,
-      "hash": "664ff5ef664ff5ef664ff5ef664ff5ef664ff5ef664ff5ef664ff5ef664ff5ef"
+      "hash": "59060cd059060cd059060cd059060cd059060cd059060cd059060cd059060cd0"
     },
     {
       "id": "ManhwaNex",
@@ -204,7 +234,7 @@
       "path": "ManhwaNex",
       "environment": "source",
       "intents": 106961929,
-      "hash": "560a6734560a6734560a6734560a6734560a6734560a6734560a6734560a6734"
+      "hash": "694b9be6694b9be6694b9be6694b9be6694b9be6694b9be6694b9be6694b9be6"
     },
     {
       "id": "Marumaru",
@@ -229,7 +259,7 @@
       "path": "Marumaru",
       "environment": "source",
       "intents": 102761480,
-      "hash": "7f5a3b187f5a3b187f5a3b187f5a3b187f5a3b187f5a3b187f5a3b187f5a3b18"
+      "hash": "3eb03ddb3eb03ddb3eb03ddb3eb03ddb3eb03ddb3eb03ddb3eb03ddb3eb03ddb"
     },
     {
       "id": "QiScans",
@@ -260,7 +290,7 @@
       "path": "QiScans",
       "environment": "source",
       "intents": 106961928,
-      "hash": "6e45d78a6e45d78a6e45d78a6e45d78a6e45d78a6e45d78a6e45d78a6e45d78a"
+      "hash": "2d9bda492d9bda492d9bda492d9bda492d9bda492d9bda492d9bda492d9bda49"
     },
     {
       "id": "VortexScans",
@@ -287,7 +317,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 106961928,
-      "hash": "3a71413f3a71413f3a71413f3a71413f3a71413f3a71413f3a71413f3a71413f"
+      "hash": "7b1b3bef7b1b3bef7b1b3bef7b1b3bef7b1b3bef7b1b3bef7b1b3bef7b1b3bef"
     }
   ]
 }

@@ -6,12 +6,14 @@
   "buffer-LICENSE": "06bafa45fdad2579ba0e43b0c9b2c6290287c99c4203c300254a462b38a307f6",
   "bundled-dependencies/@mana-app__types@0.1.0/LICENSE": "4c78818208a63744bd86dea22c7d2ed726f1fb789a65e53d04e608111b4ef115",
   "bundled-dependencies/@mana-app__types@0.1.0/package-metadata.json": "c5aae60aec9e8a81ca709add138e7730a7bfe88185576970c4401e2db2f1ff10",
-  "bundled-dependencies/INDEX.json": "cc8937bfcea53ee1c989e0dcbc3bf7e0d1aec178372e3c8ce835749d14ad8c71",
+  "bundled-dependencies/INDEX.json": "2d7d466d24cd78d57fa88c0102183e0b8aad7ad23fd4fc5de143673843fc52e7",
   "bundled-dependencies/boolbase@1.0.0/package-metadata.json": "ca09c0dccbfc43be6be0ac89e9ffa19b64b30f9c74c64da27f719a7244a25e30",
   "bundled-dependencies/cheerio-select@2.1.0/LICENSE": "cb992345949ccd6e8394b2cd6c465f7b897c864f845937dbf64e8997f389e164",
   "bundled-dependencies/cheerio-select@2.1.0/package-metadata.json": "d2ec395193c6902c45984f3e238d0ac87d48042a4b980a2d842a4891e27fc78e",
   "bundled-dependencies/cheerio@1.0.0-rc.12/LICENSE": "61c1e21d3a8ff20f9b69abe15104a75584688080febc22f60a4cbf3854becf4e",
   "bundled-dependencies/cheerio@1.0.0-rc.12/package-metadata.json": "9583556a26d6dcef4474e4f5f3f332d47ccb377e458848f44b933e03303575bf",
+  "bundled-dependencies/crypto-es@2.1.0/LICENSE": "1c027ae30d1f747c3e860406cc93eff8bc9ce0882c6c1567eb5d3f5a0eb88a73",
+  "bundled-dependencies/crypto-es@2.1.0/package-metadata.json": "f4580db2610019e400a71166f2b84d1c8662f074c740b6a9818d2ceb1e2916cc",
   "bundled-dependencies/css-select@5.2.2/LICENSE": "cb992345949ccd6e8394b2cd6c465f7b897c864f845937dbf64e8997f389e164",
   "bundled-dependencies/css-select@5.2.2/package-metadata.json": "cfc1e661a525ae821a00994ce4d94790b209c21b35f6e19d54e8d1c61556d303",
   "bundled-dependencies/css-what@6.2.2/LICENSE": "cb992345949ccd6e8394b2cd6c465f7b897c864f845937dbf64e8997f389e164",
@@ -38,6 +40,7 @@
   "bundled-dependencies/parse5-htmlparser2-tree-adapter@7.1.0/package-metadata.json": "c4bab08899e9769bd165b370bb01b54ba45430aa397e34f3f57e49b50a82b725",
   "bundled-dependencies/parse5@7.3.0/LICENSE": "8c535800331e1e4439835555b3f9edc7fe9dee2fab0d8bbbd5a982e8b8343d4d",
   "bundled-dependencies/parse5@7.3.0/package-metadata.json": "8196284780fe95c3245a40e3c17b45fc85ef709f1211775987d037e5e873fe95",
+  "crypto-es-LICENSE": "1c027ae30d1f747c3e860406cc93eff8bc9ce0882c6c1567eb5d3f5a0eb88a73",
   "genz-paperback-MIT": "06068af241d0a0157926801bc88b77086f7aa4e958ed772cfdf76c8628e59c15",
   "ieee754-LICENSE": "18d45466ba3253deae04667e267a91ea8de8548f18c1125264d1c9db28194cc1"
 }
