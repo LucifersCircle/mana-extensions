@@ -1,4 +1,4 @@
-"""Test-only anonymous Kagane transport, using FlareSolverr's Chromium sessions.
+"""Test-only anonymous public API transport using FlareSolverr's Chromium sessions.
 
 Never invoke its request.get/post solver: that flow can click CAPTCHA controls.
 """
@@ -20,6 +20,8 @@ SEARCH_KEYS = {'source_type', 'title', 'content_rating', 'age_rating',
                'is_pornographic', 'content_lang', 'format', 'upload_status',
                'source_id', 'genres', 'tags', 'current_books', 'start_year'}
 HEADERS = {'accept', 'content-type', 'origin', 'referer', 'user-agent', 'x-integrity-token'}
+WARM_URLS = {'kagane.org': 'https://kagane.org/',
+             'marumaru105.com': 'https://marumaru105.com/manhwa'}
 
 FETCH_SCRIPT = """
 const payload = arguments[0], done = arguments[arguments.length - 1];
@@ -73,9 +75,23 @@ def valid_numeric_range(value, minimum, maximum):
             and ('min' not in value or 'max' not in value or value['min'] <= value['max']))
 
 
+def assert_public_marumaru_request(payload):
+    page = r'(?:0|[1-9]\d*)'
+    route = (r'(?:works/[1-9]\d*|works\?mediaType=MANHWA&page=' + page
+             + r'&size=49|search\?q=(?:[A-Za-z0-9_.!~*\x27()-]|%[0-9A-F]{2})+&page='
+             + page + r'&media=MANHWA&sort=LATEST)')
+    value = payload.get('url')
+    if (payload.get('method') != 'GET' or payload.get('body') is not None
+            or not isinstance(value, str) or re.search(r'[\s\\]', value)
+            or not re.fullmatch(r'https://marumaru105\.com/api/' + route, value, re.ASCII)):
+        raise ValueError('Unsupported Marumaru operation')
+
+
 def assert_public_request(payload):
     """Mirror mana-runtime.mjs's exact read-only allowlist, independently."""
     url = urlparse(payload.get('url', ''))
+    if url.hostname == 'marumaru105.com':
+        return assert_public_marumaru_request(payload)
     if (url.scheme != 'https' or url.hostname != 'kagane.org'
             or url.port not in (None, 443) or url.username or url.password
             or url.fragment or url.params):
@@ -171,12 +187,10 @@ def assert_browser_safety(driver, allow_startup=False):
             driver.switch_to.default_content()
 
 
-def assert_browser_page(driver):
+def assert_browser_page(driver, site='kagane.org'):
     assert_browser_safety(driver)
-    current = urlparse(driver.current_url)
-    if (current.scheme != 'https' or current.hostname != 'kagane.org'
-            or current.path not in ('', '/') or current.query or current.fragment):
-        raise ValueError('Browser left the public Kagane root')
+    if site not in WARM_URLS or driver.current_url != WARM_URLS[site]:
+        raise ValueError('Browser left its public source document')
 
 
 def register(app):
@@ -196,15 +210,18 @@ def register(app):
     def warm_browser():
         payload = request.json or {}
         try:
-            if set(payload) != {'session'}:
+            if set(payload) not in ({'session'}, {'session', 'site'}):
                 raise ValueError('Unsupported warm-up')
+            site = payload.get('site', 'kagane.org')
+            if site not in WARM_URLS:
+                raise ValueError('Unsupported warm-up site')
             with session_lock(payload['session']):
                 driver = session_driver(payload['session'])
                 driver.set_page_load_timeout(60)
-                driver.get('https://kagane.org/')
+                driver.get(WARM_URLS[site])
                 deadline = time.monotonic() + 60
                 while True:
-                    assert_browser_page(driver)
+                    assert_browser_page(driver, site)
                     html, title = driver.page_source, driver.title.lower()
                     challenge = (title in ('just a moment...', 'ddos-guard')
                                  or 'id="challenge-running"' in html
@@ -228,21 +245,27 @@ def register(app):
             if set(payload) != {'session', 'url', 'method', 'headers', 'body'}:
                 raise ValueError('Unsupported payload')
             assert_public_request(payload)
+            site = urlparse(payload['url']).hostname
+            marumaru = site == 'marumaru105.com'
             headers = payload['headers']
-            if not isinstance(headers, dict) or any(key.lower() not in HEADERS for key in headers):
+            allowed = (HEADERS - {'x-integrity-token'} | {'x-site'}) if marumaru else HEADERS
+            if not isinstance(headers, dict) or any(key.lower() not in allowed for key in headers):
                 raise ValueError('Unsupported headers')
+            if marumaru and {key.lower(): value for key, value in headers.items()}.get('x-site') != 'marumaru':
+                raise ValueError('Missing Marumaru site header')
             if (any(key.lower() == 'x-integrity-token' for key in headers)
                     and not (payload['method'] == 'POST'
                              and re.fullmatch(r'/api/v2/books/' + ID, urlparse(payload['url']).path))):
                 raise ValueError('Integrity token outside public reader bootstrap')
             with session_lock(payload['session']):
                 driver = session_driver(payload['session'])
-                assert_browser_page(driver)
+                assert_browser_page(driver, site)
                 driver.set_script_timeout(65)
                 # Browser supplies its own anonymous cookies, Origin and Referer.
                 payload['headers'] = {key: value for key, value in headers.items()
-                                      if key.lower() in ('accept', 'content-type', 'x-integrity-token')}
+                                      if key.lower() in ('accept', 'content-type', 'x-site' if marumaru else 'x-integrity-token')}
                 result = driver.execute_async_script(FETCH_SCRIPT, payload)
+                assert_browser_page(driver, site)
                 if result.get('error'):
                     raise ValueError('Browser fetch failed')
                 # A challenged API response with an explicit checkbox is a stop.
