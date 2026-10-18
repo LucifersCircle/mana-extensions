@@ -41,3 +41,17 @@ apostrophe fallback, discovery sections, and metadata/chapter/image parsing
 contracts originate there. The adaptation uses native Mana contracts, with
 additional completeness, URL and paid-content safeguards. These adaptations
 remain GPL-3.0-or-later. See LICENSE.
+
+## GenzToons
+
+Mana-only adaptation of the GenzToons configuration and Keyoapp template in
+[Nicartjay/PaperbackExt](https://github.com/Nicartjay/PaperbackExt/tree/a6ef7b8f4f96b37327ab27429fdea7f9e5d8a658/src/GenzToons),
+commit `a6ef7b8f4f96b37327ab27429fdea7f9e5d8a658`, specifically
+`src/GenzToons/main.ts`, `src/GenzToons/pbconfig.ts`, and
+`src/utils/keyoapp/template.ts`, developed by nicartjay and keiyoushi.
+Copyright 2024 Paperback Community. The original MIT permission and warranty
+notice is retained in `licenses/genz-paperback-MIT`. The unmodified source-brand
+icon comes from `src/GenzToons/static/icon.png` at the same pinned commit.
+The adaptation adds native Mana HTTP/context contracts, exact canonical ownership,
+complete public inventories and explicit paid-content guards, and remains
+GPL-3.0-or-later under this repository's LICENSE. No new Paperback implementation.

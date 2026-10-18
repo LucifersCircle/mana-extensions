@@ -77,6 +77,55 @@ function madara(host, sample) {
   };
 }
 export const sourceContracts = {
+  GenzToons: {
+    sample: 'senior-disciple-lee-hwe', chapter: 'chapter/6518be2bf4d-6519a16a0b5', methods: [...methods, 'getSearchForm'], controls: true, documentLimit: 8, imageLimit: 3,
+    filter(state, fields) {
+      const field = fields.find(item => item.id === 'genres'); assert(field);
+      const tag = state.content.tags.find(item => field.options.some(option => option.id === item.id)); assert(tag, 'Detail genre has no native option');
+      state.filterExpectedID = state.id;
+      return { genres: { included: [tag], excluded: [] } };
+    },
+    filtered(state, result, filter) {
+      const $ = html(state, url => url.href === 'https://genztoons.org/series');
+      const selected = filter.genres.included.map(item => item.id.toLowerCase());
+      const expected = $('#searched_series_page > button').toArray().filter(node => $(node).attr('data-type') !== 'novel').filter(node => {
+        const labels = JSON.parse($(node).attr('tags') ?? '[]').map(value => value.toLowerCase());
+        return selected.every(value => labels.includes(value));
+      }).map(node => $(node).find('a').first().attr('href').slice(8, -1));
+      assert.deepEqual(Array.from(result.results, item => item.id), expected, 'Genre search differs from complete provider catalog');
+      assert.equal(result.isLastPage, true);
+      const requests = state.transport.requests.slice(state.filterRequestStart);
+      assert(requests.length <= 1 && requests.every(request => request.url === 'https://genztoons.org/series'), 'Genre filtering must not fetch per-title metadata');
+    },
+    detail(state) {
+      const $ = html(state, url => url.href === `https://genztoons.org/series/${state.id}/`);
+      assert.equal(state.content.webUrl, $('link[rel="canonical"]').attr('href'));
+      assert.equal(state.content.title, norm($('h1').first().text()));
+      const cover = $('[style*="--photoURL:url"]').first().attr('style').match(/url\(([^)]+)\)/)[1];
+      assert.equal(state.content.cover, cover, 'Retain the exact provider cover URL');
+      const catalog = html(state, url => url.href === 'https://genztoons.org/series');
+      const expected = catalog('#searched_series_page > button').toArray().filter(node => catalog(node).attr('data-type') !== 'novel').map(node => catalog(node).find('a').first().attr('href').slice(8, -1));
+      assert.deepEqual(Array.from(state.catalog.results, item => item.id), expected, 'Complete comic catalog with novels excluded');
+    },
+    inventory(state) {
+      const $ = html(state, url => url.href === `https://genztoons.org/series/${state.id}/`);
+      const expected = $('#chapters > a').toArray().filter(node => {
+        const row = $(node);
+        return !row.find('img[alt~="Coin"], img[src*="material-symbols:lock"]').length && !/upcoming/i.test(row.text());
+      }).map(node => ({ id: $(node).attr('href').slice(1, -1), number: Number($(node).attr('title').match(/(\d+(?:\.\d+)?)/)[1]) })).sort((a, b) => a.number - b.number);
+      assert.deepEqual(Array.from(state.chapters, chapter => [chapter.chapterId, chapter.number]), expected.map(row => [row.id, row.number]), 'Complete public chapter inventory and decimal order');
+    },
+    reader(state) {
+      const $ = html(state, url => url.href === `https://genztoons.org/${state.chapter.chapterId}/`);
+      assert.equal($('h1 a').first().attr('href'), `/series/${state.id}/`);
+      assert.equal($('link[rel="canonical"]').attr('href'), state.chapter.webUrl);
+      const pages = $('#pages > img').toArray().map((node, index) => {
+        assert.equal($(node).attr('count'), String(index));
+        return 'https://cdn.meowing.org/uploads/' + $(node).attr('uid');
+      });
+      assert.deepEqual(Array.from(state.reader.pages, page => page.url), pages, 'Complete source reader UID manifest');
+    },
+  },
   QiScans: {
     // Candidate identities come from saved genuine browser evidence and the
     // upstream PB route inspection, not a successful legacy-v1 native response.
