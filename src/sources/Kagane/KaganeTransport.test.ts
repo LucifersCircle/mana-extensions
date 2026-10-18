@@ -89,7 +89,7 @@ describe('Kagane SDK HTTP and image transport', () => {
         expect(new Headers(sent[0]?.headers as Record<string, string>).get('origin')).toBe(domain)
     })
 
-    test('page grants, trusted hosts and independent origins fail closed before image I/O', async () => {
+    test('reader context, trusted hosts and independent origins fail closed before image I/O', async () => {
         const { source, url } = await reader()
         for (const [value, origin, coverFactory] of [
             [url, RequestOrigin.Cover, true], [`${domain}/api/v2/image/cover`, RequestOrigin.Page, false],
@@ -98,8 +98,10 @@ describe('Kagane SDK HTTP and image transport', () => {
             [url, RequestOrigin.Page, true]
         ] as const) {
             const request = { url: value, origin }
-            const transport = coverFactory ? source.getCoverTransport(request) : source.getPageTransport(request)
-            await expect(dispatch(transport, request)).rejects.toThrow(/image|settings|reopen|origin/i)
+            await expect((async () => {
+                const transport = coverFactory ? source.getCoverTransport(request) : source.getPageTransport(request)
+                await dispatch(transport, request)
+            })()).rejects.toThrow(/image|settings|reopen|origin/i)
         }
         expect(sent).toHaveLength(0)
         const request = { url, origin: RequestOrigin.Page as const }
@@ -135,29 +137,22 @@ describe('Kagane SDK HTTP and image transport', () => {
         expect(sent).toHaveLength(0)
     })
 
-    test('settings revocation during Fetch denies returned image bytes', async () => {
-        const { source, url } = await reader(), request = { url, origin: RequestOrigin.Page as const }
-        onFetch = () => { stored.set('Kagane.contentRatings', []) }
-        await expect(dispatch(source.getPageTransport(request), request)).rejects.toThrow(/settings changed|authorization/)
+    test('clients are reused per source and origin without response-time metadata re-fetch', async () => {
+        const { source, internals, url } = await reader(), request = { url, origin: RequestOrigin.Page as const }
+        const pageClient = source.getPageTransport(request)
+        const cover = { url: `${domain}/api/v2/image/cover`, origin: RequestOrigin.Cover as const }
+        expect(source.getPageTransport(request)).toBe(pageClient)
+        expect(source.getCoverTransport(cover)).toBe(source.getCoverTransport({ ...cover, url: `${domain}/api/v2/image/other` }))
+        expect(source.getCoverTransport(cover)).not.toBe(pageClient)
+        expect(new Target().getPageTransport(request)).not.toBe(pageClient)
+        const before = jest.mocked(internals.api.series).mock.calls.length
+        await dispatch(pageClient, request)
+        expect(jest.mocked(internals.api.series).mock.calls.length - before).toBe(1)
+        await expect(dispatch(pageClient, { ...cover })).rejects.toThrow(/origin/)
         expect(sent).toHaveLength(1)
     })
 
-    test('a changed or removed issued page cannot be substituted while image bytes arrive', async () => {
-        for (const mutate of ['remove', 'page', 'owner'] as const) {
-            const { source, internals, url } = await reader(), request = { url, origin: RequestOrigin.Page as const }
-            onFetch = () => {
-                const grant = internals.readerImages.get(url)
-                if (!grant) throw new Error('Missing test grant')
-                if (mutate === 'remove') internals.readerImages.delete(url)
-                if (mutate === 'page') grant.page.page_id = 'substituted-page'
-                if (mutate === 'owner') grant.seriesId = 'another-series'
-            }
-            await expect(dispatch(source.getPageTransport(request), request)).rejects.toThrow(/authorization changed/)
-        }
-        expect(sent).toHaveLength(3)
-    })
-
-    test('expired grants renew the URL but retain exact page identity', async () => {
+    test('expired provider tokens renew the URL but retain exact page identity', async () => {
         const { source, internals, url } = await reader(), request = { url, origin: RequestOrigin.Page as const }
         const session = internals.readerSessions.get(`${series}:${chapter}`)
         if (!session) throw new Error('Missing test session')
@@ -175,6 +170,25 @@ describe('Kagane SDK HTTP and image transport', () => {
         jest.spyOn(internals.api, 'challenge').mockResolvedValue(changed)
         await expect(dispatch(source.getPageTransport(request), request)).rejects.toThrow(/pages changed/)
         expect(sent).toHaveLength(1)
+    })
+
+    test('renewal cannot substitute a page, another chapter or an unavailable provider response', async () => {
+        const { source, internals, url } = await reader(), request = { url, origin: RequestOrigin.Page as const }
+        const session = internals.readerSessions.get(`${series}:${chapter}`)
+        if (!session) throw new Error('Missing test session')
+        session.expiry = 0
+        const changed = manifest('changed-test-token')
+        if (changed.manifest?.pages?.[0]) changed.manifest.pages[0].page_id = 'another-page'
+        jest.spyOn(internals.api, 'challenge').mockResolvedValue(changed)
+        await expect(dispatch(source.getPageTransport(request), request)).rejects.toThrow(/pages changed/)
+        const otherChapter = { ...request, url: url.replace(`/page/${chapter}/`, '/page/another-chapter/') }
+        await expect(dispatch(source.getPageTransport(otherChapter), otherChapter)).rejects.toThrow(/settings|reopen/)
+        const renewed = internals.readerSessions.get(`${series}:${chapter}`)
+        if (!renewed) throw new Error('Missing changed session')
+        renewed.expiry = 0
+        jest.spyOn(internals.api, 'challenge').mockRejectedValue(new Error('Kagane requires account access'))
+        await expect(dispatch(source.getPageTransport(request), request)).rejects.toThrow(/account access/)
+        expect(sent).toHaveLength(0)
     })
 
     test('typed JSON reaches the bridge unchanged and general HTTP rejects error statuses', async () => {

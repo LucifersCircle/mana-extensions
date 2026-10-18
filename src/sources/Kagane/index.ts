@@ -75,12 +75,12 @@ import { groupTags,
     tagFilterId } from './tag-groups'
 
 type ReaderSession = { challenge: Challenge, expiry: number }
-type ReaderImageGrant = { seriesId: string, chapterId: string, page: ManifestPage, settingsKey: string }
+type ReaderPageContext = { seriesId: string, chapterId: string, page: ManifestPage, settingsKey: string }
 type SearchPage = { result: PagedSearchResult, next: number, seenIDs: string[] }
 
 export class Target implements ContentSource, PageLinkResolver, CoverRequestHandler, PageRequestHandler, SourcePreferenceProvider {
     readonly info: SourceInfo = {
-        id: 'Kagane', version: '0.0.1-alpha.18', name: 'Kagane',
+        id: 'Kagane', version: '0.0.1-alpha.19', name: 'Kagane',
         description: 'Kagane with current API support, grouped tags and global four-category content settings.',
         thumbnail: 'Kagane.png', rating: CatalogRating.MIXED, website: DOMAIN,
         badges: ['Manga', 'Manhwa', 'Manhua', 'Comic'],
@@ -88,11 +88,13 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
     }
     readonly config = { cloudflareResolutionURL: `${DOMAIN}/`, owningLinks: ['kagane.org'] }
     private readonly api = new KaganeApi()
+    private readonly coverClient = this.imageTransport(RequestOrigin.Cover)
+    private readonly pageClient = this.imageTransport(RequestOrigin.Page)
     private settingsRevision = 0
     private settingsKey = ''
     private preferenceWrite: Promise<void> = Promise.resolve()
     private readonly searchPages = new Map<string, { at: number, pages: Map<number, Promise<SearchPage>> }>()
-    private readonly readerImages = new Map<string, ReaderImageGrant>()
+    private readonly readerImages = new Map<string, ReaderPageContext>()
     private readonly readerSessions = new Map<string, ReaderSession>()
 
     private async settings(): Promise<Settings> {
@@ -312,8 +314,11 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
             const challenge = await this.api.challenge(chapterId, settings.dataSaver)
             if (Number.isSafeInteger(book.page_count) && (book.page_count ?? 0) > 0 && challenge.manifest?.pages?.length !== book.page_count) throw new Error('Kagane reader returned an incomplete chapter manifest')
             const pages = [...(challenge.manifest?.pages ?? [])].sort((left, right) => left.page_no - right.page_no).map((page) => ({ url: this.api.pageURL(challenge, chapterId, page, settings.dataSaver) }))
-            // Authorize the exact issued URLs only under the settings that produced them.
-            if (this.readerImages.size > 3000) this.readerImages.clear()
+            // Retain page identity so an expired provider token can be renewed safely.
+            if (this.readerImages.size > 3000) {
+                this.readerImages.clear()
+                this.readerSessions.clear()
+            }
             this.readerSessions.set(`${contentId}:${chapterId}`, { challenge, expiry: readerExpiry(challenge.access_token) })
             for (const page of challenge.manifest?.pages ?? []) {
                 const url = this.api.pageURL(challenge, chapterId, page, settings.dataSaver)
@@ -347,45 +352,23 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
     }
 
     getCoverTransport(request: ImageRequest): HttpClient {
-        return this.imageTransport(request, RequestOrigin.Cover)
+        if (request.origin !== RequestOrigin.Cover) throw new Error('Invalid Kagane image origin')
+        return this.coverClient
     }
 
     getPageTransport(request: ImageRequest): HttpClient {
-        return this.imageTransport(request, RequestOrigin.Page)
+        if (request.origin !== RequestOrigin.Page) throw new Error('Invalid Kagane image origin')
+        return this.pageClient
     }
 
-    private imageTransport(image: ImageRequest, origin: RequestOrigin.Cover | RequestOrigin.Page): HttpClient {
-        const imageURL = image.url, imageOrigin = image.origin
-        const policies = new Map<string, { url: string, revision: number, settingsKey: string, grant?: ReaderImageGrant }>()
-        // Factories stay synchronous. Reader grants and token renewal must run
-        // inside the actual dispatch, not just when the client is obtained.
+    private imageTransport(origin: RequestOrigin.Cover | RequestOrigin.Page): HttpClient {
+        // Reuse one client per image origin. Provider token renewal belongs to
+        // dispatch, not factory creation; the returned bytes need no second
+        // metadata lookup or independent response-time permission ledger.
         return new HttpClient().addRequestInterceptor(async (request, context) => {
-            if (imageOrigin !== origin || context.origin !== origin || request.url !== imageURL) throw new Error('Invalid Kagane image origin')
+            if (context.origin !== origin) throw new Error('Invalid Kagane image origin')
             const url = await this.authorizedImageURL(request.url, origin)
-            const grant = origin === RequestOrigin.Page ? this.readerImages.get(url) : undefined
-            if (origin === RequestOrigin.Page && (!grant || grant.settingsKey !== this.settingsKey)) throw new Error('Kagane reader settings changed; reopen the chapter')
-            policies.set(context.requestId, { url, revision: this.settingsRevision, settingsKey: this.settingsKey,
-                grant: grant ? { ...grant, page: { ...grant.page } } : undefined })
             return { ...request, url, headers: request.headers.setAll({ Referer: `${DOMAIN}/`, Origin: DOMAIN, Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5' }) }
-        }).addResponseInterceptor(async (response, context) => {
-            const policy = policies.get(context.requestId)
-            policies.delete(context.requestId)
-            if (!policy || response.request.url !== policy.url) throw new Error('Kagane image request identity changed')
-            if (policy.grant) {
-                // Do not renew a token or replace an outgoing URL after its bytes
-                // arrive. Revalidate the exact issued grant and current policy.
-                const settings = await this.settings()
-                if (policy.revision !== this.settingsRevision || policy.settingsKey !== this.settingsKey) throw new Error('Kagane reader settings changed; reopen the chapter')
-                await this.requireAllowed(policy.grant.seriesId, settings)
-                await this.settings()
-                const current = this.readerImages.get(policy.url), issued = policy.grant
-                const samePage = (page: ManifestPage): boolean => page.page_id === issued.page.page_id && page.page_no === issued.page.page_no && (page.ext || 'jxl') === (issued.page.ext || 'jxl')
-                const session = this.readerSessions.get(`${issued.seriesId}:${issued.chapterId}`)
-                if (policy.revision !== this.settingsRevision || policy.settingsKey !== this.settingsKey
-                    || !current || current.seriesId !== issued.seriesId || current.chapterId !== issued.chapterId || current.settingsKey !== policy.settingsKey
-                    || !samePage(current.page) || !session?.challenge.manifest?.pages?.some(samePage)) throw new Error('Kagane reader authorization changed; reopen the chapter')
-            }
-            return response
         })
     }
 
@@ -410,7 +393,6 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
                 const samePage = session.challenge.manifest?.pages?.find((page) => page.page_id === authorization.page.page_id && page.page_no === authorization.page.page_no && (page.ext || 'jxl') === (authorization.page.ext || 'jxl'))
                 if (!samePage) throw new Error('Kagane chapter pages changed; reopen the chapter')
                 resolvedURL = this.api.pageURL(session.challenge, authorization.chapterId, samePage, settings.dataSaver)
-                this.readerImages.set(resolvedURL, authorization)
             })
         }
         return resolvedURL
