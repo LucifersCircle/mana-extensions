@@ -30,7 +30,7 @@
       "path": "Hijala",
       "environment": "source",
       "intents": 106961929,
-      "hash": "1983968e1983968e1983968e1983968e1983968e1983968e1983968e1983968e"
+      "hash": "0ed201500ed201500ed201500ed201500ed201500ed201500ed201500ed20150"
     },
     {
       "id": "Kagane",
@@ -59,7 +59,7 @@
       "path": "Kagane",
       "environment": "source",
       "intents": 106961929,
-      "hash": "1acf367a1acf367a1acf367a1acf367a1acf367a1acf367a1acf367a1acf367a"
+      "hash": "101da1d4101da1d4101da1d4101da1d4101da1d4101da1d4101da1d4101da1d4"
     },
     {
       "id": "MangaStash",
@@ -86,7 +86,7 @@
       "path": "MangaStash",
       "environment": "source",
       "intents": 106961929,
-      "hash": "69aaf75d69aaf75d69aaf75d69aaf75d69aaf75d69aaf75d69aaf75d69aaf75d"
+      "hash": "745c8c00745c8c00745c8c00745c8c00745c8c00745c8c00745c8c00745c8c00"
     },
     {
       "id": "MangaSushi",
@@ -111,7 +111,7 @@
       "path": "MangaSushi",
       "environment": "source",
       "intents": 106961929,
-      "hash": "1d549e261d549e261d549e261d549e261d549e261d549e261d549e261d549e26"
+      "hash": "12a309a512a309a512a309a512a309a512a309a512a309a512a309a512a309a5"
     },
     {
       "id": "ManhwaNex",
@@ -138,7 +138,7 @@
       "path": "ManhwaNex",
       "environment": "source",
       "intents": 106961929,
-      "hash": "01c6f74b01c6f74b01c6f74b01c6f74b01c6f74b01c6f74b01c6f74b01c6f74b"
+      "hash": "08ea9d3308ea9d3308ea9d3308ea9d3308ea9d3308ea9d3308ea9d3308ea9d33"
     },
     {
       "id": "Marumaru",
@@ -162,11 +162,11 @@
       "path": "Marumaru",
       "environment": "source",
       "intents": 102761480,
-      "hash": "5ff65e605ff65e605ff65e605ff65e605ff65e605ff65e605ff65e605ff65e60"
+      "hash": "6aa7f22e6aa7f22e6aa7f22e6aa7f22e6aa7f22e6aa7f22e6aa7f22e6aa7f22e"
     },
     {
       "id": "VortexScans",
-      "version": "0.0.1-alpha.13",
+      "version": "0.0.1-alpha.14",
       "name": "VortexScans",
       "description": "Read manga, manhwa, and manhua from VortexScans.",
       "thumbnail": "VortexScans.png",
@@ -189,7 +189,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 106961928,
-      "hash": "506f91c6506f91c6506f91c6506f91c6506f91c6506f91c6506f91c6506f91c6"
+      "hash": "12ae8b8c12ae8b8c12ae8b8c12ae8b8c12ae8b8c12ae8b8c12ae8b8c12ae8b8c"
     }
   ]
 }
