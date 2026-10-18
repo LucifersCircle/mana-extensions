@@ -133,8 +133,10 @@ export function reader(html: string, id: string, chapterId: string): ChapterData
     const key = EvpKDF(nonce, Hex.parse(data.s), { keySize: 8, hasher: MD5Algo, iterations: 1 })
     const decoded = AES.decrypt(CipherParams.create({ ciphertext }), key, { iv: Hex.parse(data.iv), mode: CBC, padding: Pkcs7 }).toString(Utf8)
     const pages: unknown = JSON.parse(JSON.parse(decoded))
-    const count = $('.reading-content .page-break[id^="chapter-img-"]').length
-    if (!Array.isArray(pages) || !count || pages.length !== count || pages.length > 1000 || pages.some(value => typeof value !== 'string') || new Set(pages).size !== pages.length) throw new Error('GourmetScans reader page inventory is incomplete')
+    const slots = $('.reading-content .page-break[id^="chapter-img-"]').toArray(), count = slots.length
+    // The provider maps each occurrence to chapter-img-(index + 1), even when image URLs repeat.
+    if (slots.some((node, index) => $(node).attr('id') !== `chapter-img-${index + 1}`)) throw new Error('GourmetScans reader page slots are incomplete or out of order')
+    if (!Array.isArray(pages) || !count || pages.length !== count || pages.length > 1000 || pages.some(value => typeof value !== 'string')) throw new Error('GourmetScans reader page inventory is incomplete')
     return { pages: pages.map(value => ({ url: imageURL(value as string) })) }
 }
 

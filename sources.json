@@ -5,7 +5,7 @@
     {
       "id": "GourmetScans",
       "name": "GourmetScans",
-      "version": "0.0.1-alpha.6",
+      "version": "0.0.1-alpha.7",
       "website": "https://gourmetsupremacy.com",
       "thumbnail": "GourmetScans.png",
       "rating": 1,
@@ -30,7 +30,7 @@
       "path": "GourmetScans",
       "environment": "source",
       "intents": 106961928,
-      "hash": "65a71fd565a71fd565a71fd565a71fd565a71fd565a71fd565a71fd565a71fd5"
+      "hash": "4749046c4749046c4749046c4749046c4749046c4749046c4749046c4749046c"
     }
   ]
 }
