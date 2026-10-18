@@ -24,10 +24,17 @@ import { CipherParams,
     Pkcs7 } from 'crypto-es/lib/cipher-core.js'
 import { incompleteRatingInfo,
     nativeRating } from '../../ContentRatingPolicy'
+export class UnsupportedNovelError extends Error {
+    constructor() { super('GourmetScans novels are unavailable in the current Mana reader') }
+}
 export const DOMAIN = 'https://gourmetsupremacy.com'
 export const text = (value: string): string => value.replace(/\s+/g, ' ').trim()
 export function slug(value: string): string {
     if (!/^[a-z0-9]+(?:[a-z0-9-]*[a-z0-9])?$/.test(value) || value.length > 250) throw new Error('Invalid GourmetScans identity')
+    return value
+}
+export function chapterSlug(value: string): string {
+    if (!/^[a-z0-9]+(?:[a-z0-9_-]*[a-z0-9])?$/.test(value) || value.length > 250) throw new Error('Invalid GourmetScans chapter identity')
     return value
 }
 export const seriesURL = (id: string): string => `${DOMAIN}/project/${slug(id)}/`
@@ -81,6 +88,7 @@ export function detail(html: string, id: string): Content {
     const title = text(heading.text()), genres = genreOptions($, '.tab-summary .genres-content a'), age = rating(genres)
     if (!title || !field($, 'chapters').length) throw new Error('Incomplete GourmetScans detail')
     const type = text(field($, 'type').text()), status = text(field($, 'status').text()).toLowerCase()
+    if (type === 'Novel') throw new UnsupportedNovelError()
     const people = ['author', 'artist'].flatMap(role => field($, role).find('a').toArray().map(a => staff.item({ id: `${role}:${text($(a).text())}`, title: text($(a).text()), subtitle: role })))
     return { title, cover: image($, $('.summary_image img').first().get(0)), webUrl: expected,
         summary: text($('.description-summary .summary__content, .summary__content').first().text()).replace(/Show more$/i, '').trim(),
@@ -97,10 +105,10 @@ export function chapters(html: string, id: string): Chapter[] {
     rows.each((_, node) => {
         const row = $(node), anchor = row.children('a').first(), href = anchor.attr('href') ?? '', base = seriesURL(id)
         if (!href.startsWith(base) || !href.endsWith('/')) throw new Error('GourmetScans chapter owner mismatch')
-        const chapterId = slug(href.slice(base.length, -1))
+        const chapterId = chapterSlug(href.slice(base.length, -1))
         if (seen.has(chapterId)) throw new Error('Repeated GourmetScans chapter identity')
         seen.add(chapterId)
-        if (row.is('.premium, .locked, .paid, .login-required, [data-price], [data-coin]') || row.find('.fa-lock, .ion-locked, .chapter-premium, [data-price], [data-coin]').length || /(?:premium|locked|paid)/i.test(row.attr('class') ?? '')) return
+        if (row.is('.premium, .locked, .paid, .login-required, .required-login, [data-price], [data-coin]') || row.find('.fa-lock, .fa-user-lock, .ion-locked, .chapter-premium, .login-required, .required-login, [data-price], [data-coin]').length || /(?:premium|locked|paid)/i.test(row.attr('class') ?? '')) return
         const title = text(anchor.text()), number = Number(title.match(/(?:chapter|side story|epilogue|prologue)\s*(\d+(?:\.\d+)?)/i)?.[1] ?? chapterId.match(/(?:chapter|side-story|epilogue|prologue)-(\d+(?:-\d+)?)/)?.[1]?.replace('-', '.'))
         if (!Number.isFinite(number)) throw new Error('Unsupported GourmetScans chapter numbering')
         const dateText = row.find('.chapter-release-date [title]').attr('title') ?? text(row.find('.chapter-release-date').text()), timestamp = Date.parse(dateText)
@@ -109,7 +117,7 @@ export function chapters(html: string, id: string): Chapter[] {
     return result.reverse().map((value, index) => ({ ...value, index }))
 }
 export function reader(html: string, id: string, chapterId: string): ChapterData {
-    const $ = load(html), expected = seriesURL(id) + slug(chapterId) + '/'
+    const $ = load(html), expected = seriesURL(id) + chapterSlug(chapterId) + '/'
     if ($('link[rel="canonical"]').attr('href') !== expected || $('#wp-manga-current-chap').attr('value') !== chapterId) throw new Error('GourmetScans reader identity mismatch')
     if ($('.reading-content.content-blocked, .reading-content.chapter-premium, .reading-content.login-required, .reading-content .content-blocked, .content-blocked.login-required, .reading-content .chapter-premium, .reading-content .login-required').length) throw new Error('GourmetScans chapter requires payment or login')
     const values: Record<string, string> = {}
@@ -118,7 +126,10 @@ export function reader(html: string, id: string, chapterId: string): ChapterData
         values[match[1] as string] = match[2] as string
     }
     const payload = values.chapter_data, nonce = values.wpmangaprotectornonce
-    if (!payload || payload.length > 2_000_000 || !nonce || !/^[a-f0-9]{10}$/.test(nonce)) throw new Error('Incomplete GourmetScans reader payload')
+    if (!payload) throw new Error('Incomplete GourmetScans reader payload: chapter data missing')
+    if (payload.length > 2_000_000) throw new Error('Incomplete GourmetScans reader payload: chapter data exceeds limit')
+    if (!nonce) throw new Error('Incomplete GourmetScans reader payload: reader key missing')
+    if (!/^[a-f0-9]{10}$/.test(nonce)) throw new Error('Incomplete GourmetScans reader payload: reader key format unsupported')
     const data = JSON.parse(payload) as { ct: string, iv: string, s: string }
     if (typeof data.ct !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(data.ct) || !/^[a-f0-9]{32}$/.test(data.iv) || !/^[a-f0-9]{16}$/.test(data.s)) throw new Error('Invalid GourmetScans reader encryption envelope')
     const ciphertext = Base64.parse(data.ct)
@@ -126,7 +137,32 @@ export function reader(html: string, id: string, chapterId: string): ChapterData
     const key = EvpKDF(nonce, Hex.parse(data.s), { keySize: 8, hasher: MD5Algo, iterations: 1 })
     const decoded = AES.decrypt(CipherParams.create({ ciphertext }), key, { iv: Hex.parse(data.iv), mode: CBC, padding: Pkcs7 }).toString(Utf8)
     const pages: unknown = JSON.parse(JSON.parse(decoded))
-    const count = $('.reading-content .page-break[id^="chapter-img-"]').length
-    if (!Array.isArray(pages) || !count || pages.length !== count || pages.length > 1000 || pages.some(value => typeof value !== 'string') || new Set(pages).size !== pages.length) throw new Error('GourmetScans reader page inventory is incomplete')
+    const slots = $('.reading-content .page-break[id^="chapter-img-"]').toArray(), count = slots.length
+    // The provider maps each occurrence to chapter-img-(index + 1), even when image URLs repeat.
+    if (slots.some((node, index) => $(node).attr('id') !== `chapter-img-${index + 1}`)) throw new Error('GourmetScans reader page slots are incomplete or out of order')
+    if (!Array.isArray(pages) || !count || pages.length !== count || pages.length > 1000 || pages.some(value => typeof value !== 'string')) throw new Error('GourmetScans reader page inventory is incomplete')
     return { pages: pages.map(value => ({ url: imageURL(value as string) })) }
+}
+
+export function comicListing(html: string, tag: string, page: number): { items: Highlight[], ended: boolean } {
+    const $ = load(html), args = html.match(/var\s+manga_args\s*=\s*(\{[^\n]+\});/)
+    if (!args) throw new Error('GourmetScans comic catalog metadata is missing')
+    const data = JSON.parse(args[1] as string) as { paged?: number, term?: string, taxonomy?: string, template?: string, orderby?: string, order?: string, posts_per_page?: number }
+    if (data.paged !== page || data.term !== tag || data.taxonomy !== 'wp-manga-tag' || data.template !== 'archive' || data.orderby !== 'latest' || data.order !== 'DESC' || data.posts_per_page !== 12) throw new Error('GourmetScans returned the wrong comic catalog')
+    if ($('#loop-content').length !== 1) throw new Error('GourmetScans comic catalog container is missing or ambiguous')
+    const rows = $('#loop-content .page-item-detail'), items: Highlight[] = [], seen = new Set<string>()
+    if (!rows.length) throw new Error('GourmetScans comic catalog returned no verifiable cards')
+    if (rows.length > data.posts_per_page) throw new Error('GourmetScans comic catalog exceeded its page size')
+    rows.each((_, node) => {
+        const root = $(node), anchor = root.find('.post-title a').first(), href = anchor.attr('href') ?? '', id = href.match(/^https:\/\/gourmetsupremacy\.com\/project\/([^/]+)\/$/)?.[1]
+        if (!id || !text(anchor.text())) throw new Error('GourmetScans comic catalog identity is missing')
+        slug(id)
+        if (seen.has(id)) throw new Error('GourmetScans repeated a comic catalog identity')
+        seen.add(id)
+        if (!root.hasClass('manga') || root.hasClass('text') || root.find('.manga-title-badges .text').toArray().some(value => text($(value).text()).toLowerCase() === 'novel')) return
+        const rowGenres: Option[] = []
+        root.find('.genres-content a, .mg_genres a').each((_, value) => { rowGenres.push({ id: ($(value).attr('href') ?? '').match(/\/genre\/([^/]+)\/$/)?.[1] ?? '', title: text($(value).text()) }) })
+        items.push({ id, title: text(anchor.text()), cover: image($, root.find('.item-thumb img').first().get(0)), webUrl: href, contentRating: nativeRating(rating(rowGenres)), subtitle: text(root.find('.list-chapter .chapter').first().text()) || undefined })
+    })
+    return { items, ended: rows.length < data.posts_per_page }
 }

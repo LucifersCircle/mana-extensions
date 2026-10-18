@@ -13,6 +13,12 @@ import { isolatedSourceLayout } from './source-dependencies.mjs';
 const approved = ['GourmetScans', 'GenzToons'];
 const infrastructure = ['scripts/additive-gourmet-browser.py', 'scripts/additive-gourmet-transport.mjs', 'scripts/additive-gourmet-transport.test.mjs', 'scripts/additive-gourmet.Dockerfile', 'scripts/additive-gourmet.compose.yaml', '.github/workflows/live-tests.yaml', 'scripts/additive-source-gate.mjs', 'scripts/additive-source-gate.test.mjs', 'scripts/additive-source-live.mjs', 'scripts/additive-source-http.mjs', 'scripts/additive-source-http.test.mjs'];
 const digest = value => createHash('sha256').update(value).digest('hex');
+const cryptoLock = { version: '2.1.0', resolved: 'https://registry.npmjs.org/crypto-es/-/crypto-es-2.1.0.tgz', integrity: 'sha512-C5Dbuv4QTPGuloy5c5Vv/FZHtmK+lobLAypFfuRaBbwCsk3qbCWWESCH3MUcBsrgXloRNMrzwUAiPg4U6+IaKA==', license: 'MIT' };
+const cryptoNotices = 'licenses/bundled-dependencies/crypto-es@2.1.0';
+const noticeIndex = 'licenses/bundled-dependencies/INDEX.json';
+const noticeHashes = 'licenses/SHA256SUMS.json';
+const addedNoticeFiles = ['licenses/crypto-es-LICENSE', `${cryptoNotices}/LICENSE`, `${cryptoNotices}/package-metadata.json`];
+const noticeInventoryPaths = [noticeIndex, noticeHashes, ...addedNoticeFiles.slice(1)];
 const git = args => execFileSync('git', args, { maxBuffer: 32 * 1024 * 1024 });
 const text = (sha, path) => git(['show', `${sha}:${path}`]).toString();
 const inventory = sha => git(['ls-tree', '-r', '--name-only', sha, 'src/sources']).toString().split('\n').map(p => p.match(/^src\/sources\/([^/]+)\/index\.ts$/)?.[1]).filter(Boolean).sort();
@@ -57,12 +63,47 @@ export function verifyDependencies(beforePackage, afterPackage, beforeLock, afte
   if (additions.includes('GourmetScans') && !beforePackage.dependencies?.['crypto-es']) {
     assert.equal(p.dependencies['crypto-es'], '2.1.0'); delete p.dependencies['crypto-es'];
     const entry = l.packages['node_modules/crypto-es'];
-    assert.deepEqual(entry, { version: '2.1.0', resolved: 'https://registry.npmjs.org/crypto-es/-/crypto-es-2.1.0.tgz', integrity: 'sha512-C5Dbuv4QTPGuloy5c5Vv/FZHtmK+lobLAypFfuRaBbwCsk3qbCWWESCH3MUcBsrgXloRNMrzwUAiPg4U6+IaKA==', license: 'MIT' });
+    assert.deepEqual(entry, cryptoLock);
     assert.equal(l.packages[''].dependencies['crypto-es'], '2.1.0'); delete l.packages[''].dependencies['crypto-es']; delete l.packages['node_modules/crypto-es'];
     assert.deepEqual(l.dependencies['crypto-es'], { version: entry.version, resolved: entry.resolved, integrity: entry.integrity }); delete l.dependencies['crypto-es'];
   }
   assert.deepEqual(p, beforePackage, 'Existing package configuration changed');
   assert.deepEqual(l, beforeLock, 'Existing dependency resolution changed');
+}
+// Permit only the audited crypto-es 2.1.0 closure added to an existing notice
+// collection. All other notice bytes, inventory entries and hashes stay intact.
+export function verifyNoticeAddition(before, after, lock, additions) {
+  assert(additions.includes('GourmetScans'), 'Dependency notices require the approved Gourmet addition');
+  assert.deepEqual(lock.packages['node_modules/crypto-es'], cryptoLock, 'Notice dependency is not the audited locked crypto-es');
+  for (const path of addedNoticeFiles) assert(!(path in before), `Notice already exists: ${path}`);
+  assert.deepEqual(Object.keys(after).sort(), [...Object.keys(before), ...addedNoticeFiles].sort(), 'Unrelated or missing notice files');
+  for (const [path, bytes] of Object.entries(before)) {
+    if (![noticeIndex, noticeHashes].includes(path)) assert.deepEqual(after[path], bytes, `Existing notice changed: ${path}`);
+  }
+  // Exact npm-published bytes, including the retained CryptoJS BSD/MIT notices.
+  const hashes = {
+    LICENSE: '1c027ae30d1f747c3e860406cc93eff8bc9ce0882c6c1567eb5d3f5a0eb88a73',
+    'package-metadata.json': 'f4580db2610019e400a71166f2b84d1c8662f074c740b6a9818d2ceb1e2916cc',
+  };
+  for (const [file, hash] of Object.entries(hashes)) assert.equal(digest(after[`${cryptoNotices}/${file}`]), hash, `Audited crypto-es notice differs: ${file}`);
+  assert.deepEqual(after['licenses/crypto-es-LICENSE'], after[`${cryptoNotices}/LICENSE`], 'Flat crypto-es notice differs');
+  const entry = {
+    name: 'crypto-es', version: cryptoLock.version, license: cryptoLock.license,
+    packagePath: 'node_modules/crypto-es', notices: ['LICENSE'],
+    resolved: cryptoLock.resolved, integrity: cryptoLock.integrity, sha256: hashes,
+  };
+  const priorIndex = JSON.parse(before[noticeIndex]);
+  assert(!priorIndex.some(item => item.packagePath === entry.packagePath || item.name === entry.name), 'Duplicate crypto-es notice inventory');
+  const expectedIndex = JSON.stringify([...priorIndex, entry], null, 2) + '\n';
+  assert.equal(after[noticeIndex].toString(), expectedIndex, 'Notice inventory is not the exact additive crypto-es entry');
+  const expectedHashes = { ...JSON.parse(before[noticeHashes]), 'bundled-dependencies/INDEX.json': digest(expectedIndex) };
+  for (const path of addedNoticeFiles) {
+    const relative = path.slice('licenses/'.length);
+    assert(!(relative in expectedHashes), `Notice hash already exists: ${relative}`);
+    expectedHashes[relative] = digest(after[path]);
+  }
+  const serializedHashes = JSON.stringify(Object.fromEntries(Object.keys(expectedHashes).sort().map(path => [path, expectedHashes[path]])), null, 2) + '\n';
+  assert.equal(after[noticeHashes].toString(), serializedHashes, 'Notice hashes changed beyond the exact crypto-es addition');
 }
 export function verifyManifestEntry(before, after) {
   const { hash: oldHash, ...oldEntry } = before;
@@ -87,9 +128,14 @@ export function proveAddition({ baseSha, headSha, testedSha }) {
   assert(isolatedSourceLayout(current), 'Cross-source or uncertain dependency');
   const bootstrap = !git(['ls-tree', '--name-only', baseSha, 'scripts/additive-source-gate.mjs']).toString().trim();
   const paths = [...new Set([headSha, testedSha].flatMap(sha => git(['diff', '--name-only', baseSha, sha]).toString().trim().split('\n')))];
+  const noticeAddition = paths.some(path => noticeInventoryPaths.includes(path));
+  if (noticeAddition) {
+    const retained = sha => Object.fromEntries(git(['ls-tree', '-r', '--name-only', sha, 'licenses']).toString().trim().split('\n').filter(Boolean).map(path => [path, git(['show', `${sha}:${path}`])]));
+    verifyNoticeAddition(retained(baseSha), retained(testedSha), JSON.parse(readFileSync('package-lock.json')), additions);
+  }
   for (const path of paths) {
     const owned = additions.some(name => path.startsWith(`src/sources/${name}/`) || path.startsWith(`src/tests/${name}/`) || path === `assets/${name}.png`);
-    assert(owned || (bootstrap && infrastructure.includes(path)) || ['THIRD_PARTY_NOTICES.md', 'licenses/crypto-es-LICENSE', 'licenses/genz-paperback-MIT', 'package.json', 'package-lock.json', 'scripts/native-contract-sources.mjs'].includes(path), `Unproven shared change: ${path}`);
+    assert(owned || (bootstrap && infrastructure.includes(path)) || (noticeAddition && noticeInventoryPaths.includes(path)) || ['THIRD_PARTY_NOTICES.md', 'licenses/crypto-es-LICENSE', 'licenses/genz-paperback-MIT', 'package.json', 'package-lock.json', 'scripts/native-contract-sources.mjs'].includes(path), `Unproven shared change: ${path}`);
   }
   for (const path of ['licenses/crypto-es-LICENSE', 'licenses/genz-paperback-MIT']) {
     if (git(['ls-tree', '--name-only', baseSha, path]).toString().trim()) assert.equal(readFileSync(path, 'utf8'), text(baseSha, path), 'Existing license changed');

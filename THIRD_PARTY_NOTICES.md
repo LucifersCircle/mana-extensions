@@ -56,6 +56,16 @@ The adaptation adds native Mana HTTP/context contracts, exact canonical ownershi
 complete public inventories and explicit paid-content guards, and remains
 GPL-3.0-or-later under this repository's LICENSE. No new Paperback implementation.
 
+## Bundled dependencies and browser polyfills
+
+Full third-party license texts and original copyright notices are retained in
+[licenses/](licenses/README.md), including Cheerio and its locked dependency
+closure, html-entities, @mana-app/types, and builder-injected browser polyfills.
+The collection and this file accompany the published bundles. These dependency
+licenses are preserved separately from the repository's GPL-3.0-or-later license;
+see [licenses/bundled-dependencies/INDEX.json](licenses/bundled-dependencies/INDEX.json)
+for exact package provenance and the licenses README for builder-version limits.
+
 ## GourmetScans
 
 GourmetScans' public Madara metadata selectors, chapter/reader format and icon are
