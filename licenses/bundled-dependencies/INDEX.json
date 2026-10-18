@@ -1,0 +1,154 @@
+[
+  {
+    "name": "cheerio",
+    "version": "1.0.0-rc.12",
+    "license": "MIT",
+    "packagePath": "node_modules/cheerio",
+    "notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "name": "cheerio-select",
+    "version": "2.1.0",
+    "license": "BSD-2-Clause",
+    "packagePath": "node_modules/cheerio-select",
+    "notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "name": "boolbase",
+    "version": "1.0.0",
+    "license": "ISC",
+    "packagePath": "node_modules/boolbase",
+    "notices": [],
+    "upstreamNotice": "../boolbase-LICENSE"
+  },
+  {
+    "name": "css-select",
+    "version": "5.2.2",
+    "license": "BSD-2-Clause",
+    "packagePath": "node_modules/css-select",
+    "notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "name": "css-what",
+    "version": "6.2.2",
+    "license": "BSD-2-Clause",
+    "packagePath": "node_modules/css-what",
+    "notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "name": "domhandler",
+    "version": "5.0.3",
+    "license": "BSD-2-Clause",
+    "packagePath": "node_modules/domhandler",
+    "notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "name": "domelementtype",
+    "version": "2.3.0",
+    "license": "BSD-2-Clause",
+    "packagePath": "node_modules/domelementtype",
+    "notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "name": "domutils",
+    "version": "3.2.2",
+    "license": "BSD-2-Clause",
+    "packagePath": "node_modules/domutils",
+    "notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "name": "dom-serializer",
+    "version": "2.0.0",
+    "license": "MIT",
+    "packagePath": "node_modules/dom-serializer",
+    "notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "name": "entities",
+    "version": "4.5.0",
+    "license": "BSD-2-Clause",
+    "packagePath": "node_modules/entities",
+    "notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "name": "nth-check",
+    "version": "2.1.1",
+    "license": "BSD-2-Clause",
+    "packagePath": "node_modules/nth-check",
+    "notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "name": "htmlparser2",
+    "version": "8.0.2",
+    "license": "MIT",
+    "packagePath": "node_modules/htmlparser2",
+    "notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "name": "parse5",
+    "version": "7.3.0",
+    "license": "MIT",
+    "packagePath": "node_modules/parse5",
+    "notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "name": "entities",
+    "version": "6.0.1",
+    "license": "BSD-2-Clause",
+    "packagePath": "node_modules/parse5/node_modules/entities",
+    "notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "name": "parse5-htmlparser2-tree-adapter",
+    "version": "7.1.0",
+    "license": "MIT",
+    "packagePath": "node_modules/parse5-htmlparser2-tree-adapter",
+    "notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "name": "crypto-es",
+    "version": "2.1.0",
+    "license": "MIT",
+    "packagePath": "node_modules/crypto-es",
+    "notices": [
+      "LICENSE"
+    ]
+  },
+  {
+    "name": "@mana-app/types",
+    "version": "0.1.0",
+    "license": "MIT",
+    "packagePath": "node_modules/@mana-app/types",
+    "notices": [
+      "LICENSE"
+    ]
+  }
+]

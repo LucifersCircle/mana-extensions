@@ -1,0 +1,36 @@
+{
+  "repositoryName": "GourmetScans unpublished device preview",
+  "thumbnail": "https://avatars.githubusercontent.com/LucifersCircle",
+  "sources": [
+    {
+      "id": "GourmetScans",
+      "name": "GourmetScans",
+      "version": "0.0.1-alpha.1",
+      "website": "https://gourmetsupremacy.com",
+      "thumbnail": "GourmetScans.png",
+      "rating": 1,
+      "description": "Gourmet Scans public comics, adapted from Inkdex. Login-only and paid chapters are not supported. Unclassified titles use a Suggestive compatibility fallback, not a verified age rating. Missing chapter dates are unknown.",
+      "supportedLanguages": [
+        "en_US"
+      ],
+      "badges": [
+        "Manga",
+        "Manhwa"
+      ],
+      "developers": [
+        {
+          "name": "Lucifers Circle",
+          "github": "https://github.com/LucifersCircle"
+        },
+        {
+          "name": "Inkdex",
+          "github": "https://github.com/inkdex"
+        }
+      ],
+      "path": "GourmetScans",
+      "environment": "source",
+      "intents": 106961928,
+      "hash": "6ffbd7b56ffbd7b56ffbd7b56ffbd7b56ffbd7b56ffbd7b56ffbd7b56ffbd7b5"
+    }
+  ]
+}
