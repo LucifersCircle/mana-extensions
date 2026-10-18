@@ -101,3 +101,20 @@ describe('QiScans reader data', () => {
         expect(() => pages({ ...reader, requiresPurchase: true }, series.slug, chapter)).toThrow('restricted')
     })
 })
+
+describe('QiScans genre chips', () => {
+    test('maps numeric detail genres to the exact search option slug and label', () => {
+        const value = { ...series, genres: [{ id: 7, name: 'Combat', slug: 'stale-detail-slug' }, { id: 8, name: 'Unknown Genre' }] }
+        const content = detail(value, series.slug, [{ id: 7, slug: 'martial-arts', name: 'Martial Arts &amp; Action' }])
+        expect(content.tags).toEqual([
+            { id: 'martial-arts', title: 'Martial Arts & Action' },
+            { id: '8', title: 'Unknown Genre', isNonInteractive: true }
+        ])
+    })
+
+    test('keeps ambiguous taxonomy matches noninteractive rather than linking to a different search', () => {
+        const value = { ...series, genres: [{ id: 7, name: 'Action' }] }
+        const content = detail(value, series.slug, [{ id: 7, slug: 'action', name: 'Action' }, { id: 7, slug: 'other', name: 'Other' }])
+        expect(content.tags).toEqual([{ id: '7', title: 'Action', isNonInteractive: true }])
+    })
+})

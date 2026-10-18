@@ -86,16 +86,16 @@ export const sourceContracts = {
     methods: [...methods, ...controls], controls: true, documentLimit: 32,
     budgetReason: 'Complete v1 inventory at 30 rows/page plus discovery, search, metadata, reader and controls. The saved browser inventory has 404 rows (14 equivalent v1 pages), not a verified legacy count. Reader reuses only a complete short-lived inventory; budget exhaustion fails without truncation.',
     filter(_state, fields) {
-      const option = fields.find(field => field.id === 'genre')?.options?.find(value => value.id);
+      const option = fields.find(field => field.id === 'genres')?.options?.find(value => value.id);
       assert(option, 'QiScans native genre menu has no selectable source option');
-      return { genre: option };
+      return { genres: option };
     },
     filtered(state, _result, filter) {
       const requests = state.transport.requests.slice(state.filterRequestStart);
       assert(requests.some(request => {
         const url = new URL(request.url);
         return url.origin === 'https://api.qimanhwa.com' && url.pathname === '/api/v1/series'
-          && url.searchParams.get('genre') === filter.genre.id && !url.searchParams.has('q');
+          && url.searchParams.get('genre') === filter.genres.id && !url.searchParams.has('q');
       }), 'Native QiScans filtered browse did not transmit the selected source genre slug');
     },
     detail(state) {
@@ -105,6 +105,16 @@ export const sourceContracts = {
       assert.equal(state.content.cover, raw.cover ? new URL(raw.cover, 'https://qimanhwa.com').href : '');
       assert.equal(state.content.contentRating, 1, 'Unclassified QiScans must retain its disclosed compatibility fallback, not Safe');
       assert.deepEqual(Array.from(state.content.additionalTitles ?? []), (raw.alternativeTitles || '').split(/, ?/).map(value => norm(decode(value))).filter(Boolean));
+      if (raw.genres?.length) {
+        const taxonomy = json(state, url => url.origin === 'https://api.qimanhwa.com' && url.pathname === '/api/v1/series/genres');
+        const expected = raw.genres.map(genre => {
+          const matches = taxonomy.filter(option => option.id === genre.id);
+          return matches.length === 1 && matches[0].slug
+            ? [matches[0].slug, norm(decode(matches[0].name)), false]
+            : [String(genre.id), norm(decode(genre.name)), true];
+        });
+        assert.deepEqual(Array.from(state.content.tags ?? [], tag => [tag.id, tag.title, tag.isNonInteractive === true]), expected, 'Native genre chips must link to the consumed search taxonomy');
+      }
     },
     inventory(state) {
       const captures = state.transport.captures.filter(item => {

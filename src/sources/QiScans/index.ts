@@ -7,6 +7,7 @@ import { CatalogRating,
     Content,
     CoverRequestHandler,
     DeepLinkContext,
+    ExcludableMultiSelectProp,
     Highlight,
     HttpClient,
     ImageRequest,
@@ -48,15 +49,37 @@ import { API,
     Series,
     seriesURL,
     slug,
-    SourceChapter } from './QiScansParser'
-type Filters = { genre?: Option, status?: Option, type?: Option }
+    SourceChapter,
+    text } from './QiScansParser'
+type Filters = { genre?: Option, genres?: Option | Option[] | ExcludableMultiSelectProp, status?: Option, type?: Option }
+function selectedGenre(filters: Filters): Option | undefined {
+    const selected: Option[] = []
+    for (const value of [filters.genre, filters.genres]) {
+        if (value === undefined) continue
+        if (!value || typeof value !== 'object') throw new Error('Invalid QiScans genre filter')
+        let options: Option[]
+        if (Array.isArray(value)) options = value
+        else if ('id' in value) options = [value]
+        else {
+            if (Object.keys(value).some(key => !['included', 'excluded'].includes(key)) || (value.included !== undefined && !Array.isArray(value.included)) || (value.excluded !== undefined && !Array.isArray(value.excluded))) throw new Error('Invalid QiScans genre filter')
+            if (value.excluded?.length) throw new Error('QiScans does not support excluded genres')
+            options = value.included ?? []
+        }
+        for (const option of options) {
+            if (!option || typeof option !== 'object' || Array.isArray(option) || typeof option.id !== 'string') throw new Error('Invalid QiScans genre filter')
+            if (option.id && !selected.some(pick => pick.id === option.id)) selected.push(option)
+        }
+    }
+    if (selected.length > 1) throw new Error('QiScans supports one genre at a time')
+    return selected[0]
+}
 const SORTS = [{ id: 'latest', title: 'Latest Updated' }, { id: 'newest', title: 'Newest' }, { id: 'popular', title: 'Popular' }, { id: 'alphabetical', title: 'A–Z' }]
 const STATUSES = ['ONGOING', 'COMPLETED', 'HIATUS', 'DROPPED']
 const TYPES = ['MANGA', 'MANHWA', 'MANHUA']
 const SECTIONS = [{ id: 'banners', title: 'Featured' }, { id: 'popular', title: 'Popular Today' }, { id: 'pinned', title: 'Pinned' }, { id: 'newSeries', title: 'New Series' }, { id: 'editorsPick', title: 'Editor\'s Pick' }]
 export class Target implements ChapterSource, PageLinkResolver, CoverRequestHandler, PageRequestHandler {
     readonly info: SourceInfo = {
-        id: 'QiScans', name: 'QiScans', thumbnail: 'QiScans.png', version: '0.0.1-alpha.2', website: DOMAIN, rating: CatalogRating.MIXED,
+        id: 'QiScans', name: 'QiScans', thumbnail: 'QiScans.png', version: '0.0.1-alpha.3', website: DOMAIN, rating: CatalogRating.MIXED,
         description: 'QiScans legacy v1 public comic catalog, adapted from Inkdex QiScans. Unclassified titles use a Suggestive compatibility fallback, not a verified age rating. Text novels, redirected titles and paid chapters are excluded.',
         supportedLanguages: ['en_US'], badges: ['Manga', 'Manhwa', 'Manhua'],
         developers: [{ name: 'Lucifers Circle', github: 'https://github.com/LucifersCircle' }, { name: 'Inkdex', github: 'https://github.com/inkdex' }]
@@ -82,7 +105,7 @@ export class Target implements ChapterSource, PageLinkResolver, CoverRequestHand
     async getSortOptions(): Promise<SortOption[]> { return SORTS }
     async getSearchForm(): Promise<SearchForm> {
         return { sections: [SearchListSection({ footer: 'Filters and sorting apply only to an empty search. Text search cannot be combined with browse controls. Text novels are omitted.', children: [
-            SearchMenuPicker({ id: 'genre', title: 'Genre', options: [{ id: '', title: 'All Genres' }, ...(await this.taxonomy()).map(value => ({ id: value.slug as string, title: value.name.trim() }))] }),
+            SearchMenuPicker({ id: 'genres', title: 'Genre', options: [{ id: '', title: 'All Genres' }, ...(await this.taxonomy()).map(value => ({ id: value.slug as string, title: text(value.name) }))] }),
             SearchMenuPicker({ id: 'status', title: 'Status', options: [{ id: '', title: 'All Statuses' }, ...STATUSES.map(id => ({ id, title: id }))] }),
             SearchMenuPicker({ id: 'type', title: 'Type', options: [{ id: '', title: 'All Types' }, ...TYPES.map(id => ({ id, title: id }))] })
         ] }), SearchSortSection({ header: 'Sort' })] }
@@ -93,10 +116,11 @@ export class Target implements ChapterSource, PageLinkResolver, CoverRequestHand
     async search(request: SearchRequest<Filters>): Promise<PagedSearchResult> {
         assertRatingPolicy(request.context)
         const page = request.page ?? 1, filters = request.filters ?? {}, sort = request.sort?.id ?? 'latest'
-        if (!Number.isSafeInteger(page) || page < 1 || page > 10000 || request.listId || (request.query !== undefined && (typeof request.query !== 'string' || request.query.length > 500)) || !filters || typeof filters !== 'object' || Array.isArray(filters) || Object.keys(filters).some(key => !['genre', 'status', 'type'].includes(key)) || !SORTS.some(value => value.id === sort)) throw new Error('Invalid QiScans search request')
-        for (const value of Object.values(filters)) if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.id !== 'string') throw new Error('Invalid QiScans filter')
+        if (!Number.isSafeInteger(page) || page < 1 || page > 10000 || request.listId || (request.query !== undefined && (typeof request.query !== 'string' || request.query.length > 500)) || !filters || typeof filters !== 'object' || Array.isArray(filters) || Object.keys(filters).some(key => !['genre', 'genres', 'status', 'type'].includes(key)) || !SORTS.some(value => value.id === sort)) throw new Error('Invalid QiScans search request')
+        for (const [key, value] of Object.entries(filters)) if (key !== 'genres' && (!value || typeof value !== 'object' || Array.isArray(value) || !('id' in value) || typeof value.id !== 'string')) throw new Error('Invalid QiScans filter')
+        const genre = selectedGenre(filters)
         const query = (request.query ?? '').trim().replace(/[\u2018\u2019]/g, '\'').replace(/[\u201C\u201D]/g, '"').replace(/\s+/g, ' ')
-        if (query && (Object.values(filters).some(value => value.id) || sort !== 'latest')) throw new Error('QiScans text search cannot be combined with browse filters or sorting')
+        if (query && (genre || filters.status?.id || filters.type?.id || sort !== 'latest')) throw new Error('QiScans text search cannot be combined with browse filters or sorting')
         if (!ratingAllowed(undefined, request.context) || query.length === 1) return { results: [], isLastPage: true }
         const params = new URLSearchParams({ page: String(page), perPage: '20' })
         if (query) params.set('q', query)
@@ -104,7 +128,7 @@ export class Target implements ChapterSource, PageLinkResolver, CoverRequestHand
             params.set('sort', sort)
             if (filters.status?.id) { if (!STATUSES.includes(filters.status.id)) throw new Error('Invalid QiScans status'); params.set('status', filters.status.id) }
             if (filters.type?.id) { if (!TYPES.includes(filters.type.id)) throw new Error('Invalid QiScans type'); params.set('type', filters.type.id) }
-            if (filters.genre?.id) { if (!(await this.taxonomy()).some(value => value.slug === filters.genre?.id)) throw new Error('Invalid QiScans genre'); params.set('genre', filters.genre.id) }
+            if (genre) { if (!(await this.taxonomy()).some(value => value.slug === genre.id)) throw new Error('Invalid QiScans genre'); params.set('genre', genre.id) }
         }
         let data = await this.api.json<{ data: Series[] }>('/series' + (query ? '/search' : '') + '?' + params.toString())
         // Paperback documents only data for search, unlike the chapter inventory.
@@ -140,7 +164,8 @@ export class Target implements ChapterSource, PageLinkResolver, CoverRequestHand
     async getContent(id: string, context?: SourceContext): Promise<Content> {
         slug(id); assertRatingPolicy(context)
         if (!ratingAllowed(undefined, context)) throw new Error('QiScans title is excluded by content policy')
-        const value = detail(await this.api.json<Series>('/series/' + pathComponent(id)), id)
+        const raw = await this.api.json<Series>('/series/' + pathComponent(id))
+        const value = detail(raw, id, raw.genres?.length ? await this.taxonomy() : [])
         this.contexts.set(id, context ? { ...context, ...(context.allowedContentRatings ? { allowedContentRatings: [...context.allowedContentRatings] } : {}) } : undefined)
         while (this.contexts.size > 128) this.contexts.delete(this.contexts.keys().next().value as string)
         return value
