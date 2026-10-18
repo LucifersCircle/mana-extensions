@@ -53,7 +53,7 @@ export function cards(values: Series[]): { id: string, title: string, cover: str
     }
     return result
 }
-export function detail(value: Series, id: string): Content {
+export function detail(value: Series, id: string, taxonomy: Genre[] = []): Content {
     if (value.slug !== slug(id) || value.type === 'NOVEL' || value.redirectUrl?.trim() || (value.publishStatus !== undefined && value.publishStatus !== 'PUBLIC')) throw new Error('QiScans title is unavailable or has changed identity')
     const card = cards([value])[0]
     if (!card) throw new Error('QiScans title is missing')
@@ -63,7 +63,14 @@ export function detail(value: Series, id: string): Content {
     if (creators.length) additionalInfo.push(staff.section({ id: 'creators', title: 'Creators', items: creators, hasMore: false }))
     const score = value.stats?.averageRating
     if (typeof score === 'number' && Number.isFinite(score) && score >= 0 && score <= 5) additionalInfo.push(tags.section({ id: 'source-score', title: 'Source reader score', items: [tags.item({ id: 'average', title: `${score}/5`, isNonInteractive: true })] }))
-    return { title: card.title, cover: card.cover, webUrl: seriesURL(id), contentRating: nativeRating(undefined), summary: $.root().text().trim(), additionalTitles: value.alternativeTitles ? value.alternativeTitles.split(/, ?/).map(text).filter(Boolean) : [], tags: (value.genres ?? []).map(genre => ({ id: String(genre.id), title: text(genre.name), isNonInteractive: true })), additionalInfo, contentType: value.type === 'MANGA' ? ContentType.MANGA : value.type === 'MANHWA' ? ContentType.MANHWA : value.type === 'MANHUA' ? ContentType.MANHUA : undefined, status: value.status === 'ONGOING' ? PublicationStatus.ONGOING : value.status === 'COMPLETED' ? PublicationStatus.COMPLETED : undefined, recommendedPanelMode: ['MANHWA', 'MANHUA'].includes(value.type) ? ReadingMode.WEBTOON : ReadingMode.PAGED_COMIC }
+    const genres = (value.genres ?? []).map(genre => {
+        const matches = taxonomy.filter(option => option.id === genre.id), match = matches[0]
+        // Main genre chips must use the same option IDs and labels as search.
+        return matches.length === 1 && match?.slug
+            ? { id: slug(match.slug), title: text(match.name) }
+            : { id: String(genre.id), title: text(genre.name), isNonInteractive: true }
+    })
+    return { title: card.title, cover: card.cover, webUrl: seriesURL(id), contentRating: nativeRating(undefined), summary: $.root().text().trim(), additionalTitles: value.alternativeTitles ? value.alternativeTitles.split(/, ?/).map(text).filter(Boolean) : [], tags: genres, additionalInfo, contentType: value.type === 'MANGA' ? ContentType.MANGA : value.type === 'MANHWA' ? ContentType.MANHWA : value.type === 'MANHUA' ? ContentType.MANHUA : undefined, status: value.status === 'ONGOING' ? PublicationStatus.ONGOING : value.status === 'COMPLETED' ? PublicationStatus.COMPLETED : undefined, recommendedPanelMode: ['MANHWA', 'MANHUA'].includes(value.type) ? ReadingMode.WEBTOON : ReadingMode.PAGED_COMIC }
 }
 export function pagination<T>(value: Page<T>, page: number): number | null {
     if (!value || !Array.isArray(value.data) || value.current !== page || !Number.isSafeInteger(value.totalItems) || value.totalItems < 0 || value.totalItems > 100000 || !Number.isSafeInteger(value.totalPages) || value.totalPages < 0 || value.totalPages > 10000 || (value.totalPages === 0 ? value.totalItems !== 0 || page !== 1 : page > value.totalPages)) throw new Error('Invalid QiScans v1 pagination')

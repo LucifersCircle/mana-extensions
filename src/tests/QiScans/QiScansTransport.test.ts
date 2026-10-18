@@ -54,6 +54,45 @@ describe('QiScans catalog operations with synthetic unit data', () => {
             expect(await source.handleURL(url)).toBeNull()
         }
     })
+
+    test('a detail genre chip matches the native genres field and reaches filtered browse with the provider slug', async () => {
+        const context = { allowedContentRatings: [0, 1, 2, 3] }
+        const json = jest.spyOn(QiScansApi.prototype, 'json').mockImplementation(async path => {
+            if (path === route) return { ...series, genres: [{ id: 7, name: 'Combat' }] }
+            if (path === '/series/genres') return [{ id: 7, slug: 'martial-arts', name: 'Martial Arts &amp; Action' }, { id: 8, slug: 'fantasy', name: 'Fantasy' }]
+            if (path.startsWith('/series?')) return { data: [series] }
+            throw new Error('Unexpected unit request: ' + path)
+        })
+        const source = new Target(), content = await source.getContent(owner, context)
+        const chip = content.tags?.[0]
+        expect(chip).toEqual({ id: 'martial-arts', title: 'Martial Arts & Action' })
+        if (!chip) throw new Error('Missing genre chip')
+        const form = await source.getSearchForm()
+        const fields = form.sections.flatMap(section => 'children' in section ? section.children : [])
+        const genre = fields.find(field => field.id === 'genres')
+        expect(genre && 'options' in genre ? genre.options : []).toContainEqual(chip)
+        expect(fields.some(field => field.id === 'genre')).toBe(false)
+
+        for (const filters of [{ genres: chip }, { genres: [chip] }, { genres: { included: [chip], excluded: [] } }, { genre: chip }]) {
+            for (const page of [1, 2]) {
+                const result = await source.search({ page, filters, context })
+                expect(result.results[0]?.context).toBe(context)
+                const path = json.mock.calls[json.mock.calls.length - 1]?.[0]
+                expect(path).toBe('/series?page=' + page + '&perPage=20&sort=latest&genre=martial-arts')
+            }
+        }
+        expect(json.mock.calls.filter(([path]) => path === '/series/genres')).toHaveLength(1)
+    })
+
+    test('unsupported tag combinations and text-plus-genre search fail before provider I/O', async () => {
+        const json = jest.spyOn(QiScansApi.prototype, 'json').mockImplementation(async () => { throw new Error('Unexpected provider I/O') })
+        const source = new Target(), action = { id: 'action', title: 'Action' }, fantasy = { id: 'fantasy', title: 'Fantasy' }
+        await expect(source.search({ page: 1, filters: { genres: [action, fantasy] } })).rejects.toThrow('one genre at a time')
+        await expect(source.search({ page: 1, filters: { genres: { included: [], excluded: [action] } } })).rejects.toThrow('excluded genres')
+        await expect(source.search({ page: 1, filters: { genre: action, genres: fantasy } })).rejects.toThrow('one genre at a time')
+        await expect(source.search({ page: 1, query: 'hero', filters: { genres: [action] } })).rejects.toThrow('cannot be combined')
+        expect(json).not.toHaveBeenCalled()
+    })
 })
 
 // Exercise the installed SDK against a local bridge; no provider requests are made.
