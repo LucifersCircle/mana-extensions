@@ -103,7 +103,10 @@ export function detail(html: string, id: string, options: Choices): Detail {
     if (stats.length) additionalInfo.push(tags.section({ id: 'source-metadata', title: 'Source metadata', items: stats.map((title, index) => tags.item({ id: String(index), title, isNonInteractive: true })) }))
     if (rating === undefined) additionalInfo.push(incompleteRatingInfo())
     const malID = $('.mal-info-section').attr('data-mal-id')
-    return { numericId, rating, content: { title, cover: imageURL(String(schema.image ?? ''), true), webUrl: expected, contentRating: nativeRating(rating), summary: description.text().trim(), additionalTitles: [text(titleNode.next('p').text())].filter(Boolean), tags: sourceTags, contentType: type === 'Manhwa' ? ContentType.MANHWA : type === 'Manhua' ? ContentType.MANHUA : type === 'Manga' ? ContentType.MANGA : undefined, status: status === 'Ongoing' ? PublicationStatus.ONGOING : status === 'Completed' ? PublicationStatus.COMPLETED : undefined, recommendedPanelMode: type === 'Manhwa' ? ReadingMode.WEBTOON : ReadingMode.PAGED_COMIC, additionalInfo, ...(malID ? { trackerInfo: { mal: malID } } : {}) } }
+    // A real title can have no source cover. Do not replace it with the site logo
+    // or let the absent image prevent valid metadata and chapters from loading.
+    const cover = schema.image == null || schema.image === '' ? '' : imageURL(String(schema.image), true)
+    return { numericId, rating, content: { title, cover, webUrl: expected, contentRating: nativeRating(rating), summary: description.text().trim(), additionalTitles: [text(titleNode.next('p').text())].filter(Boolean), tags: sourceTags, contentType: type === 'Manhwa' ? ContentType.MANHWA : type === 'Manhua' ? ContentType.MANHUA : type === 'Manga' ? ContentType.MANGA : undefined, status: status === 'Ongoing' ? PublicationStatus.ONGOING : status === 'Completed' ? PublicationStatus.COMPLETED : undefined, recommendedPanelMode: type === 'Manhwa' ? ReadingMode.WEBTOON : ReadingMode.PAGED_COMIC, additionalInfo, ...(malID ? { trackerInfo: { mal: malID } } : {}) } }
 }
 export function readable(item: SourceChapter): boolean { return item.chapter_type === 'media' && !item.locked && !item.is_locked && !item.requires_login && !(Number(item.price) > 0) }
 function relativeDate(value: string, now: number): Date {
