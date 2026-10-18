@@ -66,7 +66,7 @@ const SORTS = [
 ]
 export class Target implements ChapterSource, PageLinkResolver, CoverRequestHandler, PageRequestHandler {
     readonly info: SourceInfo = {
-        id: 'MangaTaro', name: 'MangaTaro', thumbnail: 'MangaTaro.png', version: '0.0.1-alpha.1', website: DOMAIN, rating: CatalogRating.MIXED,
+        id: 'MangaTaro', name: 'MangaTaro', thumbnail: 'MangaTaro.png', version: '0.0.1-alpha.2', website: DOMAIN, rating: CatalogRating.MIXED,
         description: 'Public manga catalog, site filters and complete image chapters. Unclassified titles use a Suggestive compatibility fallback, not a verified age rating. Relative upload dates are approximate; unavailable dates remain unknown. Text novels and restricted chapters are not supported.',
         supportedLanguages: ['en_US'], badges: ['Manga', 'Manhwa', 'Manhua'],
         developers: [{ name: 'Lucifers Circle', github: 'https://github.com/LucifersCircle' }, { name: 'Inkdex', github: 'https://github.com/inkdex' }]
