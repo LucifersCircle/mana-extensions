@@ -12,16 +12,16 @@ import { BridgeOperation,
     HttpMethod } from '@mana-app/types'
 import { MarumaruAPI,
     MarumaruService,
-    validateAPIURL } from './MarumaruService'
-import { Target } from './index'
-import * as metadata from './MarumaruPolicy'
+    validateAPIURL } from '../../sources/Marumaru/MarumaruService'
+import { Target } from '../../sources/Marumaru/index'
+import * as metadata from '../../sources/Marumaru/MarumaruPolicy'
 import { enter,
     accessPolicy,
     beginAccess,
     grant,
     checkTitle,
     observe,
-    revoke } from './MarumaruPolicy'
+    revoke } from '../../sources/Marumaru/MarumaruPolicy'
 
 const globals = globalThis as unknown as Record<string, unknown>
 const cover = 'https://peer.storagewebtoon.store/manhwa/123/cover.webp'
@@ -271,9 +271,9 @@ describe('Marumaru SDK image transport', () => {
                 values.set(name, clone(value))
             }
         }
-        let catalog!: typeof import('./MarumaruPolicy'), detail!: typeof import('./MarumaruPolicy')
-        jest.isolateModules(() => { catalog = jest.requireActual<typeof import('./MarumaruPolicy')>('./MarumaruPolicy') })
-        jest.isolateModules(() => { detail = jest.requireActual<typeof import('./MarumaruPolicy')>('./MarumaruPolicy') })
+        let catalog!: typeof import('../../sources/Marumaru/MarumaruPolicy'), detail!: typeof import('../../sources/Marumaru/MarumaruPolicy')
+        jest.isolateModules(() => { catalog = jest.requireActual<typeof import('../../sources/Marumaru/MarumaruPolicy')>('../../sources/Marumaru/MarumaruPolicy') })
+        jest.isolateModules(() => { detail = jest.requireActual<typeof import('../../sources/Marumaru/MarumaruPolicy')>('../../sources/Marumaru/MarumaruPolicy') })
         const pending = catalog.observe('789', false, await catalog.enter())
         await waiting
         await detail.observe('123', false, await detail.enter())
@@ -334,9 +334,9 @@ describe('Marumaru SDK image transport', () => {
                 values.set(key, clone(value))
             }
         }
-        let first!: typeof import('./MarumaruPolicy'), second!: typeof import('./MarumaruPolicy')
-        jest.isolateModules(() => { first = jest.requireActual<typeof import('./MarumaruPolicy')>('./MarumaruPolicy') })
-        jest.isolateModules(() => { second = jest.requireActual<typeof import('./MarumaruPolicy')>('./MarumaruPolicy') })
+        let first!: typeof import('../../sources/Marumaru/MarumaruPolicy'), second!: typeof import('../../sources/Marumaru/MarumaruPolicy')
+        jest.isolateModules(() => { first = jest.requireActual<typeof import('../../sources/Marumaru/MarumaruPolicy')>('../../sources/Marumaru/MarumaruPolicy') })
+        jest.isolateModules(() => { second = jest.requireActual<typeof import('../../sources/Marumaru/MarumaruPolicy')>('../../sources/Marumaru/MarumaruPolicy') })
         const policy = await first.beginAccess('123', await first.enter())
         const pending = first.grant('123', policy)
         const rejected = expect(pending).rejects.toThrow(/content policy changed/)
@@ -458,9 +458,9 @@ describe('Marumaru SDK image transport', () => {
                 values.set(key, clone(value))
             }
         }
-        let first!: typeof import('./MarumaruPolicy'), second!: typeof import('./MarumaruPolicy')
-        jest.isolateModules(() => { first = jest.requireActual<typeof import('./MarumaruPolicy')>('./MarumaruPolicy') })
-        jest.isolateModules(() => { second = jest.requireActual<typeof import('./MarumaruPolicy')>('./MarumaruPolicy') })
+        let first!: typeof import('../../sources/Marumaru/MarumaruPolicy'), second!: typeof import('../../sources/Marumaru/MarumaruPolicy')
+        jest.isolateModules(() => { first = jest.requireActual<typeof import('../../sources/Marumaru/MarumaruPolicy')>('../../sources/Marumaru/MarumaruPolicy') })
+        jest.isolateModules(() => { second = jest.requireActual<typeof import('../../sources/Marumaru/MarumaruPolicy')>('../../sources/Marumaru/MarumaruPolicy') })
         const older = await first.beginAccess('123', await first.enter())
         const pending = first.revoke('123', older)
         await waiting

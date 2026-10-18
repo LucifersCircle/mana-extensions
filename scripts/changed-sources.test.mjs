@@ -697,3 +697,39 @@ void test("logical suites reject peer-suite/source dependencies and shared bridg
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+void test("relocated source tests keep exact ownership and shared tests select all", () => {
+  assert.deepEqual(classify("M\0src/tests/FutureSource/transport.test.ts\0").selectedSources, ["FutureSource"]);
+  assert.deepEqual(
+    classify("R100\0src/sources/Alpha/transport.test.ts\0src/tests/Alpha/transport.test.ts\0").selectedSources,
+    ["Alpha"],
+  );
+  for (const path of ["src/tests/ContentRatingPolicy.test.ts", "src/tests/Unknown/test.ts", "src/tests/AlphaExtra/test.ts"])
+    assert.equal(classify(`M\0${path}\0`).mode, "all", path);
+});
+
+void test("relocated source tests retain transitive dependency isolation", () => {
+  const dir = mkdtempSync(join(tmpdir(), "relocated-tests-"));
+  const put = (path, content) => {
+    mkdirSync(dirname(join(dir, path)), { recursive: true });
+    writeFileSync(join(dir, path), content);
+  };
+  try {
+    put("tsconfig.json", "{}");
+    for (const name of sources)
+      put(`src/sources/${name}/index.ts`, "export const value = 1;");
+    const unit = "src/tests/Alpha/transport.test.ts";
+    put(unit, 'import { value } from "../../sources/Alpha/index";');
+    assert.equal(isolatedSourceLayout(sources, dir), true);
+    put(unit, 'import { value } from "../../sources/Zebra/index";');
+    assert.equal(isolatedSourceLayout(sources, dir), false);
+    put("src/tests/shared.ts", 'export { value } from "./Zebra/helper";');
+    put("src/tests/Zebra/helper.ts", "export const value = 1;");
+    put(unit, 'import { value } from "../shared";');
+    assert.equal(isolatedSourceLayout(sources, dir), false);
+    put(unit, 'const path = "dynamic"; import(path);');
+    assert.equal(isolatedSourceLayout(sources, dir), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

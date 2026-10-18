@@ -9,8 +9,8 @@ import { BridgeOperation,
     RateLimiter,
     RateLimitAction,
     RequestOrigin } from '@mana-app/types'
-import { Target } from './index'
-import { VortexScansApi } from './VortexScansApi'
+import { Target } from '../../sources/VortexScans/index'
+import { VortexScansApi } from '../../sources/VortexScans/VortexScansApi'
 
 const domain = 'https://vortexscans.org'
 const apiURL = 'https://api.vortexscans.org/api/post?postId=42'

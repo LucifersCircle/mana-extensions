@@ -3,6 +3,19 @@
 Native extensions for Mana, with source-specific Discover, search, details,
 chapters and readers. Available features depend on each website.
 
+## Test layout
+
+Extension implementation files live in `src/sources/<Source>/`. Source-specific
+Jest tests live separately in `src/tests/<Source>/`, and shared policy tests live
+directly in `src/tests/`. Keep new tests in these locations, not in extension
+directories. These tests are excluded from compiled extension output.
+
+The native live contracts and their infrastructure tests remain in `scripts/`.
+Run `npm test` for Jest tests and `npm run test:report` for test infrastructure;
+`npm run test:extensions` exercises the built sources against real responses.
+Per-source test edits select their owning source; shared or uncertain dependencies
+still require full live coverage.
+
 ## Live extension tests
 
 [![Live Extension Tests](https://github.com/LucifersCircle/mana-extensions/actions/workflows/live-tests.yaml/badge.svg?branch=generic)](https://github.com/LucifersCircle/mana-extensions/actions/workflows/live-tests.yaml)

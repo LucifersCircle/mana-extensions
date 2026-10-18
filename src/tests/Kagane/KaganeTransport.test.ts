@@ -8,10 +8,10 @@ import { BridgeOperation,
     imageDispatch,
     ImageRequest,
     RequestOrigin } from '@mana-app/types'
-import { Target } from './index'
-import { KaganeApi } from './KaganeApi'
+import { Target } from '../../sources/Kagane/index'
+import { KaganeApi } from '../../sources/Kagane/KaganeApi'
 import { Challenge,
-    ManifestPage } from './KaganeModels'
+    ManifestPage } from '../../sources/Kagane/KaganeModels'
 
 const globals = globalThis as unknown as Record<string, unknown>
 const domain = 'https://kagane.org'

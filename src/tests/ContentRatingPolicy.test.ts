@@ -4,7 +4,7 @@ import { AdditionalInfoType,
 import { assertRatingPolicy,
     incompleteRatingInfo,
     nativeRating,
-    ratingAllowed } from './ContentRatingPolicy'
+    ratingAllowed } from '../ContentRatingPolicy'
 
 describe('Native content rating policy', () => {
     test('keeps the incomplete-rating explanation informational without changing its metadata', () => {

@@ -2,7 +2,7 @@ import {
     parseCollectionHighlights,
     parsePopularToday,
     selectPublishedCollections
-} from './VortexScansDiscover'
+} from '../../sources/VortexScans/VortexScansDiscover'
 
 describe('VortexScans discovery', () => {
     test('parses popular titles and resolves their serialized post IDs', () => {

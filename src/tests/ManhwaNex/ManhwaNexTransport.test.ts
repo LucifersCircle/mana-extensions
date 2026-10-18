@@ -9,7 +9,7 @@ import { AbortError,
     imageDispatch,
     ImageRequest,
     RequestOrigin } from '@mana-app/types'
-import { Target } from './index'
+import { Target } from '../../sources/ManhwaNex/index'
 
 const globals = globalThis as unknown as Record<string, unknown>
 const cover = 'https://manhwanex.com/wp-content/uploads/unissued-cover.webp'
