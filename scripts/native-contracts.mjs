@@ -48,6 +48,18 @@ function formFields(form) {
   return fields;
 }
 
+// A challenge classification requires the official SDK's fatal Cloudflare error
+// and the exact response URL observed in this capability, not an earlier failure.
+export function cloudflareEvidence(error, requests, start = 0) {
+  if (error?.name !== 'CloudflareError' || typeof error.resolutionURL !== 'string') return undefined;
+  const request = requests.slice(start).findLast(item => item.url === error.resolutionURL);
+  if (!request?.cloudflareChallenge || request.responseURL !== request.url) return undefined;
+  return { kind: 'cloudflare-challenge', header: 'cf-mitigated', value: 'challenge' };
+}
+export class NativeDependencyBlocked extends Error {
+  constructor(blockedBy) { super(`Native prerequisite was not verified: ${blockedBy}`); this.blockedBy = blockedBy; }
+}
+
 // Count every SDK transport attempt, even failures. No response cache disguises
 // repeated native requests. Only method outputs and native source caches are reused.
 export function createContractTransport(fetchImpl, { documentLimit = 12, imageLimit = 3 } = {}) {
@@ -71,12 +83,16 @@ export function createContractTransport(fetchImpl, { documentLimit = 12, imageLi
       const request = reserve(url, { method: 'GET' }, true);
       request.transport = 'browser-cover-after-cloudflare';
       const response = await capture(url); request.status = response.status;
+      request.responseURL = response.url || url;
+      request.cloudflareChallenge = response.headers.get('cf-mitigated')?.trim().toLowerCase() === 'challenge';
       return response;
     },
     async fetch(input, init = {}) {
       const url = String(input), image = imageURLs.has(url);
       const request = reserve(url, init, image);
       const response = await fetchImpl(input, init); request.status = response.status;
+      request.responseURL = response.url || url;
+      request.cloudflareChallenge = response.headers.get('cf-mitigated')?.trim().toLowerCase() === 'challenge';
       if (!image && response.ok) {
         const copy = response.clone(), reader = copy.body?.getReader(), parts = [];
         let size = 0, reads = 0;
@@ -140,11 +156,19 @@ async function image(source, url, origin, transport, captureCoverImage) {
   console.log(`IMAGE ${origin}: ${format}, ${bytes.length} complete bytes, MIME ${mime}, structural validation`);
 }
 
-export async function testNativeContract({ name, source, manifestEntry, check, notApplicable, transport, captureCoverImage }) {
+export async function testNativeContract({ name, source, manifestEntry, check: runCheck, notApplicable, transport, captureCoverImage }) {
   const config = sourceContracts[name];
   assert(config, `No native contract configuration for ${name}`);
   const context = { allowedContentRatings: [0, 1, 2, 3] }, state = { source, transport, context, config };
   config.observe?.(source, state);
+  const outcomes = new Map();
+  const check = async (label, fn, prerequisite) => {
+    const outcome = await runCheck(label, async () => {
+      if (prerequisite && outcomes.get(prerequisite) !== 'pass') throw new NativeDependencyBlocked(prerequisite);
+      await fn();
+    });
+    outcomes.set(label, outcome ?? 'pass');
+  };
   const missing = (capability, reason) => { notApplicable.push({ capability, reason }); console.log(`N/A ${name}: ${capability}: ${reason}`); };
   await check('Native initialization and advertised capabilities', async () => {
     assert.equal(source.info.id, name); text(source.info.version, 'Source version');
@@ -187,7 +211,7 @@ export async function testNativeContract({ name, source, manifestEntry, check, n
       const link = await source.handleURL(content.webUrl);
       assert.equal(link?.content?.id, id, 'Native deep link changed the selected content identity');
     } else missing('deep links', 'No native handleURL method is advertised');
-  });
+  }, config.sample ? undefined : 'Native catalog search and offered continuation');
   await check('Native complete chapter inventory, identity and ordering', async () => {
     assert(state.content, 'Native details prerequisite failed');
     const chapters = await source.getChapters(state.id); state.chapters = chapters;
@@ -201,7 +225,7 @@ export async function testNativeContract({ name, source, manifestEntry, check, n
     }
     if (state.content.chapters) assert.deepEqual(Array.from(chapters, c => [c.chapterId, c.number, c.index]), Array.from(state.content.chapters, c => [c.chapterId, c.number, c.index]), 'Native detail/refresh inventories disagree');
     await config.inventory(state);
-  });
+  }, 'Native details identity, metadata and complete cover bytes');
   await check('Native reader identity, ordered manifest and first/last image bytes', async () => {
     assert(state.chapters?.length, 'Native inventory prerequisite failed');
     const chapter = config.chapter ? state.chapters.find(item => item.chapterId === config.chapter) : state.chapters[0];
@@ -212,7 +236,7 @@ export async function testNativeContract({ name, source, manifestEntry, check, n
     assert.equal(new Set(pages).size, pages.length, 'Duplicate native reader pages'); pages.forEach(httpURL);
     await config.reader?.(state);
     for (const url of new Set([pages[0], pages.at(-1)])) await image(source, url, 'page', transport);
-  });
+  }, 'Native complete chapter inventory, identity and ordering');
   if (config.controls) {
     await check('Native advertised controls and representative filtered search', async () => {
       assert(state.content, 'Native details prerequisite failed');
@@ -230,7 +254,7 @@ export async function testNativeContract({ name, source, manifestEntry, check, n
       const result = await source.search({ page: 1, ...(state.filterQuery ? { query: state.filterQuery } : {}), filters: filter, context }); searchResult(result, context);
       if (state.filterExpectedID) assert(result.results.some(item => item.id === state.filterExpectedID), 'Native filtered search lost its selected identity');
       await config.filtered?.(state, result, filter);
-    });
+    }, 'Native details identity, metadata and complete cover bytes');
   } else {
     missing('settings/filter/sort controls', 'Source advertises none');
 

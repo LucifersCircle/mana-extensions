@@ -42,6 +42,8 @@ for (const [aborted, partial] of [['Kagane', false], ['ManhwaNex', true]]) {
         };`);
       }
       put('scripts/native-contracts.mjs', `
+        export function cloudflareEvidence() {}
+        export class NativeDependencyBlocked extends Error {}
         export function createContractTransport() { return { stats: () => ({ documents: 0, images: 0 }) }; }
         export async function testNativeContract({ name, check, notApplicable }) {
           await check('Native initialization and advertised capabilities', () => {});
@@ -89,7 +91,7 @@ for (const [aborted, partial] of [['Kagane', false], ['ManhwaNex', true]]) {
       assert.equal(snapshot.sources.Hijala.status, 'pass');
       assert.equal(snapshot.sources.VortexScans.status, 'pass');
       assert.deepEqual(snapshot.sourceCounts, { available: names.length, selected: names.length,
-        completed: names.length - 1, passed: (names.length - 1) * 2 + (partial ? 2 : 1), failed: partial ? 1 : 0, total: (names.length - 1) * 2 + (partial ? 3 : 1) });
+        completed: names.length - 1, passed: (names.length - 1) * 2 + (partial ? 2 : 1), failed: partial ? 1 : 0, cloudflared: 0, blocked: 0, total: (names.length - 1) * 2 + (partial ? 3 : 1) });
       assert.match(readFileSync(join(dir, 'summary.md'), 'utf8'), /remaining checks were not run/);
       assert.ok(!snapshot.sources[aborted].tests.some(({ name }) => name === 'unrun after abort'));
       // A changed-source run remains non-publishable even when it reports its abort truthfully.

@@ -114,3 +114,28 @@ test('Genz page MIME compatibility remains structurally validated and narrowly s
     else assert.throws(() => verifyNativeImageBody(cover));
   }
 });
+
+test('Cloudflare classification requires exact current fatal SDK response evidence', async () => {
+  const { cloudflareEvidence } = await import('./native-contracts.mjs');
+  const url = 'https://example.invalid/private?token=not-recorded';
+  const error = { name: 'CloudflareError', resolutionURL: url };
+  const challenged = { url, responseURL: url, cloudflareChallenge: true, status: 403 };
+  const expected = { kind: 'cloudflare-challenge', header: 'cf-mitigated', value: 'challenge' };
+  assert.deepEqual(cloudflareEvidence(error, [challenged]), expected);
+  assert.equal(cloudflareEvidence(new Error('ordinary assertion'), [challenged]), undefined);
+  assert.equal(cloudflareEvidence(error, [challenged], 1), undefined);
+  assert.equal(cloudflareEvidence(error, [{ ...challenged, responseURL: 'https://example.invalid/other' }]), undefined);
+  assert.equal(cloudflareEvidence(error, [challenged, { ...challenged, status: 200, cloudflareChallenge: false }]), undefined);
+  assert.equal(cloudflareEvidence({ ...error, resolutionURL: 'https://example.invalid/other' }, [challenged]), undefined);
+  assert.ok(!JSON.stringify(expected).includes('token'));
+});
+
+test('native transport retains only exact challenge boolean, not benign Cloudflare headers', async () => {
+  for (const [headers, expected] of [[{ 'CF-Mitigated': 'challenge' }, true], [{ 'cf-ray': 'edge' }, false], [{ 'cf-mitigated': 'guardrails' }, false], [{}, false]]) {
+    const transport = createContractTransport(async () => new Response('blocked', { status: 403, headers }));
+    const response = await transport.fetch('https://example.invalid/native');
+    assert.equal(response.status, 403);
+    assert.equal(transport.requests[0].cloudflareChallenge, expected);
+    assert.equal(transport.requests[0].headers, undefined);
+  }
+});

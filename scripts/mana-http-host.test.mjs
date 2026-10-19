@@ -219,3 +219,17 @@ test('Marumaru failure diagnostics retain only bounded allowlisted classificatio
     const challenge = new Response('', { status: 403, headers: { 'cf-mitigated': 'challenge', 'content-type': 'text/html' } });
     assert.equal(marumaruFailureDiagnostic(request, challenge, bytes).cloudflareChallenge, true);
 });
+
+test('fatal official SDK challenge correlates exact response with reporting evidence', async () => {
+    const { createContractTransport, cloudflareEvidence } = await import('./native-contracts.mjs');
+    const transport = createContractTransport(async () => new Response('challenge', { status: 403, headers: { 'cf-mitigated': 'challenge' } }));
+    const f = fixture(transport.fetch);
+    try {
+        await assert.rejects(f.run(`new ManaHTTP.HttpClient().get('https://example.invalid/challenged')`), error => {
+            assert.equal(error.name, 'CloudflareError');
+            assert.deepEqual(cloudflareEvidence(error, transport.requests), { kind: 'cloudflare-challenge', header: 'cf-mitigated', value: 'challenge' });
+            return true;
+        });
+        assert.deepEqual(f.host.stats(), empty);
+    } finally { await f.host.close(); }
+});

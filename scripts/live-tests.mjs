@@ -5,7 +5,7 @@ import { performance } from 'node:perf_hooks';
 import { createManaRuntime, installManaHTTP, redactText } from './mana-runtime.mjs';
 import { createManaTestTransport } from './mana-test-browser.mjs';
 import { createManaTestWebView } from './mana-test-webview.mjs';
-import { testNativeContract, createContractTransport } from './native-contracts.mjs';
+import { testNativeContract, createContractTransport, cloudflareEvidence, NativeDependencyBlocked } from './native-contracts.mjs';
 import { sourceContracts } from './native-contract-sources.mjs';
 import { failedSources } from './test-sources.mjs';
 import { readSelection } from './changed-sources.mjs';
@@ -21,9 +21,18 @@ try {
     const config = sourceContracts[name];
     const transport = createContractTransport(testTransport.fetch, { documentLimit: config?.documentLimit ?? 12, imageLimit: config?.imageLimit ?? 3 });
     async function check(label, fn) {
-      const start = performance.now();
-      try { await fn(); tests.push({ name: label, status: 'pass', duration: performance.now() - start }); console.log(`PASS ${name}: ${label}`); }
-      catch (error) { const message = redactText(error.stack ?? String(error)); tests.push({ name: label, status: 'fail', duration: performance.now() - start, error: message }); console.error(`FAIL ${name}: ${label}\n${message}`); }
+      const start = performance.now(), requestStart = transport.requests?.length ?? 0;
+      try { await fn(); tests.push({ name: label, status: 'pass', duration: performance.now() - start }); console.log(`PASS ${name}: ${label}`); return 'pass'; }
+      catch (error) {
+        const message = redactText(error.stack ?? String(error));
+        const evidence = cloudflareEvidence(error, transport.requests ?? [], requestStart);
+        const blockedBy = error instanceof NativeDependencyBlocked ? error.blockedBy : undefined;
+        const status = blockedBy ? 'blocked' : evidence ? 'cloudflared' : 'fail';
+        tests.push({ name: label, status, duration: performance.now() - start, error: message,
+          ...(evidence ? { evidence } : {}), ...(blockedBy ? { blockedBy } : {}) });
+        console.error(`${status.toUpperCase()} ${name}: ${label}\n${message}`);
+        return status;
+      }
     }
     let suiteError;
     try {
@@ -43,7 +52,7 @@ try {
       const requests = transport.stats();
       console.log(`REQUESTS ${name}: ${JSON.stringify(requests)}`);
       report[name] = { tests, notApplicable, requests, ...(config?.budgetReason ? { budgetReason: config.budgetReason } : {}),
-        summary: { total: tests.length, passed: tests.filter(test => test.status === 'pass').length, failed: tests.filter(test => test.status === 'fail').length, duration: performance.now() - started },
+        summary: { total: tests.length, passed: tests.filter(test => test.status === 'pass').length, failed: tests.filter(test => test.status === 'fail').length, cloudflared: tests.filter(test => test.status === 'cloudflared').length, blocked: tests.filter(test => test.status === 'blocked').length, duration: performance.now() - started },
         ...(suiteError ? { error: suiteError } : {}) };
     }
   }
