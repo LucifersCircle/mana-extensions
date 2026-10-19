@@ -77,3 +77,19 @@ No site JavaScript is evaluated. Paid/login-only chapters are not supported.
 The bundled deterministic AES-CBC/MD5 reader decoding uses crypto-es 2.1.0.
 Its full MIT and retained CryptoJS BSD/MIT notices are reproduced in
 [licenses/crypto-es-LICENSE](licenses/crypto-es-LICENSE).
+
+## VyManga (on-device test candidate)
+
+VyManga catalog selectors, search parameters, manga slug identities, full chapter
+href identities, decimal chapter extraction and public reader HTML parsing are
+adapted from [PoppingMangoSources/general-extensions-mangago](https://github.com/PoppingMangoSources/general-extensions-mangago/tree/2ad28cd5155ef23b09fa2b85a9713ad511730bb6/src/VyManga),
+commit `2ad28cd5155ef23b09fa2b85a9713ad511730bb6` (0.9/test, alpha.22),
+copyright © 2026 Inkdex, developed by Popmango, GPL-3.0-or-later.
+Mana adaptation copyright © 2026 Lucifers Circle. Original notices and developer
+credit are retained. The unmodified source-brand PNG icon is retained from
+`src/VyManga/static/icon.png` at the same pinned commit. The implementation uses the native Mana SDK, does not execute
+site scripts, does not override the catalog base URL, and adds native content-policy,
+issued-image and paid/login guards. Relative images use the final reader response
+URL, not the catalog origin. Reader redirects, image bytes and complete manifests
+remain unverified pending on-device tests. These adaptations remain GPL-3.0-or-later.
+See LICENSE and the isolated trial feed documentation; this is not a production release.
