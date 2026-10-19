@@ -13,7 +13,7 @@ const entry = (id, overrides = {}) => ({
 });
 const stripDisplay = manifest => ({ ...manifest, sources: manifest.sources.map(({ badges, developers, ...rest }) => rest) });
 
-test('listing projects exactly rating/language and maintainer without mutating source metadata', () => {
+test('listing leaves the native rating badge to Mana and adds only language/maintainer display', () => {
   const manifest = { repositoryName: 'Example', sources: [
     entry('English'), entry('Korean', { supportedLanguages: ['ko_KR'] }),
     entry('Spanish', { rating: 0, supportedLanguages: ['es_ES', 'es_419'] }),
@@ -23,8 +23,10 @@ test('listing projects exactly rating/language and maintainer without mutating s
   const original = structuredClone(manifest);
   const projected = projectRepositoryListing(manifest, manifest.sources.map(source => source.id));
   assert.deepEqual(projected.sources.map(source => source.badges), [
-    ['Mixed', 'English'], ['Mixed', 'Korean'], ['Safe', 'Spanish'], ['Adult', 'Multi'], ['Mixed', 'Multi'],
+    ['English'], ['Korean'], ['Spanish'], ['Multi'], ['Multi'],
   ]);
+  assert.deepEqual(projected.sources.map(source => source.rating), [1, 1, 0, 2, 1]);
+  assert(projected.sources.every(source => source.badges.length === 1));
   assert(projected.sources.every(source => source.developers.length === 1 && source.developers[0] === owner));
   assert.deepEqual(manifest, original);
   assert.deepEqual(stripDisplay(projected), stripDisplay(original));

@@ -8,8 +8,9 @@ import { discoverSources } from './test-sources.mjs';
 
 const OWNER_NAME = 'Lucifers Circle';
 const OWNER_GITHUB = 'https://github.com/LucifersCircle';
-// CatalogRating in @mana-app/types 0.1.0. Mixed is not an Adult classification.
-const RATINGS = new Map([[0, 'Safe'], [1, 'Mixed'], [2, 'Adult']]);
+// CatalogRating in @mana-app/types 0.1.0. Mana renders its own rating badge
+// (the current client shows rating 1 as Suggestive). Do not add a second one.
+const RATINGS = new Set([0, 1, 2]);
 const languageNames = new Intl.DisplayNames(['en'], { type: 'language', fallback: 'none' });
 
 function languageBadge(entry) {
@@ -41,7 +42,7 @@ export function projectRepositoryListing(manifest, sources = discoverSources()) 
       const owners = entry.developers.filter(developer =>
         developer?.name === OWNER_NAME && developer.github === OWNER_GITHUB);
       assert.equal(owners.length, 1, `${entry.id}: expected one verified repository maintainer`);
-      return { ...entry, badges: [RATINGS.get(entry.rating), languageBadge(entry)], developers: owners };
+      return { ...entry, badges: [languageBadge(entry)], developers: owners };
     }),
   };
 }
