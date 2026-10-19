@@ -86,7 +86,8 @@ adapted from [PoppingMangoSources/general-extensions-mangago](https://github.com
 commit `2ad28cd5155ef23b09fa2b85a9713ad511730bb6` (0.9/test, alpha.22),
 copyright © 2026 Inkdex, developed by Popmango, GPL-3.0-or-later.
 Mana adaptation copyright © 2026 Lucifers Circle. Original notices and developer
-credit are retained. The implementation uses the native Mana SDK, does not execute
+credit are retained. The unmodified source-brand PNG icon is retained from
+`src/VyManga/static/icon.png` at the same pinned commit. The implementation uses the native Mana SDK, does not execute
 site scripts, does not override the catalog base URL, and adds native content-policy,
 issued-image and paid/login guards. Relative images use the final reader response
 URL, not the catalog origin. Reader redirects, image bytes and complete manifests

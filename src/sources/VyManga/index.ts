@@ -7,6 +7,7 @@ import { CatalogRating,
     Content,
     CoverRequestHandler,
     DeepLinkContext,
+    ExcludableMultiSelectProp,
     HttpClient,
     ImageRequest,
     Option,
@@ -20,10 +21,12 @@ import { CatalogRating,
     SearchForm,
     SearchListSection,
     SearchMenuPicker,
-    SearchMultiPickerSheet,
+    SearchExcludableMultiPicker,
     SearchRequest,
     SearchSortSection,
     SearchTextField,
+    SearchTagsSection,
+    SearchToggle,
     SectionStyle,
     SortOption,
     SourceContext,
@@ -38,6 +41,7 @@ import { cards,
     detail,
     DOMAIN,
     genres,
+    genreOptionID,
     mangaID,
     mangaURL,
     publicURL,
@@ -45,9 +49,36 @@ import { cards,
     slug } from './VyMangaParser'
 const SORTS = [{ id: 'updated_at', title: 'Latest Updates' }, { id: 'viewed', title: 'Most Viewed' }, { id: 'scored', title: 'Top Rated' }, { id: 'created_at', title: 'Newest' }]
 const SECTIONS = [{ id: 'viewed', title: 'Popular' }, { id: 'updated_at', title: 'Latest Updates' }, { id: 'scored', title: 'Top Rated' }, { id: 'created_at', title: 'Newest' }]
-type Filters = { genres?: Option[], excludedGenres?: Option[], author?: string, status?: Option, searchType?: Option, order?: Option }
+type Filters = { genres?: Option | Option[] | ExcludableMultiSelectProp, excludedGenres?: Option[], author?: string, status?: Option, searchType?: Option, searchDescription?: boolean, order?: Option }
+function selectedGenres(filters: Filters): ExcludableMultiSelectProp {
+    const included: Option[] = [], excluded: Option[] = []
+    const add = (value: unknown, target: Option[]): void => {
+        if (!value || typeof value !== 'object' || Array.isArray(value) || !('id' in value) || typeof value.id !== 'string' || 'included' in value || 'excluded' in value) throw new Error('Invalid VyManga genre option')
+        const id = genreOptionID(value.id)
+        if (!target.some(option => option.id === id)) target.push({ id, title: 'title' in value && typeof value.title === 'string' ? value.title : id })
+    }
+    const selection = filters.genres
+    if (selection !== undefined) {
+        if (Array.isArray(selection)) selection.forEach(value => add(value, included))
+        else if (selection && typeof selection === 'object' && 'id' in selection) add(selection, included)
+        else if (selection && typeof selection === 'object' && !Array.isArray(selection) && Object.keys(selection).every(key => ['included', 'excluded'].includes(key)) && ('included' in selection || 'excluded' in selection)) {
+            for (const [key, target] of [['included', included], ['excluded', excluded]] as const) {
+                const values = key in selection ? selection[key] : []
+                if (!Array.isArray(values)) throw new Error('Invalid VyManga include/exclude genres')
+                values.forEach(value => add(value, target))
+            }
+        } else throw new Error('Invalid VyManga genres')
+    }
+    // Keep previously saved alpha.2 exclusion selections working after upgrade.
+    if (filters.excludedGenres !== undefined) {
+        if (!Array.isArray(filters.excludedGenres)) throw new Error('Invalid VyManga excluded genres')
+        filters.excludedGenres.forEach(value => add(value, excluded))
+    }
+    if (included.some(option => excluded.some(other => other.id === option.id))) throw new Error('Conflicting VyManga genre inclusion and exclusion')
+    return { included, excluded }
+}
 export class Target implements ChapterSource, PageLinkResolver, CoverRequestHandler, PageRequestHandler {
-    readonly info: SourceInfo = { id: 'VyManga', name: 'VyManga', version: '0.0.1-alpha.2', website: DOMAIN, rating: CatalogRating.MIXED,
+    readonly info: SourceInfo = { id: 'VyManga', name: 'VyManga', version: '0.0.1-alpha.3', website: DOMAIN, thumbnail: 'VyManga.png', rating: CatalogRating.MIXED,
         description: 'ODT candidate, not live verified. On-device test candidate adapted from Popmango’s VyManga. Public chapters only. Reader redirects, page completeness and image bytes await device verification. Unclassified titles use a Suggestive compatibility fallback, not a verified source age rating. Missing dates are unknown (epoch). Reopen details before chapters and images after restarting the app.',
         supportedLanguages: ['en_US'], badges: ['ODT candidate'], developers: [{ name: 'Lucifers Circle', github: 'https://github.com/LucifersCircle' }, { name: 'Popmango', github: 'https://github.com/PoppingMangoSources' }, { name: 'Inkdex', github: 'https://github.com/inkdex' }] }
     readonly config = { owningLinks: CATALOG_HOSTS, cloudflareResolutionURL: DOMAIN }
@@ -80,30 +111,41 @@ export class Target implements ChapterSource, PageLinkResolver, CoverRequestHand
         return result
     }
     async getSortOptions(): Promise<SortOption[]> { return SORTS }
-    async getSearchForm(): Promise<SearchForm> {
+    private async genreOptions(): Promise<Option[]> {
         if (!this.taxonomy) this.taxonomy = genres((await this.api.document(`${DOMAIN}/search`)).html)
         if (!this.taxonomy.length) throw new Error('VyManga genre taxonomy is missing')
-        return { sections: [SearchListSection({ children: [
-            SearchMultiPickerSheet({ id: 'genres', title: 'Include genres', options: this.taxonomy }),
-            SearchMultiPickerSheet({ id: 'excludedGenres', title: 'Exclude genres', options: this.taxonomy }),
-            SearchTextField({ id: 'author', title: 'Author' }),
-            SearchMenuPicker({ id: 'status', title: 'Status', options: [{ id: '', title: 'All' }, { id: '0', title: 'Ongoing' }, { id: '1', title: 'Completed' }] }),
-            SearchMenuPicker({ id: 'searchType', title: 'Title match', options: [{ id: '0', title: 'Contains' }, { id: '1', title: 'Begins with' }, { id: '2', title: 'Ends with' }] }),
-            SearchMenuPicker({ id: 'order', title: 'Order', options: [{ id: 'desc', title: 'Descending' }, { id: 'asc', title: 'Ascending' }] })
-        ] }), SearchSortSection({ header: 'Sort' })] }
+        return this.taxonomy
+    }
+    async getSearchForm(): Promise<SearchForm> {
+        return { sections: [
+            SearchTagsSection({ header: 'Genres', field: SearchExcludableMultiPicker({ id: 'genres', title: 'Include / exclude genres', options: await this.genreOptions() }) }),
+            SearchListSection({ header: 'Title search', children: [
+                SearchMenuPicker({ id: 'searchType', title: 'Title match', options: [{ id: '0', title: 'Contains' }, { id: '1', title: 'Begins with' }, { id: '2', title: 'Ends with' }] }),
+                SearchToggle({ id: 'searchDescription', title: 'Also search descriptions' })
+            ] }),
+            SearchListSection({ header: 'Author and status', children: [
+                SearchTextField({ id: 'author', title: 'Author' }),
+                SearchMenuPicker({ id: 'status', title: 'Status', options: [{ id: '', title: 'All' }, { id: '0', title: 'Ongoing' }, { id: '1', title: 'Completed' }] }),
+                SearchMenuPicker({ id: 'order', title: 'Order', options: [{ id: 'desc', title: 'Descending' }, { id: 'asc', title: 'Ascending' }] })
+            ] }),
+            SearchSortSection({ header: 'Sort' })
+        ] }
     }
     async search(request: SearchRequest<Filters>): Promise<PagedSearchResult> {
         assertRatingPolicy(request.context)
         const page = request.page ?? 1, sort = request.sort?.id ?? request.listId ?? 'updated_at', query = request.query ?? '', filters = request.filters ?? {}
         if (!Number.isSafeInteger(page) || page < 1 || page > 1000 || typeof query !== 'string' || query.length > 500 || !SORTS.some(value => value.id === sort)
             || (request.listId !== undefined && !SECTIONS.some(value => value.id === request.listId)) || !filters || typeof filters !== 'object' || Array.isArray(filters)
-            || Object.keys(filters).some(key => !['genres', 'excludedGenres', 'author', 'status', 'searchType', 'order'].includes(key))) throw new Error('Invalid VyManga search')
+            || Object.keys(filters).some(key => !['genres', 'excludedGenres', 'author', 'status', 'searchType', 'searchDescription', 'order'].includes(key))) throw new Error('Invalid VyManga search')
+        const genreSelection = selectedGenres(filters)
+        if (filters.searchDescription !== undefined && typeof filters.searchDescription !== 'boolean') throw new Error('Invalid VyManga description search option')
         if (request.context?.allowedContentRatings?.length === 0) return { results: [], isLastPage: true }
         if (/^https?:\/\//i.test(query)) {
             const id = mangaID(query), content = await this.getContent(id, request.context)
             return { results: [{ ...content, id, context: request.context }], isLastPage: true }
         }
         const params = new URLSearchParams({ q: query.trim(), page: String(page), search_po: '0', author_po: '0', sort, sort_type: 'desc' })
+        if (filters.searchDescription) params.set('check_search_desc', '1')
         if (filters.author !== undefined) {
             if (typeof filters.author !== 'string' || filters.author.length > 300) throw new Error('Invalid VyManga author')
             params.set('author', filters.author)
@@ -113,15 +155,12 @@ export class Target implements ChapterSource, PageLinkResolver, CoverRequestHand
             if (value !== undefined && (!value || typeof value !== 'object' || !values.some(option => option === value.id))) throw new Error('Invalid VyManga search option')
             if (value?.id) params.set(key === 'status' ? 'completed' : key === 'searchType' ? 'search_po' : 'sort_type', value.id)
         }
-        const selected: string[] = []
-        for (const key of ['genres', 'excludedGenres'] as const) {
-            const values = filters[key] ?? []
-            if (!Array.isArray(values) || values.some(value => !value || typeof value !== 'object' || !/^\d+$/.test(value.id))) throw new Error('Invalid VyManga genres')
-            if (values.length) {
-                await this.getSearchForm()
-                for (const value of values) {
-                    if (!this.taxonomy?.some(option => option.id === value.id) || selected.includes(value.id)) throw new Error('Unknown, repeated or conflicting VyManga genre')
-                    selected.push(value.id); params.append(key === 'genres' ? 'genre[]' : 'exclude_genre[]', value.id)
+        if (genreSelection.included.length || genreSelection.excluded.length) {
+            const taxonomy = await this.genreOptions()
+            for (const [side, parameter] of [['included', 'genre[]'], ['excluded', 'exclude_genre[]']] as const) {
+                for (const option of genreSelection[side]) {
+                    if (!taxonomy.some(value => value.id === option.id)) throw new Error('Unknown VyManga genre')
+                    params.append(parameter, option.id)
                 }
             }
         }
@@ -147,7 +186,11 @@ export class Target implements ChapterSource, PageLinkResolver, CoverRequestHand
         const policy = context ? { ...context, ...(context.allowedContentRatings ? { allowedContentRatings: [...context.allowedContentRatings] } : {}) } : undefined
         this.contexts.delete(id)
         if (context?.allowedContentRatings?.length === 0) throw new Error('VyManga title excluded by content policy')
-        const document = await this.document(id), content = detail(document.html, id, document.url)
+        const document = await this.document(id)
+        if (this.policyVersions.get(id) !== version) throw new Error('VyManga content policy changed; reopen details before reading')
+        const preliminary = detail(document.html, id, document.url, this.taxonomy)
+        if (!ratingAllowed(preliminary.contentRating, policy)) throw new Error('VyManga title excluded by content policy')
+        const content = preliminary.tags?.length ? detail(document.html, id, document.url, await this.genreOptions()) : preliminary
         if (this.policyVersions.get(id) !== version) throw new Error('VyManga content policy changed; reopen details before reading')
         if (!ratingAllowed(content.contentRating, policy)) throw new Error('VyManga title excluded by content policy')
         this.contexts.set(id, policy)

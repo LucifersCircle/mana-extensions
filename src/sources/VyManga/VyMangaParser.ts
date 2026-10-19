@@ -64,20 +64,34 @@ export function cards(html: string, base: string): { items: Highlight[], ended: 
     if (!items.length && $('.comic-item').length) throw new Error('VyManga catalog rows are not recognized')
     return { items, ended: $('[rel=next]').length === 0 }
 }
+export function genreOptionID(value: string): string {
+    if (typeof value !== 'string' || !value || value !== value.trim() || value.length > 200 || controls(value)) throw new Error('Invalid VyManga genre identity')
+    return value
+}
 export function genres(html: string): Option[] {
     const $ = load(html), result: Option[] = [], seen = new Set<string>()
     for (const node of $('.checkbox-genre[data-value]').toArray()) {
         const el = $(node), id = el.attr('data-value')?.trim() ?? '', title = text(el.parent().find('label').first().text())
-        if (!/^\d+$/.test(id) || !title || seen.has(id)) continue
+        if (!title || seen.has(id)) continue
+        try { genreOptionID(id) } catch { continue }
         seen.add(id); result.push({ id, title })
     }
     return result.sort((a, b) => a.title.localeCompare(b.title))
 }
-function genreID(href: string, title: string): string {
-    const url = new URL(href || '/', DOMAIN), last = url.pathname.replace(/\/$/, '').split('/').pop() ?? ''
-    return url.searchParams.get('genre[]') ?? url.searchParams.get('genre') ?? (/^\d+$/.test(last) ? last : title.toLowerCase().replace(/\s+/g, '-'))
+function genreIdentity(href: string): { sourceID?: string, invalid?: boolean } {
+    try {
+        const url = new URL(href || '/', DOMAIN), last = url.pathname.replace(/\/$/, '').split('/').pop() ?? ''
+        if (!['https:', 'http:'].includes(url.protocol)) return { invalid: true }
+        const values = [...url.searchParams.getAll('genre[]'), ...url.searchParams.getAll('genre')]
+        if (values.length) {
+            const ids = [...new Set(values)]
+            if (ids.length !== 1) return { invalid: true }
+            return { sourceID: genreOptionID(ids[0] as string) }
+        }
+        return /^\d+$/.test(last) ? { sourceID: last } : {}
+    } catch { return { invalid: true } }
 }
-export function detail(html: string, id: string, base: string): Content {
+export function detail(html: string, id: string, base: string, taxonomy: Option[] = []): Content {
     slug(id)
     const $ = load(html), title = text($('h1').first().text())
     if (!title) throw new Error('VyManga details title is missing')
@@ -85,8 +99,18 @@ export function detail(html: string, id: string, base: string): Content {
     if (canonical && mangaID(canonical, base) !== id) throw new Error('VyManga detail identity mismatch')
     const genreTags = $('.pre-title:contains(Genres) ~ a, div.col-md-7 p a[href*=genre]').toArray().map(node => {
         const el = $(node), title = text(el.text())
-        return { id: genreID(el.attr('href') ?? '', title), title }
-    }).filter((tag, index, all) => tag.title && all.findIndex(value => value.id === tag.id) === index)
+        const href = el.attr('href') ?? ''
+        return { ...genreIdentity(href), id: href || title, title }
+    }).filter(tag => tag.title)
+    const norm = (value: string): string => text(value).toLowerCase()
+    const conflictingIDs = new Set(genreTags.filter(tag => tag.sourceID !== undefined && genreTags.some(other => other.sourceID === tag.sourceID && norm(other.title) !== norm(tag.title))).map(tag => tag.sourceID))
+    const matchedGenres = genreTags.map(tag => {
+        const matches = tag.invalid || conflictingIDs.has(tag.sourceID) ? [] : tag.sourceID !== undefined ? taxonomy.filter(option => option.id === tag.sourceID && norm(option.title) === norm(tag.title)) : taxonomy.filter(option => norm(option.title) === norm(tag.title))
+        const match = matches.length === 1 ? matches[0] : undefined
+        return match ? { id: match.id, title: match.title } : { id: `unmapped:${tag.id}#label=${encodeURIComponent(tag.title)}`, title: tag.title, isNonInteractive: true }
+    }).filter((tag, index, all) => all.findIndex(value => value.id === tag.id) === index)
+    // Classify every raw label before rendered-tag deduplication: conflicting
+    // links must never erase an explicit label or weaken the rating policy.
     const names = genreTags.map(tag => tag.title.toLowerCase())
     const classification = names.some(name => ['smut', 'hentai', 'erotica', 'pornographic', 'nsfw', '18+'].includes(name)) ? ContentRating.EXPLICIT
         : names.some(name => ['adult', 'mature'].includes(name)) ? ContentRating.MATURE : undefined
@@ -98,7 +122,7 @@ export function detail(html: string, id: string, base: string): Content {
     if (creators.length) additionalInfo.push(staff.section({ id: 'creators', title: 'Creators', items: creators, hasMore: false }))
     const status = text($('.pre-title:contains(Status) ~ span:not(.space), div.col-md-7 p:contains(Status) span').last().text()).toLowerCase()
     const descriptions = $('.summary > .content, div.summary p.content').toArray().map(node => $(node).text().trim()).filter(Boolean)
-    return { title, cover: image($, $('.img-manga img, .content-thumb img').first().get(0), base), webUrl: `${new URL(base).origin}/manga/${id}`, summary: descriptions.join('\n'), additionalTitles: [], tags: genreTags, additionalInfo, contentRating: nativeRating(classification), status: /complet|finish/.test(status) ? PublicationStatus.COMPLETED : /ongoing|on going|updating/.test(status) ? PublicationStatus.ONGOING : /hiatus|pause/.test(status) ? PublicationStatus.HIATUS : /cancel|drop/.test(status) ? PublicationStatus.CANCELLED : undefined }
+    return { title, cover: image($, $('.img-manga img, .content-thumb img').first().get(0), base), webUrl: `${new URL(base).origin}/manga/${id}`, summary: descriptions.join('\n'), additionalTitles: [], tags: matchedGenres, additionalInfo, contentRating: nativeRating(classification), status: /complet|finish/.test(status) ? PublicationStatus.COMPLETED : /ongoing|on going|updating/.test(status) ? PublicationStatus.ONGOING : /hiatus|pause/.test(status) ? PublicationStatus.HIATUS : /cancel|drop/.test(status) ? PublicationStatus.CANCELLED : undefined }
 }
 const restricted = '.locked,.paid,.premium,.login-required,.required-login,[data-locked="true"],[data-paid="true"],[data-price],[data-coin],.fa-lock,.fa-user-lock,.ion-locked,.chapter-premium'
 export function chapters(html: string, base: string): Chapter[] {
