@@ -5,7 +5,7 @@
     {
       "id": "VyManga",
       "name": "VyManga",
-      "version": "0.0.1-alpha.1",
+      "version": "0.0.1-alpha.2",
       "website": "https://mangavyvy.net",
       "rating": 1,
       "description": "ODT candidate, not live verified. On-device test candidate adapted from Popmango’s VyManga. Public chapters only. Reader redirects, page completeness and image bytes await device verification. Unclassified titles use a Suggestive compatibility fallback, not a verified source age rating. Missing dates are unknown (epoch). Reopen details before chapters and images after restarting the app.",
@@ -32,7 +32,7 @@
       "path": "VyManga",
       "environment": "source",
       "intents": 106961928,
-      "hash": "47dec51747dec51747dec51747dec51747dec51747dec51747dec51747dec517"
+      "hash": "42b5e30b42b5e30b42b5e30b42b5e30b42b5e30b42b5e30b42b5e30b42b5e30b"
     }
   ]
 }

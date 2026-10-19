@@ -1,6 +1,6 @@
 # VyManga on-device test candidate
 
-Version: 0.0.1-alpha.1. This isolated feed is a test build, not a verified release.
+Version: 0.0.1-alpha.2. This isolated feed is a test build, not a verified release.
 It is not published to the normal Mana repository and is not merged into generic.
 Related request: https://github.com/LucifersCircle/mana-extensions/issues/73
 
@@ -10,10 +10,10 @@ Use this repository URL in Mana's repository manager:
 
 https://raw.githubusercontent.com/LucifersCircle/mana-extensions/test/vymanga-odt/odt/vymanga/
 
-Select VyManga version 0.0.1-alpha.1. Do not replace the normal production repository.
+Select VyManga version 0.0.1-alpha.2. Do not replace the normal production repository.
 If Mana rejects the raw-GitHub repository URL, report the exact error. The SDK feed
-layout is verified, but importing this raw-GitHub feed has not yet been tested in
-Mana on a device. No default-branch or GitHub Pages deployment is needed for this feed.
+layout is verified. Alpha.1 loaded on-device far enough to report the source
+chapter guard error below; successful chapter reading remains pending. No default-branch or GitHub Pages deployment is needed for this feed.
 
 ## What to verify on your device
 
@@ -56,6 +56,24 @@ GPL-3.0-or-later. Copyright © 2026 Inkdex and © 2026 Lucifers Circle.
 Adapted from Popmango's VyManga at pinned commit
 2ad28cd5155ef23b09fa2b85a9713ad511730bb6. See LICENSE, THIRD_PARTY_NOTICES.md and licenses/.
 
+## ODT correction in alpha.2
+
+The first ODT reported "VyManga chapter is absent, paid or mismatched" for New
+Chronicles of Goguryeo, chapter 1. A deterministic native-contract defect was
+reproduced separately: the source rejected an otherwise valid chapter descriptor
+when its optional webUrl field was absent. Alpha.2 accepts a missing optional
+webUrl while preserving exact full chapterId membership, chapter ID/number checks,
+all content-policy checks, and paid/login guards. A supplied conflicting webUrl
+still rejects. Separate diagnostic errors now distinguish current public-inventory
+absence from descriptor ID, number or supplied web URL mismatch. No reader request
+is made when these preconditions fail.
+
+This defect reproduces the reported error, but has not been confirmed as the cause
+of that specific title/chapter on the user's device. No reader destination was
+contacted to investigate it. Refresh details and the chapter list after updating,
+then report the new exact error if it persists. Chapter hrefs are not normalized,
+redirect tokens are not stripped, and stale public membership is not trusted.
+
 ## Build and review evidence for this candidate
 
 - Original repository Jest suite: 156/156 passed; no new offline fixture test layer
@@ -68,9 +86,10 @@ Adapted from Popmango's VyManga at pinned commit
   origins and Referer, paid guards, native resource cleanup, and four rating-policy
   concurrency scenarios. Literal escaped HTML entity fidelity was checked too.
 - VyManga bundle SHA-256:
-  bcb82adfc4ad8aa6438d231ba80da5dd1e98ac44ec3dd41abd74145ad469a634
+  b9459a5e544bc298fef836afcc1bc58e5381236c013a5d77d027d6477242d848
 - Feed manifest SHA-256:
-  53c0e7e932762d48783090f39659aeaf2e9b8340a74b3f3d99ed41125586da0c
+  e7fbe9b0e7501d43c719f7aa6e171c704ebc9e97bcf841936e526dfe3b705a99
 
-These checks establish a reviewed build candidate, not live behavior, successful
-in-app feed import, actual image validity, complete reader sequence or ODT success.
+These checks establish a reviewed build candidate, not successful reading, actual
+image validity, a complete reader sequence or ODT success. The alpha.1 device test
+failed at a source guard; alpha.2 has not yet been retested on-device.

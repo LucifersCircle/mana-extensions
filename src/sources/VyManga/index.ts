@@ -47,7 +47,7 @@ const SORTS = [{ id: 'updated_at', title: 'Latest Updates' }, { id: 'viewed', ti
 const SECTIONS = [{ id: 'viewed', title: 'Popular' }, { id: 'updated_at', title: 'Latest Updates' }, { id: 'scored', title: 'Top Rated' }, { id: 'created_at', title: 'Newest' }]
 type Filters = { genres?: Option[], excludedGenres?: Option[], author?: string, status?: Option, searchType?: Option, order?: Option }
 export class Target implements ChapterSource, PageLinkResolver, CoverRequestHandler, PageRequestHandler {
-    readonly info: SourceInfo = { id: 'VyManga', name: 'VyManga', version: '0.0.1-alpha.1', website: DOMAIN, rating: CatalogRating.MIXED,
+    readonly info: SourceInfo = { id: 'VyManga', name: 'VyManga', version: '0.0.1-alpha.2', website: DOMAIN, rating: CatalogRating.MIXED,
         description: 'ODT candidate, not live verified. On-device test candidate adapted from Popmango’s VyManga. Public chapters only. Reader redirects, page completeness and image bytes await device verification. Unclassified titles use a Suggestive compatibility fallback, not a verified source age rating. Missing dates are unknown (epoch). Reopen details before chapters and images after restarting the app.',
         supportedLanguages: ['en_US'], badges: ['ODT candidate'], developers: [{ name: 'Lucifers Circle', github: 'https://github.com/LucifersCircle' }, { name: 'Popmango', github: 'https://github.com/PoppingMangoSources' }, { name: 'Inkdex', github: 'https://github.com/inkdex' }] }
     readonly config = { owningLinks: CATALOG_HOSTS, cloudflareResolutionURL: DOMAIN }
@@ -169,7 +169,12 @@ export class Target implements ChapterSource, PageLinkResolver, CoverRequestHand
         publicURL(chapterID)
         const version = this.revision(id)
         const selected = (await this.inventory(id)).find(value => value.chapterId === chapterID)
-        if (!selected || (chapter && (chapter.chapterId !== selected.chapterId || chapter.number !== selected.number || chapter.webUrl !== selected.webUrl))) throw new Error('VyManga chapter is absent, paid or mismatched')
+        if (!selected) throw new Error('VyManga chapter URL is absent from the current public chapter list. Refresh chapters; no reader request was made.')
+        if (chapter && chapter.chapterId !== selected.chapterId) throw new Error('VyManga chapter descriptor ID does not match the selected public chapter. Refresh chapters.')
+        if (chapter && chapter.number !== selected.number) throw new Error('VyManga chapter number does not match the current public chapter. Refresh chapters.')
+        // webUrl is optional in the native Chapter contract. Ownership is always
+        // established above by the exact full chapterId in the public inventory.
+        if (chapter?.webUrl != null && chapter.webUrl !== selected.webUrl) throw new Error('VyManga chapter web URL does not match the selected public chapter. Refresh chapters.')
         this.revision(id, version)
         const url = new URL(chapterID); url.searchParams.set('view', '0')
         const document = await this.api.document(url.href, true), urls = reader(document.html, document.url)
