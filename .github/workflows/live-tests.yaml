@@ -44,6 +44,7 @@ jobs:
           npm run lint
           npm run build -- --output dist
           npm run verify:bundles
+          node scripts/repository-listing.mjs dist
       - name: Prove approved additive source boundary
         id: additive
         run: node scripts/additive-source-gate.mjs
