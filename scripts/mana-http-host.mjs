@@ -5,6 +5,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import vm from 'node:vm';
+import { decryptGCMMessage } from './mana-test-crypto.mjs';
 
 const require = createRequire(import.meta.url);
 const runtimes = new WeakMap(), sources = new WeakMap();
@@ -179,12 +180,16 @@ export function createHTTPBridge({ fetchImpl, logger, assertRequest, redactURL, 
     }
     const bridge = {
         requiresOperation: true,
+        crypto: [2], // SDK CryptoAlgorithm.AesGcm; no other native ciphers advertised.
         signal: controller.signal,
         now: () => performance.now(),
         async send(message) {
             if (!message || typeof message !== 'object') throw new Error('Invalid HTTP bridge message');
             switch (message.operation) {
                 case 0: return fetchMessage(message);
+                case 9:
+                    if (closed) throw abortError();
+                    return decryptGCMMessage(message);
                 case 1: {
                     const body = bodyFor(message.bodyID);
                     if (![0, 1].includes(message.reader)) throw new Error('Unsupported native body reader');
@@ -289,13 +294,24 @@ export function createHTTPBridge({ fetchImpl, logger, assertRequest, redactURL, 
             const method = originValue === 1 ? 'getCoverTransport' : 'getPageTransport';
             const id = `live-image-${sessionID}-${++nextOperation}`;
             const mode = { probe, replay, log }; modes.set(id, mode);
-            let unchanged, client, observer;
+            let unchanged, client, observer, responseObserver;
             const dispatchSource = {
                 [method](request) {
                     client = source[method]?.(request);
                     if (!client || typeof client[imageDispatch] !== 'function') return client;
                     observer = value => { unchanged = snapshotRequest(value); return value; };
                     client.addRequestInterceptor(observer);
+                    // SDK 0.1.1 clones the prepared request after request interceptors.
+                    // Verify the effective response request against the actual transport,
+                    // not solely the earlier interceptor object snapshot.
+                    responseObserver = response => {
+                        const actual = mode.request, request = response.request;
+                        if (!actual || request.url !== actual.url || methods[request.method] !== actual.method
+                            || !equalHeaders(request.headers.toJSON(), actual.headers)
+                            || request.body !== undefined) throw new Error('Image request changed during response interception');
+                        return response;
+                    };
+                    client.addResponseInterceptor(responseObserver);
                     return client;
                 },
             };
@@ -319,6 +335,7 @@ export function createHTTPBridge({ fetchImpl, logger, assertRequest, redactURL, 
                 throw { imageDispatchFailure: true, error, mode };
             } finally {
                 client?.removeRequestInterceptor?.(observer);
+                client?.removeResponseInterceptor?.(responseObserver);
                 modes.delete(id);
                 for (const [bodyID, body] of bodies) if (body.operationID === id) dropBody(bodyID);
             }

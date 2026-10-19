@@ -115,7 +115,7 @@ describe('Hijala reusable native image clients', () => {
             const interceptor = registered.mock.calls[index]?.[0]
             if (!interceptor) throw new Error('Missing SDK image interceptor')
             // Native image dispatch always uses GET; test the registered guard directly.
-            expect(() => interceptor({ url: cover, method: HttpMethod.Post, headers: new HttpHeaders() },
+            expect(() => interceptor({ url: cover, method: HttpMethod.Post, headers: new HttpHeaders(), fragmentParams: Object.freeze({}) },
                 { origin, requestId: 'method-control', attempt: 1, metadata: {} })).toThrow('Invalid Hijala image request')
         }
         expect(sent).toHaveLength(0)

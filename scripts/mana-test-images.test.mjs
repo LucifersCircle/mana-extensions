@@ -100,7 +100,7 @@ test('synthetic status, body, URL and header responses cannot masquerade as nati
     value => { value.url += '?changed'; return value; }, value => { value.headers.set('content-type', 'image/fake'); return value; },
     value => { value.request.url += '?changed'; return value; }, value => { value.request.headers.set('referer', 'https://other.invalid/'); return value; }]) {
     const { source, host } = sourceFixture({ onResponse });
-    await assert.rejects(fetchTestImage(source, cover, { origin: 'cover' }), /rewriting is unsupported|request changed/);
+    await assert.rejects(fetchTestImage(source, cover, { origin: 'cover' }), /rewriting is unsupported|request changed/, String(onResponse));
     assert.deepEqual(host.stats(), { operations: 0, bodies: 0, transfers: 0 });
   }
 });

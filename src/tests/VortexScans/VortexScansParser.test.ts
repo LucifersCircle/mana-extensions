@@ -206,7 +206,7 @@ describe('VortexScans chapter parsing', () => {
 
 describe('VortexScans challenge detection', () => {
     test('detects Cloudflare headers and vShield HTML through asynchronous bodies', async () => {
-        const request = { url: 'https://vortexscans.org/series/title', method: HttpMethod.Get, headers: new HttpHeaders() }
+        const request = { url: 'https://vortexscans.org/series/title', method: HttpMethod.Get, headers: new HttpHeaders(), fragmentParams: Object.freeze({}) }
         const response = (body: string, headers: Record<string, string> = {}, status = 200): HttpResponse => new HttpResponse(request,
             { bodyID: 'fixture', sessionID: 'fixture', status, url: request.url, headers }, new TextEncoder().encode(body))
 

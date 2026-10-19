@@ -15,7 +15,7 @@ import { VortexScansApi } from '../../sources/VortexScans/VortexScansApi'
 const domain = 'https://vortexscans.org'
 const apiURL = 'https://api.vortexscans.org/api/post?postId=42'
 const response = (body: string, status = 200, headers: Record<string, string> = {}): HttpResponse => new HttpResponse(
-    { url: apiURL, method: HttpMethod.Get, headers: new HttpHeaders() },
+    { url: apiURL, method: HttpMethod.Get, headers: new HttpHeaders(), fragmentParams: Object.freeze({}) },
     { bodyID: 'fixture', sessionID: 'fixture', url: apiURL, status, headers },
     new TextEncoder().encode(body)
 )
@@ -54,7 +54,7 @@ describe('VortexScans SDK HTTP transport', () => {
     test('four requests per second uses milliseconds rather than a 1 ms interval', () => {
         const api = new VortexScansApi()
         const { client } = api as unknown as { client: { limiter: RateLimiter } }
-        const context = { request: { url: apiURL, method: HttpMethod.Get, headers: new HttpHeaders() }, requestId: 'test', origin: RequestOrigin.General, attempt: 0, metadata: {}, nowMs: 1000 }
+        const context = { request: { url: apiURL, method: HttpMethod.Get, headers: new HttpHeaders(), fragmentParams: Object.freeze({}) }, requestId: 'test', origin: RequestOrigin.General, attempt: 0, metadata: {}, nowMs: 1000 }
         expect(client.limiter.tryAcquire(context)).toEqual({ action: RateLimitAction.Allow })
         expect(client.limiter.tryAcquire(context)).toEqual({ action: RateLimitAction.Wait, retryAfterMs: 250 })
     })

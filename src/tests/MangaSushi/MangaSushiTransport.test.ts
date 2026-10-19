@@ -94,7 +94,7 @@ describe('MangaSushi public images and retained classification policy', () => {
         const index = interceptors.mock.results.findIndex(result => result.type === 'return' && result.value === client)
         const interceptor = interceptors.mock.calls[index]?.[0]
         if (!interceptor) throw new Error('Missing registered SDK interceptor')
-        expect(() => interceptor({ url: cover, method: HttpMethod.Post, headers: new HttpHeaders() },
+        expect(() => interceptor({ url: cover, method: HttpMethod.Post, headers: new HttpHeaders(), fragmentParams: Object.freeze({}) },
             { origin: RequestOrigin.Cover, requestId: 'method-control', attempt: 1, metadata: {} })).toThrow()
         expect(sent).toHaveLength(0)
     })

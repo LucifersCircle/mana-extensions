@@ -224,17 +224,17 @@
   },
   {
     "name": "@mana-app/types",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "license": "MIT",
     "packagePath": "node_modules/@mana-app/types",
     "notices": [
       "LICENSE"
     ],
-    "resolved": "https://registry.npmjs.org/@mana-app/types/-/types-0.1.0.tgz",
-    "integrity": "sha512-+BQOKHgJLdHXPr4xPMmb6rPUyJ02qljwAYpZDXuEbYXR+5zxkBap1H8SgFlbhAUaYjpVPhPJSFWJ9aHpBi+2dQ==",
+    "resolved": "https://registry.npmjs.org/@mana-app/types/-/types-0.1.1.tgz",
+    "integrity": "sha512-0fOC9X40chUSTQMDDtPCfR9wxHOEywWXnGxySX2Mec/nPbBqqblwbdSPk/LrDICuDVdVvCs3grY5tw8W6rl7YA==",
     "sha256": {
       "LICENSE": "4c78818208a63744bd86dea22c7d2ed726f1fb789a65e53d04e608111b4ef115",
-      "package-metadata.json": "c5aae60aec9e8a81ca709add138e7730a7bfe88185576970c4401e2db2f1ff10"
+      "package-metadata.json": "ccf8028e237dcd2fdcaaffac306d7fa00001e15a17d4b2114d774c73bc5b48cc"
     }
   },
   {

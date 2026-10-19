@@ -145,8 +145,8 @@ describe('Marumaru SDK image transport', () => {
         const interceptor = interceptors.mock.calls[index]?.[0]
         if (!interceptor) throw new Error('Missing image request interceptor')
         const context = { origin: RequestOrigin.Cover, requestId: 'method-control', attempt: 1, metadata: {} }
-        expect(() => interceptor({ url: cover, method: HttpMethod.Post, headers: new HttpHeaders() }, context)).toThrow(/image request/)
-        expect(() => interceptor({ url: cover, method: HttpMethod.Get, headers: new HttpHeaders(), body: { kind: HttpBodyKind.Text, value: 'unexpected' } }, context)).toThrow(/image request/)
+        expect(() => interceptor({ url: cover, method: HttpMethod.Post, headers: new HttpHeaders(), fragmentParams: Object.freeze({}) }, context)).toThrow(/image request/)
+        expect(() => interceptor({ url: cover, method: HttpMethod.Get, headers: new HttpHeaders(), fragmentParams: Object.freeze({}), body: { kind: HttpBodyKind.Text, value: 'unexpected' } }, context)).toThrow(/image request/)
         expect(sent).toHaveLength(0)
     })
 
