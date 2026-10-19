@@ -427,8 +427,10 @@ export const sourceContracts = {
     filter: (state, fields) => genre(state, fields, 'exclude'), filtered: queryGenres('genreIds', ','),
     detail(state) {
       const raw = json(state, url => url.pathname === '/api/post' && url.searchParams.get('postId') === state.id.split(':')[0]).post;
-      assert.equal(`${raw.id}:${encodeURIComponent(raw.slug)}`, state.id); assert.equal(state.content.title, raw.postTitle);
-      assert.equal(state.content.cover, raw.featuredImage); assert.equal(state.content.webUrl, `https://vortexscans.org/series/${raw.slug}`);
+      // Vortex IDs and series paths use RFC 3986 escaping, including apostrophes.
+      const slug = encodeURIComponent(raw.slug).replace(/[!'()*]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
+      assert.equal(`${raw.id}:${slug}`, state.id); assert.equal(state.content.title, raw.postTitle);
+      assert.equal(state.content.cover, raw.featuredImage); assert.equal(state.content.webUrl, `https://vortexscans.org/series/${slug}`);
     },
     inventory(state) {
       const raw = json(state, url => url.pathname === '/api/chapters' && url.searchParams.get('postId') === state.id.split(':')[0]);
