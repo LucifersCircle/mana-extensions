@@ -36,6 +36,7 @@ jobs:
         run: |
           npm run build -- --output dist
           npm run verify:bundles
+          node scripts/repository-listing.mjs dist
       - name: Include full license and attribution notices
         run: node scripts/stage-notices.mjs dist
       - name: Add custom domain
