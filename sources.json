@@ -14,7 +14,6 @@
         "en_US"
       ],
       "badges": [
-        "Mixed",
         "English"
       ],
       "developers": [
@@ -26,7 +25,7 @@
       "path": "GenzToons",
       "environment": "source",
       "intents": 106957832,
-      "hash": "4aa5d8954aa5d8954aa5d8954aa5d8954aa5d8954aa5d8954aa5d8954aa5d895"
+      "hash": "4c668a234c668a234c668a234c668a234c668a234c668a234c668a234c668a23"
     },
     {
       "id": "GourmetScans",
@@ -40,7 +39,6 @@
         "en_US"
       ],
       "badges": [
-        "Mixed",
         "English"
       ],
       "developers": [
@@ -52,7 +50,7 @@
       "path": "GourmetScans",
       "environment": "source",
       "intents": 106961928,
-      "hash": "7df6c1fc7df6c1fc7df6c1fc7df6c1fc7df6c1fc7df6c1fc7df6c1fc7df6c1fc"
+      "hash": "7c360f9b7c360f9b7c360f9b7c360f9b7c360f9b7c360f9b7c360f9b7c360f9b"
     },
     {
       "id": "Hijala",
@@ -68,7 +66,6 @@
         "ru_RU"
       ],
       "badges": [
-        "Mixed",
         "Multi"
       ],
       "developers": [
@@ -81,7 +78,7 @@
       "path": "Hijala",
       "environment": "source",
       "intents": 106961929,
-      "hash": "71d23ba471d23ba471d23ba471d23ba471d23ba471d23ba471d23ba471d23ba4"
+      "hash": "7392ed2c7392ed2c7392ed2c7392ed2c7392ed2c7392ed2c7392ed2c7392ed2c"
     },
     {
       "id": "Kagane",
@@ -92,7 +89,6 @@
       "rating": 1,
       "website": "https://kagane.org",
       "badges": [
-        "Mixed",
         "Multi"
       ],
       "developers": [
@@ -104,7 +100,7 @@
       "path": "Kagane",
       "environment": "source",
       "intents": 106961929,
-      "hash": "2643901726439017264390172643901726439017264390172643901726439017"
+      "hash": "280441fc280441fc280441fc280441fc280441fc280441fc280441fc280441fc"
     },
     {
       "id": "MangaStash",
@@ -118,7 +114,6 @@
         "en_US"
       ],
       "badges": [
-        "Mixed",
         "English"
       ],
       "developers": [
@@ -130,7 +125,7 @@
       "path": "MangaStash",
       "environment": "source",
       "intents": 106961929,
-      "hash": "0aff36140aff36140aff36140aff36140aff36140aff36140aff36140aff3614"
+      "hash": "093e8449093e8449093e8449093e8449093e8449093e8449093e8449093e8449"
     },
     {
       "id": "MangaSushi",
@@ -141,7 +136,6 @@
       "rating": 1,
       "website": "https://mangasushi.org",
       "badges": [
-        "Mixed",
         "English"
       ],
       "supportedLanguages": [
@@ -156,7 +150,7 @@
       "path": "MangaSushi",
       "environment": "source",
       "intents": 106961929,
-      "hash": "6e0134446e0134446e0134446e0134446e0134446e0134446e0134446e013444"
+      "hash": "6fc1e5c86fc1e5c86fc1e5c86fc1e5c86fc1e5c86fc1e5c86fc1e5c86fc1e5c8"
     },
     {
       "id": "MangaTaro",
@@ -170,7 +164,6 @@
         "en_US"
       ],
       "badges": [
-        "Mixed",
         "English"
       ],
       "developers": [
@@ -182,7 +175,7 @@
       "path": "MangaTaro",
       "environment": "source",
       "intents": 106961928,
-      "hash": "662b9648662b9648662b9648662b9648662b9648662b9648662b9648662b9648"
+      "hash": "646ae11e646ae11e646ae11e646ae11e646ae11e646ae11e646ae11e646ae11e"
     },
     {
       "id": "ManhwaNex",
@@ -193,7 +186,6 @@
       "rating": 1,
       "website": "https://manhwanex.com",
       "badges": [
-        "Mixed",
         "English"
       ],
       "supportedLanguages": [
@@ -208,7 +200,7 @@
       "path": "ManhwaNex",
       "environment": "source",
       "intents": 106961929,
-      "hash": "7671254476712544767125447671254476712544767125447671254476712544"
+      "hash": "74b0707774b0707774b0707774b0707774b0707774b0707774b0707774b07077"
     },
     {
       "id": "Marumaru",
@@ -221,7 +213,6 @@
         "ko_KR"
       ],
       "badges": [
-        "Mixed",
         "Korean"
       ],
       "developers": [
@@ -234,7 +225,7 @@
       "path": "Marumaru",
       "environment": "source",
       "intents": 102761480,
-      "hash": "4bd5cb284bd5cb284bd5cb284bd5cb284bd5cb284bd5cb284bd5cb284bd5cb28"
+      "hash": "4a15129e4a15129e4a15129e4a15129e4a15129e4a15129e4a15129e4a15129e"
     },
     {
       "id": "QiScans",
@@ -248,7 +239,6 @@
         "en_US"
       ],
       "badges": [
-        "Mixed",
         "English"
       ],
       "developers": [
@@ -260,7 +250,7 @@
       "path": "QiScans",
       "environment": "source",
       "intents": 106961928,
-      "hash": "3ac160f53ac160f53ac160f53ac160f53ac160f53ac160f53ac160f53ac160f5"
+      "hash": "3900af143900af143900af143900af143900af143900af143900af143900af14"
     },
     {
       "id": "VortexScans",
@@ -271,7 +261,6 @@
       "rating": 1,
       "website": "https://vortexscans.org",
       "badges": [
-        "Mixed",
         "English"
       ],
       "supportedLanguages": [
@@ -286,7 +275,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 106961928,
-      "hash": "6df5b4d06df5b4d06df5b4d06df5b4d06df5b4d06df5b4d06df5b4d06df5b4d0"
+      "hash": "6fb6672d6fb6672d6fb6672d6fb6672d6fb6672d6fb6672d6fb6672d6fb6672d"
     },
     {
       "id": "VyManga",
@@ -300,7 +289,6 @@
         "en_US"
       ],
       "badges": [
-        "Mixed",
         "English"
       ],
       "developers": [
@@ -312,7 +300,7 @@
       "path": "VyManga",
       "environment": "source",
       "intents": 106961928,
-      "hash": "1a0a0c5e1a0a0c5e1a0a0c5e1a0a0c5e1a0a0c5e1a0a0c5e1a0a0c5e1a0a0c5e"
+      "hash": "1bcabea51bcabea51bcabea51bcabea51bcabea51bcabea51bcabea51bcabea5"
     }
   ]
 }
