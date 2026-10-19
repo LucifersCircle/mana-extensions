@@ -14,28 +14,19 @@
         "en_US"
       ],
       "badges": [
-        "Manga",
-        "Manhwa",
-        "Manhua"
+        "Mixed",
+        "English"
       ],
       "developers": [
         {
           "name": "Lucifers Circle",
           "github": "https://github.com/LucifersCircle"
-        },
-        {
-          "name": "nicartjay",
-          "github": "https://github.com/Nicartjay"
-        },
-        {
-          "name": "keiyoushi",
-          "github": "https://github.com/keiyoushi"
         }
       ],
       "path": "GenzToons",
       "environment": "source",
       "intents": 106957832,
-      "hash": "1863af711863af711863af711863af711863af711863af711863af711863af71"
+      "hash": "1fa405c81fa405c81fa405c81fa405c81fa405c81fa405c81fa405c81fa405c8"
     },
     {
       "id": "GourmetScans",
@@ -49,23 +40,19 @@
         "en_US"
       ],
       "badges": [
-        "Manga",
-        "Manhwa"
+        "Mixed",
+        "English"
       ],
       "developers": [
         {
           "name": "Lucifers Circle",
           "github": "https://github.com/LucifersCircle"
-        },
-        {
-          "name": "Inkdex",
-          "github": "https://github.com/inkdex"
         }
       ],
       "path": "GourmetScans",
       "environment": "source",
       "intents": 106961928,
-      "hash": "1eff637d1eff637d1eff637d1eff637d1eff637d1eff637d1eff637d1eff637d"
+      "hash": "57076afa57076afa57076afa57076afa57076afa57076afa57076afa57076afa"
     },
     {
       "id": "Hijala",
@@ -81,9 +68,8 @@
         "ru_RU"
       ],
       "badges": [
-        "Manga",
-        "Manhwa",
-        "Manhua"
+        "Mixed",
+        "Multi"
       ],
       "developers": [
         {
@@ -95,7 +81,7 @@
       "path": "Hijala",
       "environment": "source",
       "intents": 106961929,
-      "hash": "0ec85de40ec85de40ec85de40ec85de40ec85de40ec85de40ec85de40ec85de4"
+      "hash": "46d0685e46d0685e46d0685e46d0685e46d0685e46d0685e46d0685e46d0685e"
     },
     {
       "id": "Kagane",
@@ -106,25 +92,19 @@
       "rating": 1,
       "website": "https://kagane.org",
       "badges": [
-        "Manga",
-        "Manhwa",
-        "Manhua",
-        "Comic"
+        "Mixed",
+        "Multi"
       ],
       "developers": [
         {
           "name": "Lucifers Circle",
           "github": "https://github.com/LucifersCircle"
-        },
-        {
-          "name": "PoppingMango Sources",
-          "github": "https://github.com/PoppingMangoSources"
         }
       ],
       "path": "Kagane",
       "environment": "source",
       "intents": 106961929,
-      "hash": "3cc64de73cc64de73cc64de73cc64de73cc64de73cc64de73cc64de73cc64de7"
+      "hash": "04be436f04be436f04be436f04be436f04be436f04be436f04be436f04be436f"
     },
     {
       "id": "MangaStash",
@@ -138,9 +118,8 @@
         "en_US"
       ],
       "badges": [
-        "Manga",
-        "Manhwa",
-        "Manhua"
+        "Mixed",
+        "English"
       ],
       "developers": [
         {
@@ -151,7 +130,7 @@
       "path": "MangaStash",
       "environment": "source",
       "intents": 106961929,
-      "hash": "6e0914316e0914316e0914316e0914316e0914316e0914316e0914316e091431"
+      "hash": "3601065736010657360106573601065736010657360106573601065736010657"
     },
     {
       "id": "MangaSushi",
@@ -162,7 +141,8 @@
       "rating": 1,
       "website": "https://mangasushi.org",
       "badges": [
-        "Manga"
+        "Mixed",
+        "English"
       ],
       "supportedLanguages": [
         "en_US"
@@ -176,7 +156,7 @@
       "path": "MangaSushi",
       "environment": "source",
       "intents": 106961929,
-      "hash": "0af7590f0af7590f0af7590f0af7590f0af7590f0af7590f0af7590f0af7590f"
+      "hash": "42ff60dc42ff60dc42ff60dc42ff60dc42ff60dc42ff60dc42ff60dc42ff60dc"
     },
     {
       "id": "MangaTaro",
@@ -190,24 +170,19 @@
         "en_US"
       ],
       "badges": [
-        "Manga",
-        "Manhwa",
-        "Manhua"
+        "Mixed",
+        "English"
       ],
       "developers": [
         {
           "name": "Lucifers Circle",
           "github": "https://github.com/LucifersCircle"
-        },
-        {
-          "name": "Inkdex",
-          "github": "https://github.com/inkdex"
         }
       ],
       "path": "MangaTaro",
       "environment": "source",
       "intents": 106961928,
-      "hash": "36ca8ec236ca8ec236ca8ec236ca8ec236ca8ec236ca8ec236ca8ec236ca8ec2"
+      "hash": "6ed299b86ed299b86ed299b86ed299b86ed299b86ed299b86ed299b86ed299b8"
     },
     {
       "id": "ManhwaNex",
@@ -218,9 +193,8 @@
       "rating": 1,
       "website": "https://manhwanex.com",
       "badges": [
-        "Manhwa",
-        "Manhua",
-        "Manga"
+        "Mixed",
+        "English"
       ],
       "supportedLanguages": [
         "en_US"
@@ -234,7 +208,7 @@
       "path": "ManhwaNex",
       "environment": "source",
       "intents": 106961929,
-      "hash": "2685000626850006268500062685000626850006268500062685000626850006"
+      "hash": "5e8d0ac25e8d0ac25e8d0ac25e8d0ac25e8d0ac25e8d0ac25e8d0ac25e8d0ac2"
     },
     {
       "id": "Marumaru",
@@ -247,7 +221,8 @@
         "ko_KR"
       ],
       "badges": [
-        "Manga"
+        "Mixed",
+        "Korean"
       ],
       "developers": [
         {
@@ -259,7 +234,7 @@
       "path": "Marumaru",
       "environment": "source",
       "intents": 102761480,
-      "hash": "51205d8151205d8151205d8151205d8151205d8151205d8151205d8151205d81"
+      "hash": "76d797c676d797c676d797c676d797c676d797c676d797c676d797c676d797c6"
     },
     {
       "id": "QiScans",
@@ -273,24 +248,19 @@
         "en_US"
       ],
       "badges": [
-        "Manga",
-        "Manhwa",
-        "Manhua"
+        "Mixed",
+        "English"
       ],
       "developers": [
         {
           "name": "Lucifers Circle",
           "github": "https://github.com/LucifersCircle"
-        },
-        {
-          "name": "Inkdex",
-          "github": "https://github.com/inkdex"
         }
       ],
       "path": "QiScans",
       "environment": "source",
       "intents": 106961928,
-      "hash": "6235134162351341623513416235134162351341623513416235134162351341"
+      "hash": "65c333c365c333c365c333c365c333c365c333c365c333c365c333c365c333c3"
     },
     {
       "id": "VortexScans",
@@ -301,9 +271,8 @@
       "rating": 1,
       "website": "https://vortexscans.org",
       "badges": [
-        "Manga",
-        "Manhua",
-        "Manhwa"
+        "Mixed",
+        "English"
       ],
       "supportedLanguages": [
         "en_US"
@@ -317,7 +286,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 106961928,
-      "hash": "0aec29440aec29440aec29440aec29440aec29440aec29440aec29440aec2944"
+      "hash": "42f3e27942f3e27942f3e27942f3e27942f3e27942f3e27942f3e27942f3e279"
     },
     {
       "id": "VyManga",
@@ -331,26 +300,19 @@
         "en_US"
       ],
       "badges": [
-        "ODT candidate"
+        "Mixed",
+        "English"
       ],
       "developers": [
         {
           "name": "Lucifers Circle",
           "github": "https://github.com/LucifersCircle"
-        },
-        {
-          "name": "Popmango",
-          "github": "https://github.com/PoppingMangoSources"
-        },
-        {
-          "name": "Inkdex",
-          "github": "https://github.com/inkdex"
         }
       ],
       "path": "VyManga",
       "environment": "source",
       "intents": 106961928,
-      "hash": "48ff7f3048ff7f3048ff7f3048ff7f3048ff7f3048ff7f3048ff7f3048ff7f30"
+      "hash": "10f7c36710f7c36710f7c36710f7c36710f7c36710f7c36710f7c36710f7c367"
     }
   ]
 }
