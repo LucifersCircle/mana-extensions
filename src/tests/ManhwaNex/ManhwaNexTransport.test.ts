@@ -134,7 +134,7 @@ describe('ManhwaNex native public-image transport', () => {
             // imageDispatch always uses GET: invoke the registered SDK callback
             // with a valid image origin to test its method guard independently.
             for (const method of [HttpMethod.Head, HttpMethod.Post, HttpMethod.Put, HttpMethod.Patch, HttpMethod.Delete, HttpMethod.Options]) {
-                await expect(Promise.resolve().then(() => interceptor({ url: cover, method, headers: new HttpHeaders() },
+                await expect(Promise.resolve().then(() => interceptor({ url: cover, method, headers: new HttpHeaders(), fragmentParams: Object.freeze({}) },
                     { origin, requestId: 'method-control', attempt: 1, metadata: {} }))).rejects.toThrow(/Invalid ManhwaNex image request/)
             }
         }
