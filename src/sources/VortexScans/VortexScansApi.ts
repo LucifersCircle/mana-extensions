@@ -73,6 +73,7 @@ export class VortexScansApi {
                 chapters.set(chapter.id, chapter)
             }
             if (total !== undefined && chapters.size > total) throw new Error('VortexScans chapter inventory exceeds its total; refresh')
+            if (rows.length > 0 && chapters.size === before) throw new Error('VortexScans chapter inventory repeated without progress; refresh')
             if ((total !== undefined && chapters.size === total) || (total === undefined && rows.length < take)) {
                 return { post: { chapters: [...chapters.values()] }, ...(total === undefined ? {} : { totalChapterCount: total }) }
             }

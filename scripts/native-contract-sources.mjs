@@ -450,12 +450,14 @@ export const sourceContracts = {
           if (total !== undefined) assert.equal(raw.totalChapterCount, total, 'Source total changed during inventory');
           total = raw.totalChapterCount;
         }
+        const before = byID.size;
         for (const chapter of rows) {
           assert(Number.isSafeInteger(chapter.id) && chapter.id > 0);
           if (chapter.mangaPostId !== undefined) assert.equal(String(chapter.mangaPostId), state.id.split(':')[0]);
           if (byID.has(chapter.id)) assert.deepEqual(chapter, byID.get(chapter.id), 'Overlapping chapter identity changed');
           byID.set(chapter.id, chapter);
         }
+        assert(rows.length === 0 || byID.size > before, 'Source chapter page repeated without progress');
         offset += rows.length; lastCount = rows.length;
       }
       const chapters = [...byID.values()];
