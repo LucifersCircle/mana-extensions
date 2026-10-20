@@ -2,14 +2,23 @@
 import { ContentRating,
     JsonValue,
     Option,
-    SearchRequest } from '@mana-app/types'
-import { Filters,
+    SearchRequest,
+    SourceContext } from '@mana-app/types'
+import { ageRatings,
+    CHAPTER_PRESETS,
+    Filters,
     RATINGS,
     Rating,
     Selection,
+    Series,
     Settings,
-    TagEntry } from './KaganeModels'
-import { manaRating } from './KaganeParsers'
+    strictUUID,
+    TagEntry,
+    UploadSource,
+    uploadTypes } from './KaganeModels'
+import { allowed,
+    manaRating,
+    uploadAllowed } from './KaganeParsers'
 import { assertRatingPolicy,
     ratingAllowed } from '../../ContentRatingPolicy'
 import { resolveTypedTags,
@@ -19,36 +28,47 @@ import { resolveTypedTags,
 
 type NumericRange = { min?: number, max?: number }
 
-/** Native optional text inputs, validated before any provider/taxonomy request. */
+/** Validated before any provider request; a stepper left at its floor is unset. */
 export function readNumericRanges(filters: Filters | undefined): Record<string, NumericRange> {
     if (filters === undefined) return {}
     if (!filters || typeof filters !== 'object' || Array.isArray(filters)) throw invalidNumericRange()
     const body: Record<string, NumericRange> = {}
-    for (const [field, floor, ceiling] of [['current_books', 0, 2147483647], ['start_year', 1, 9999]] as const) {
+    for (const [field, lowest, highest, floor] of [['current_books', 0, 2147483647, 0], ['current_volumes', 0, 2147483647, 0], ['start_year', 1, 9999], ['end_year', 1, 9999]] as const) {
         const range: NumericRange = {}
         for (const side of ['min', 'max'] as const) {
             const id = `${field}_${side}`
             if (!Object.prototype.hasOwnProperty.call(filters, id)) continue
             const value = filters[id]
-            if (typeof value !== 'string') throw invalidNumericRange()
-            const text = value.trim()
-            if (!text) continue
-            if (!/^[0-9]+$/.test(text)) throw invalidNumericRange()
+            const text = typeof value === 'number' ? String(value) : typeof value === 'string' ? value.trim() : undefined
+            if (text === undefined || (text && !/^[0-9]+$/.test(text))) throw invalidNumericRange()
             const number = Number(text)
-            if (!Number.isSafeInteger(number) || number < floor || number > ceiling) throw invalidNumericRange()
+            if (!text || (typeof value === 'number' && number === floor)) continue
+            if (!Number.isSafeInteger(number) || number < lowest || number > highest) throw invalidNumericRange()
             range[side] = number
         }
         if (range.min !== undefined && range.max !== undefined && range.min > range.max) throw invalidNumericRange()
         if (Object.keys(range).length) body[field] = range
     }
+    // A typed chapter bound replaces the preset.
+    const preset = selectedOption(filters, 'chapter_range')
+    if (preset && !body.current_books) {
+        const match = CHAPTER_PRESETS.some((option) => option.id === preset) ? /^(\d+)(?:-(\d+)|\+)$/.exec(preset) : null
+        if (!match) throw invalidNumericRange()
+        body.current_books = { min: Number(match[1]), ...(match[2] ? { max: Number(match[2]) } : {}) }
+    }
     return body
 }
 
-function invalidNumericRange(): Error { return new Error('Invalid Kagane numeric range. Use whole chapter counts 0–2147483647 or start years 1–9999, with minimum no greater than maximum.') }
+function invalidNumericRange(): Error { return new Error('Invalid Kagane numeric range. Use whole chapter and volume counts or years 1–9999, with the lower bound no greater than the upper.') }
 
 export function selectedOptions(filters: Filters | undefined, id: string): string[] {
     const value = filters?.[id]
     return Array.isArray(value) ? value.filter((item): item is Option => !!item && typeof item === 'object' && typeof item.id === 'string').map((item) => item.id) : []
+}
+export function selectedOption(filters: Filters | undefined, id: string): string | undefined {
+    const value = filters?.[id]
+    if (typeof value === 'string') return value || undefined
+    return value && typeof value === 'object' && !Array.isArray(value) && typeof (value as Option).id === 'string' ? (value as Option).id : undefined
 }
 function selection(filters: Filters | undefined, id: string): { included: string[], excluded: string[] } {
     const value = filters?.[id]
@@ -85,9 +105,15 @@ function validateTagIds(values: string[], tags: TagEntry[]): void {
     }
 }
 
-function compound(included: string[], excluded: string[], match: boolean): Record<string, JsonValue> | undefined {
-    const values = [...new Set(included)]
-    const exclude = [...new Set(excluded)]
+function withinLimit(values: string[], label: string): string[] {
+    const unique = [...new Set(values)]
+    if (unique.length > 50) throw new Error(`Kagane allows at most 50 ${label}, and ${unique.length} are picked.`)
+    return unique
+}
+
+function compound(included: string[], excluded: string[], match: boolean, label: string): Record<string, JsonValue> | undefined {
+    const values = withinLimit(included, `included ${label}`)
+    const exclude = withinLimit(excluded, `excluded ${label}`)
     return values.length || exclude.length ? { values, ...(match && values.length ? { match_all: true } : {}), ...(exclude.length ? { exclude } : {}) } : undefined
 }
 /** One selected visible tag can stand for several spelling/alias IDs. */
@@ -123,8 +149,8 @@ export function searchBody(request: SearchRequest<Filters>, settings: Settings, 
     const body: Record<string, JsonValue> = {
         ...ranges,
         content_rating: ratings,
-        age_rating: [...new Set(ratings.map((rating) => rating === 'Safe' ? 'Safe' : rating === 'Suggestive' ? 'FifteenPlus' : 'EighteenPlus'))],
-        source_type: settings.uploadSource === 'official' ? ['Official'] : settings.uploadSource === 'scanlations' ? ['Unofficial', 'Mixed'] : ['Official', 'Unofficial', 'Mixed']
+        age_rating: ageRatings(ratings),
+        source_type: uploadTypes(settings.uploadSource)
     }
     if (!ratings.includes('Pornographic')) body.is_pornographic = false
     else if (ratings.length === 1) body.is_pornographic = true
@@ -135,15 +161,22 @@ export function searchBody(request: SearchRequest<Filters>, settings: Settings, 
         delete body.age_rating
         delete body.is_pornographic
     }
-    if (settings.languages.length) body.content_lang = settings.languages
+    // Narrows the saved upload choice; titles outside it cannot be opened.
+    const types = selectedOptions(request.filters, 'source_type').filter((type) => uploadTypes(settings.uploadSource).includes(type))
+    if (types.length) body.source_type = types
+    // Overrides the saved languages.
+    const languages = selectedOptions(request.filters, 'content_lang')
+    if (languages.length || settings.languages.length) body.content_lang = languages.length ? languages : settings.languages
+    const disturbing = selectedOption(request.filters, 'is_disturbing')
+    if (disturbing === 'exclude' || settings.hideDisturbing) body.is_disturbing = false
     const query = request.query?.trim()
     if (query) body.title = query
-    for (const id of ['format', 'upload_status', 'source_id']) {
+    for (const id of ['format', 'upload_status', 'publication_status', 'source_id', 'original_language', 'translated_language']) {
         const values = selectedOptions(request.filters, id)
-        if (values.length) body[id] = values
+        if (values.length) body[id] = id === 'source_id' ? withinLimit(values, 'sources') : values
     }
     const genres = selection(request.filters, 'genres')
-    const genreFilter = compound(genres.included, [...genres.excluded, ...settings.excludedGenres], request.filters?.match_all_genres === true)
+    const genreFilter = compound(genres.included, [...genres.excluded, ...settings.excludedGenres], request.filters?.match_all_genres === true, 'genres')
     if (genreFilter) body.genres = genreFilter
     const typed = resolveTypedTags(typeof request.filters?.tag_query === 'string' ? request.filters.tag_query : '', Object.fromEntries(tags.map((tag) => [tag.id, tag.tag_name])))
     // API cannot express (alias A OR alias B) AND a second conceptual tag.
@@ -151,7 +184,8 @@ export function searchBody(request: SearchRequest<Filters>, settings: Settings, 
     const tagFilter = compound(
         [...pooled.flatMap((pick) => pick.included.flatMap(tagIdsOf)), ...typed.included],
         [...pooled.flatMap((pick) => pick.excluded.flatMap(tagIdsOf)), ...typed.excluded, ...settings.excludedTags.flatMap(tagIdsOf)],
-        request.filters?.match_all_tags === true && includedTagGroups(request.filters, tags).every((group) => group.length === 1)
+        request.filters?.match_all_tags === true && includedTagGroups(request.filters, tags).every((group) => group.length === 1),
+        'tags'
     )
     if (tagFilter) body.tags = tagFilter
     return body
@@ -160,6 +194,12 @@ export function searchBody(request: SearchRequest<Filters>, settings: Settings, 
 export function hasHidden(ids: readonly string[] | undefined, excluded: readonly string[]): boolean {
     const hidden = new Set(excluded.flatMap(tagIdsOf))
     return (ids ?? []).some((id) => hidden.has(id))
+}
+
+// Chart and recommendation rows skip the catalogue search, so its policy is applied here.
+export function visibleRow(row: Series, settings: Settings, ratings: Rating[], sources: UploadSource[], context?: SourceContext): boolean {
+    return !!strictUUID(row.series_id) && !!row.cover_image_id?.trim() && allowed(row, settings, ratings, context?.allowedContentRatings)
+        && !hasHidden(row.genres, settings.excludedGenres) && !hasHidden(row.tags, settings.excludedTags) && !(settings.hideDisturbing && row.is_disturbing === true) && uploadAllowed(settings, sources, row.source_id)
 }
 
 export function hostRatingKey(host: readonly ContentRating[] | undefined): string {

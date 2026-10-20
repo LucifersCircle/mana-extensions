@@ -7,17 +7,25 @@ import { Body,
     HttpMethod,
     HttpResponse,
     JsonValue } from '@mana-app/types'
-import { API,
+import { ageRatings,
+    api,
     Book,
     Challenge,
     Detail,
-    DOMAIN,
     Genre,
     ManifestPage,
+    origin,
+    PAGE_SIZE,
+    parseURL,
+    Rating,
     SearchResponse,
+    Series,
     strictUUID,
     TagEntry,
+    TrendingEntry,
+    trustedHost,
     UploadSource,
+    uploadTypes,
     validId } from './KaganeModels'
 
 type CacheEntry = { at: number, value: unknown }
@@ -30,7 +38,7 @@ const publicTaxonomyRequests = new Map<string, Promise<unknown>>()
 export class KaganeApi {
     private readonly client = new HttpClient().setRateLimit(3, 1000).setTimeoutMs(30_000)
         .addHeader('Accept', 'application/json').addHeader('Content-Type', 'application/json')
-        .addHeader('Origin', DOMAIN).addHeader('Referer', `${DOMAIN}/`)
+        .addRequestInterceptor((request) => ({ ...request, headers: request.headers.setAll({ Origin: origin(), Referer: `${origin()}/` }) }))
     private readonly cache = new Map<string, CacheEntry>()
     private readonly inflight = new Map<string, Promise<unknown>>()
     private generation = 0
@@ -100,7 +108,7 @@ export class KaganeApi {
         if (mitigated || ((response.status === 403 || response.status === 503) && !type.includes('application/json') && /cf-chl-|_cf_chl_opt|Just a moment|cf-browser-verification/i.test(await response.text()))) {
             this.token = ''
             this.expiry = 0
-            throw new CloudflareError(`${DOMAIN}/`)
+            throw new CloudflareError(`${origin()}/`)
         }
         return response
     }
@@ -112,7 +120,7 @@ export class KaganeApi {
     }
 
     private async json<T>(path: string, body?: Record<string, JsonValue>): Promise<T> {
-        return this.parse<T>(await this.response(`${API}${path}`, body))
+        return this.parse<T>(await this.response(`${api()}${path}`, body))
     }
 
     search(body: Record<string, JsonValue>, page: number, size: number, sort: string, exactMatch = false): Promise<SearchResponse> {
@@ -167,41 +175,74 @@ export class KaganeApi {
         })
     }
 
+    // One request for the whole list; each row is a column array named by `fields`.
     books(seriesId: string): Promise<Book[]> {
         return this.cached(`books:${validId(seriesId)}`, 120_000, async () => {
-            const base = `/series/${seriesId}/books`
-            const index = await this.json<{ fields: string[], books: unknown[][], count: number }>(`${base}/index`)
-            const column = Array.isArray(index?.fields) ? index.fields.indexOf('book_id') : -1
-            if (column < 0 || !Array.isArray(index.books) || !Number.isSafeInteger(index.count) || index.count < 0 || index.books.length !== index.count) throw new Error('Kagane chapter index is invalid')
-            const expected = new Set<string>()
-            for (const row of index.books) {
-                const id = Array.isArray(row) ? row[column] : undefined
-                if (typeof id !== 'string' || !id.trim() || expected.has(id)) throw new Error('Kagane chapter index has invalid or duplicate IDs')
-                validId(id)
-                expected.add(id)
-            }
-            const books: Book[] = []
+            const index = await this.json<{ fields: string[], books: unknown[][], groups?: { title: string }[], count: number }>(`/series/${seriesId}/books/index?fields=List`)
+            if (!Array.isArray(index?.fields) || !Array.isArray(index.books) || !Number.isSafeInteger(index.count) || index.books.length !== index.count) throw new Error('Kagane chapter index is invalid')
             const seen = new Set<string>()
-            const cursors = new Set<string>()
-            let before: string | undefined
-            for (let count = 0; count <= expected.size; count += 1) {
-                const page = await this.json<{ items: Book[], next_cursor: string | null }>(`${base}?limit=200${before ? `&before=${encodeURIComponent(before)}` : ''}`)
-                if (!page || !Array.isArray(page.items)) throw new Error('Kagane chapter page is missing items')
-                for (const book of page.items) {
-                    if (!book || typeof book.book_id !== 'string' || !expected.has(book.book_id) || seen.has(book.book_id) || (book.series_id != null && book.series_id !== seriesId) || typeof book.title !== 'string') throw new Error('Kagane chapter page does not match its series index; retry')
-                    seen.add(book.book_id)
-                    books.push(book)
-                }
-                if (page.next_cursor === null) {
-                    if (seen.size !== expected.size) throw new Error('Kagane chapter list is incomplete; retry')
-                    return books
-                }
-                const next = page.next_cursor
-                if (typeof next !== 'string' || !next.trim() || cursors.has(next) || !page.items.length || seen.size === expected.size) throw new Error('Kagane chapter pagination did not advance')
-                cursors.add(next)
-                before = next
-            }
-            throw new Error('Kagane chapter pagination exceeded its index')
+            const isoTime = (value: unknown): unknown => typeof value === 'number' ? new Date(value * 1000).toISOString() : value
+            return index.books.map((row) => {
+                if (!Array.isArray(row) || row.length !== index.fields.length) throw new Error('Kagane chapter index has an invalid row')
+                const book: Record<string, unknown> = Object.fromEntries(index.fields.map((field, column) => [field, row[column]]))
+                if (typeof book.book_id !== 'string' || seen.has(book.book_id) || typeof book.title !== 'string') throw new Error('Kagane chapter index has invalid or duplicate IDs')
+                seen.add(validId(book.book_id))
+                const groups = Array.isArray(book.group_ix) ? book.group_ix.map((position) => index.groups?.[position]).filter((group): group is { title: string } => typeof group?.title === 'string') : undefined
+                return { ...book, groups, released_at: isoTime(book.released_at), available_at: isoTime(book.available_at) } as Book
+            })
+        })
+    }
+
+    async trending(ratings: readonly Rating[], languages: string[], hideDisturbing: boolean): Promise<TrendingEntry[]> {
+        // The chart takes at most five languages; longer lists are matched locally, from enough rows to fill it.
+        const local = languages.length > 5
+        const query = [
+            `limit=${local ? PAGE_SIZE : 5}`, `age_rating=${encodeURIComponent(ageRatings(ratings).join(','))}`,
+            ...(languages.length && !local ? [`lang=${encodeURIComponent(languages.join(','))}`] : []),
+            ...(!ratings.includes('Pornographic') ? ['is_pornographic=false'] : ratings.length === 1 ? ['is_pornographic=true'] : []),
+            ...(hideDisturbing ? ['is_disturbing=false'] : [])
+        ].join('&')
+        const result = await this.json<{ items: TrendingEntry[] }>(`/series/trending?${query}`)
+        if (!Array.isArray(result?.items) || result.items.some((entry) => !entry?.series || typeof entry.series.series_id !== 'string')) throw new Error('Kagane trending chart is invalid')
+        return result.items
+    }
+
+    // Recommendations take visibility toggles, not the catalogue's exact-match flags.
+    similar(seriesId: string, ratings: readonly Rating[], languages: string[], uploadSource: string, hideDisturbing: boolean): Promise<Series[]> {
+        const query = [
+            'kind=similar', 'limit=10', `age_rating=${encodeURIComponent(ageRatings(ratings).join(','))}`,
+            `is_pornographic=${ratings.includes('Pornographic')}`, `is_disturbing=${!hideDisturbing}`,
+            ...(languages.length ? [`lang=${encodeURIComponent(languages.join(','))}`] : []),
+            ...(uploadSource === 'all' ? [] : [`source_type=${encodeURIComponent(uploadTypes(uploadSource).join(','))}`])
+        ].join('&')
+        return this.cached(`similar:${validId(seriesId)}:${query}`, 30_000, async () => {
+            const result = await this.parse<SearchResponse>(await this.response(`${origin()}/api/v1/rec/series/${seriesId}/similar?${query}`))
+            if (!Array.isArray(result?.content)) throw new Error('Kagane recommendations are invalid')
+            return result.content
+        })
+    }
+
+    // Facets include uploader languages the site's own menu leaves out.
+    languages(): Promise<string[]> {
+        return this.taxonomy('languages', async () => {
+            const result = await this.json<SearchResponse>('/search/series?page=0&size=1&facets=true', {})
+            const values = [...new Set((result?.facets?.content_lang ?? []).map((entry) => entry?.value).filter((value): value is string => typeof value === 'string' && !!value.trim()))]
+            if (!values.length) throw new Error('Kagane languages are unavailable')
+            return values
+        })
+    }
+
+    resolvePerson(kind: 'staff' | 'groups', name: string): Promise<string> {
+        const id = strictUUID(name)
+        if (id) return Promise.resolve(id)
+        return this.cached(`${kind}:${name.toLowerCase()}`, 120_000, async () => {
+            const candidates = kind === 'staff'
+                ? (await this.json<{ content: { staff_id: string, name: string }[] }>('/search/staff?size=8', { name })).content.map((person) => ({ id: person.staff_id, name: person.name }))
+                : (await this.json<{ items: { group_id: string, title: string }[] }>(`/groups/search?q=${encodeURIComponent(name)}&limit=8`)).items.map((group) => ({ id: group.group_id, name: group.title }))
+            const exact = candidates.filter((candidate) => candidate.name.toLowerCase() === name.toLowerCase())
+            const matches = exact.length ? exact : candidates
+            if (matches.length === 1 && matches[0]) return matches[0].id
+            throw new Error(matches.length ? `Several Kagane matches for ${name}; enter the full name` : `No Kagane matches for ${name}`)
         })
     }
 
@@ -210,9 +251,9 @@ export class KaganeApi {
         if (this.integrityRequest) return this.integrityRequest
         const generation = this.generation
         const request = (async () => {
-            const warmup = await this.response(`${DOMAIN}/`)
+            const warmup = await this.response(`${origin()}/`)
             if (warmup.status >= 400) throw new Error(`Kagane session bootstrap failed (HTTP ${warmup.status})`)
-            const result = await this.parse<{ token: string, exp: number }>(await this.response(`${DOMAIN}/api/integrity`, {}))
+            const result = await this.parse<{ token: string, exp: number }>(await this.response(`${origin()}/api/integrity`, {}))
             if (!result || typeof result.token !== 'string' || !result.token || !Number.isFinite(result.exp) || result.exp * 1000 <= Date.now()) throw new Error('Kagane returned an invalid reader bootstrap')
             if (generation !== this.generation) throw new Error('Kagane settings changed; refresh to continue')
             this.token = result.token
@@ -228,7 +269,7 @@ export class KaganeApi {
         return this.cached(`reader:${chapterId}:${dataSaver}`, 0, async () => {
             for (const force of [false, true]) {
                 const token = await this.integrity(force)
-                const response = await this.response(`${API}/books/${chapterId}?is_datasaver=${dataSaver}`, {}, { 'x-integrity-token': token })
+                const response = await this.response(`${api()}/books/${chapterId}?is_datasaver=${dataSaver}`, {}, { 'x-integrity-token': token })
                 if ([401, 403, 507].includes(response.status) && !force) {
                     // Refresh only the public session bootstrap, never a login or paid entitlement.
                     if (/login|sign.?in|subscription|premium|purchase|payment|paid|permission/i.test(await response.text())) break
@@ -256,10 +297,9 @@ export class KaganeApi {
     }
 
     private cacheOrigin(value?: string | null): string {
-        const url = new URL(value || DOMAIN)
-        // kstatic.to is the exact CDN published by Kagane's own reader challenge.
+        const url = parseURL(value || origin())
         // Do not trust arbitrary cache_url hosts or all domains under that CDN.
-        if (url.protocol !== 'https:' || url.username || url.password || (url.port && url.port !== '443') || (url.hostname !== 'kstatic.to' && url.hostname !== 'kagane.org' && !url.hostname.endsWith('.kagane.org'))) throw new Error('Kagane returned an untrusted image server')
+        if (!url || !trustedHost(url.hostname)) throw new Error('Kagane returned an untrusted image server')
         return url.origin
     }
 
