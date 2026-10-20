@@ -185,7 +185,7 @@ export class KaganeApi {
             return index.books.map((row) => {
                 if (!Array.isArray(row) || row.length !== index.fields.length) throw new Error('Kagane chapter index has an invalid row')
                 const book: Record<string, unknown> = Object.fromEntries(index.fields.map((field, column) => [field, row[column]]))
-                if (typeof book.book_id !== 'string' || seen.has(book.book_id) || typeof book.title !== 'string') throw new Error('Kagane chapter index has invalid or duplicate IDs')
+                if (typeof book.book_id !== 'string' || seen.has(book.book_id) || (book.series_id != null && book.series_id !== seriesId) || typeof book.title !== 'string') throw new Error('Kagane chapter index has invalid, duplicate or foreign IDs')
                 seen.add(validId(book.book_id))
                 const groups = Array.isArray(book.group_ix) ? book.group_ix.map((position) => index.groups?.[position]).filter((group): group is { title: string } => typeof group?.title === 'string') : undefined
                 return { ...book, groups, released_at: isoTime(book.released_at), available_at: isoTime(book.available_at) } as Book
