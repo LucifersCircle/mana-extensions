@@ -109,7 +109,7 @@ export class Target implements
     PageRequestHandler {
     readonly info: SourceInfo = {
         id: 'VortexScans',
-        version: '0.0.1-alpha.14',
+        version: '0.0.1-alpha.15',
         name: 'VortexScans',
         description: 'Read manga, manhwa, and manhua from VortexScans.',
         thumbnail: 'VortexScans.png',

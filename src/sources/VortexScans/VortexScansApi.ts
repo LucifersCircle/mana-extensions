@@ -8,6 +8,7 @@ import {
 import {
     VORTEX_API_URL,
     VORTEX_DOMAIN,
+    VortexChapter,
     VortexChapterResponse,
     VortexChaptersResponse,
     VortexCollectionDetailResponse,
@@ -42,14 +43,45 @@ export class VortexScansApi {
         return this.getJson('post', { postSlug })
     }
 
-    getChapters(postId: string): Promise<VortexChaptersResponse> {
-        return this.getJson('chapters', {
-            postId,
-            skip: 0,
-            take: 500,
-            order: 'desc',
-            search: ''
-        })
+    async getChapters(postId: string): Promise<VortexChaptersResponse> {
+        const take = 500, chapters = new Map<number, VortexChapter>()
+        let skip = 0, total: number | undefined
+        // Bound provider errors without returning a silently truncated inventory.
+        for (let page = 0; page < 20; page++) {
+            const response = await this.getJson<VortexChaptersResponse>('chapters', {
+                postId, skip, take, order: 'desc', search: ''
+            })
+            const rows = response.post?.chapters
+            if (!Array.isArray(rows) || rows.length > take) throw new Error('VortexScans returned invalid chapter inventory')
+            if (response.totalChapterCount !== undefined) {
+                const count = response.totalChapterCount
+                if (!Number.isSafeInteger(count) || count < 0 || (total !== undefined && total !== count)) {
+                    throw new Error('VortexScans chapter total changed or is invalid; refresh')
+                }
+                total = count
+            }
+            const before = chapters.size
+            for (const chapter of rows) {
+                if (!chapter || !Number.isSafeInteger(chapter.id) || chapter.id <= 0
+                    || (chapter.mangaPostId !== undefined && String(chapter.mangaPostId) !== postId)) {
+                    throw new Error('VortexScans returned mismatched or invalid chapter identity')
+                }
+                const previous = chapters.get(chapter.id)
+                if (previous && JSON.stringify(previous) !== JSON.stringify(chapter)) {
+                    throw new Error('VortexScans chapter changed across inventory pages; refresh')
+                }
+                chapters.set(chapter.id, chapter)
+            }
+            if (total !== undefined && chapters.size > total) throw new Error('VortexScans chapter inventory exceeds its total; refresh')
+            if (rows.length > 0 && chapters.size === before) throw new Error('VortexScans chapter inventory repeated without progress; refresh')
+            if ((total !== undefined && chapters.size === total) || (total === undefined && rows.length < take)) {
+                return { post: { chapters: [...chapters.values()] }, ...(total === undefined ? {} : { totalChapterCount: total }) }
+            }
+            if (chapters.size === before) throw new Error('VortexScans chapter inventory stopped before completion; refresh')
+            // Advance by consumed rows, not unique IDs or publicly readable rows.
+            skip += rows.length
+        }
+        throw new Error('VortexScans chapter inventory exceeded 20 pages; refresh')
     }
 
     getChapter(chapterId: string): Promise<VortexChapterResponse> {
