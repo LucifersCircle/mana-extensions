@@ -16,6 +16,7 @@ export function setMirror(host: unknown): string {
 }
 // Mana's runtime has no URL global.
 export function parseURL(value: string): { origin: string, hostname: string, pathname: string } | undefined {
+    for (const char of value) if (char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127) return undefined
     const match = /^https:\/\/([a-z0-9.-]+)(?::443)?(\/[^?#]*)?(?:[?#].*)?$/i.exec(value)
     const hostname = match?.[1]?.toLowerCase(), pathname = match?.[2] ?? '/'
     // A client would normalize dot segments and encoded separators after the path checks.
