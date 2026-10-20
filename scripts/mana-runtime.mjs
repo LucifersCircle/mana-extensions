@@ -77,11 +77,21 @@ export function assertPublicKaganeRequest(request) {
     if (typeof request.url === 'string' && /^https:\/\/kagane\.org\/api\/v2\/trackers\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}\/series$/.test(request.url)) return
     if (!target.search && ['/', '/api/v2/genres/list', '/api/v2/tags/list'].includes(target.pathname)) return
     if (/^\/api\/v2\/image\/[A-Za-z0-9-]+$/.test(target.pathname) && !target.search) return
-    if (/^\/api\/v2\/series\/[A-Za-z0-9-]+(?:\/books\/index)?$/.test(target.pathname) && !target.search) return
-    if (/^\/api\/v2\/series\/[A-Za-z0-9-]+\/books$/.test(target.pathname)
-        && params.every((key) => ['limit', 'before'].includes(key))
-        && target.searchParams.get('limit') === '200'
-        && (!target.searchParams.has('before') || Boolean(target.searchParams.get('before')?.trim()))) return
+    if (/^\/api\/v2\/series\/[A-Za-z0-9-]+$/.test(target.pathname) && !target.search) return
+    if (/^\/api\/v2\/series\/[A-Za-z0-9-]+\/books\/index$/.test(target.pathname)
+        && params.length === 1 && target.searchParams.get('fields') === 'List') return
+    const list = (key, pattern) => !target.searchParams.has(key) || target.searchParams.get(key).split(',').every((value) => pattern.test(value))
+    const flag = (key) => [null, 'true', 'false'].includes(target.searchParams.get(key))
+    const ages = list('age_rating', /^(?:Safe|FifteenPlus|EighteenPlus)$/), languages = list('lang', /^[A-Za-z0-9-]+$/)
+    if (target.pathname === '/api/v2/series/trending'
+        && params.every((key) => ['limit', 'age_rating', 'lang', 'is_pornographic', 'is_disturbing'].includes(key))
+        && ['5', '50'].includes(target.searchParams.get('limit')) && ages && languages && flag('is_pornographic') && flag('is_disturbing')) return
+    if (/^\/api\/v1\/rec\/series\/[A-Za-z0-9-]+\/similar$/.test(target.pathname)
+        && params.every((key) => ['kind', 'limit', 'age_rating', 'is_pornographic', 'is_disturbing', 'lang', 'source_type'].includes(key))
+        && target.searchParams.get('kind') === 'similar' && target.searchParams.get('limit') === '10'
+        && ages && languages && flag('is_pornographic') && flag('is_disturbing') && list('source_type', /^(?:Official|Unofficial|Mixed)$/)) return
+    if (target.pathname === '/api/v2/groups/search' && params.length === 2
+        && Boolean(target.searchParams.get('q')?.trim()) && target.searchParams.get('limit') === '8') return
     return reject()
 }
 
@@ -93,7 +103,7 @@ function assertReadOnlyPost(request) {
     return assertReadOnlyMangaSushiPost(request)
 }
 
-// Kagane uses POST for public search, uploader taxonomy and the normal public-reader
+// Kagane uses POST for public series and staff search, uploader taxonomy and the normal public-reader
 // integrity/bootstrap handshake. These exact read-only routes are allowed, not a
 // general-purpose POST escape hatch. Account, collection, upload and paid routes fail.
 export function assertReadOnlyKaganePost(request) {
@@ -116,7 +126,9 @@ export function assertReadOnlyKaganePost(request) {
         && keys.length === 1 && keys[0] === 'source_types'
         && (body.source_types === null || (Array.isArray(body.source_types)
             && body.source_types.every((type) => ['Official', 'Unofficial', 'Mixed'].includes(type))))) return
-    const searchKeys = ['source_type', 'title', 'content_rating', 'age_rating', 'is_pornographic', 'content_lang', 'format', 'upload_status', 'source_id', 'genres', 'tags', 'current_books', 'start_year']
+    if (target.pathname === '/api/v2/search/staff' && params.length === 1 && target.searchParams.get('size') === '8'
+        && keys.length === 1 && keys[0] === 'name' && typeof body.name === 'string' && body.name.trim()) return
+    const searchKeys = ['source_type', 'title', 'content_rating', 'age_rating', 'is_pornographic', 'is_disturbing', 'content_lang', 'format', 'upload_status', 'publication_status', 'original_language', 'translated_language', 'source_id', 'genres', 'tags', 'staff', 'groups', 'current_books', 'current_volumes', 'start_year', 'end_year']
     const numericRange = (field, minimum, maximum) => {
         if (!keys.includes(field)) return true
         const fieldDescriptor = Object.getOwnPropertyDescriptor(body, field)
@@ -138,9 +150,12 @@ export function assertReadOnlyKaganePost(request) {
     if (target.pathname === '/api/v2/search/series' && body != null
         && keys.every((key) => searchKeys.includes(key))
         && numericRange('current_books', 0, 2147483647)
+        && numericRange('current_volumes', 0, 2147483647)
         && numericRange('start_year', 1, 9999)
+        && numericRange('end_year', 1, 9999)
         && new Set(params).size === params.length
-        && params.every((key) => ['page', 'size', 'sort', 'exact_match'].includes(key))
+        && params.every((key) => ['page', 'size', 'sort', 'exact_match', 'facets'].includes(key))
+        && ['true', null].includes(target.searchParams.get('facets'))
         && /^\d+$/.test(target.searchParams.get('page') ?? '')
         && /^[1-9]\d*$/.test(target.searchParams.get('size') ?? '')
         && ['true', 'false', null].includes(target.searchParams.get('exact_match'))) return

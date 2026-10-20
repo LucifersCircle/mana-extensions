@@ -17,8 +17,10 @@ LOCKS = {}
 LOCKS_GUARD = threading.Lock()
 ID = r'[A-Za-z0-9-]+'
 SEARCH_KEYS = {'source_type', 'title', 'content_rating', 'age_rating',
-               'is_pornographic', 'content_lang', 'format', 'upload_status',
-               'source_id', 'genres', 'tags', 'current_books', 'start_year'}
+               'is_pornographic', 'is_disturbing', 'content_lang', 'format',
+               'upload_status', 'publication_status', 'original_language',
+               'translated_language', 'source_id', 'genres', 'tags', 'staff',
+               'groups', 'current_books', 'current_volumes', 'start_year', 'end_year'}
 HEADERS = {'accept', 'content-type', 'origin', 'referer', 'user-agent', 'x-integrity-token'}
 WARM_URLS = {'kagane.org': 'https://kagane.org/',
              'marumaru105.com': 'https://marumaru105.com/manhwa',
@@ -111,11 +113,24 @@ def assert_public_request(payload):
             return
         if not url.query and re.fullmatch(r'/api/v2/image/' + ID, url.path):
             return
-        if not url.query and re.fullmatch(r'/api/v2/series/' + ID + r'(/books/index)?', url.path):
+        if not url.query and re.fullmatch(r'/api/v2/series/' + ID, url.path):
             return
-        if (re.fullmatch(r'/api/v2/series/' + ID + r'/books', url.path)
-                and params.keys() <= {'limit', 'before'} and params.get('limit') == '200'
-                and ('before' not in params or params['before'].strip())):
+        if re.fullmatch(r'/api/v2/series/' + ID + r'/books/index', url.path) and params == {'fields': 'List'}:
+            return
+        def listed(key, pattern):
+            return key not in params or all(re.fullmatch(pattern, value) for value in params[key].split(','))
+        flags = all(params.get(key) in (None, 'true', 'false') for key in ('is_pornographic', 'is_disturbing'))
+        common = flags and listed('age_rating', r'Safe|FifteenPlus|EighteenPlus') and listed('lang', r'[A-Za-z0-9-]+')
+        if (url.path == '/api/v2/series/trending' and common and params.get('limit') in ('5', '50')
+                and params.keys() <= {'limit', 'age_rating', 'lang', 'is_pornographic', 'is_disturbing'}):
+            return
+        if (re.fullmatch(r'/api/v1/rec/series/' + ID + r'/similar', url.path) and common
+                and params.get('kind') == 'similar' and params.get('limit') == '10'
+                and listed('source_type', r'Official|Unofficial|Mixed')
+                and params.keys() <= {'kind', 'limit', 'age_rating', 'is_pornographic', 'is_disturbing', 'lang', 'source_type'}):
+            return
+        if (url.path == '/api/v2/groups/search' and params.keys() == {'q', 'limit'}
+                and params['q'].strip() and params['limit'] == '8'):
             return
     if method == 'POST':
         if isinstance(body, str):
@@ -139,10 +154,16 @@ def assert_public_request(payload):
                 and (body['source_types'] is None or (isinstance(body['source_types'], list)
                      and all(item in ('Official', 'Unofficial', 'Mixed') for item in body['source_types'])))):
             return
+        if (url.path == '/api/v2/search/staff' and params == {'size': '8'} and keys == {'name'}
+                and isinstance(body['name'], str) and body['name'].strip()):
+            return
         if (url.path == '/api/v2/search/series' and body is not None and keys <= SEARCH_KEYS
                 and ('current_books' not in body or valid_numeric_range(body['current_books'], 0, 2147483647))
+                and ('current_volumes' not in body or valid_numeric_range(body['current_volumes'], 0, 2147483647))
                 and ('start_year' not in body or valid_numeric_range(body['start_year'], 1, 9999))
-                and params.keys() <= {'page', 'size', 'sort', 'exact_match'}
+                and ('end_year' not in body or valid_numeric_range(body['end_year'], 1, 9999))
+                and params.keys() <= {'page', 'size', 'sort', 'exact_match', 'facets'}
+                and params.get('facets') in ('true', None)
                 and re.fullmatch(r'[0-9]+', params.get('page', ''))
                 and re.fullmatch(r'[1-9][0-9]*', params.get('size', ''))
                 and params.get('exact_match') in ('true', 'false', None)):
