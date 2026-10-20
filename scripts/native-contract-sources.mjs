@@ -422,6 +422,7 @@ export const sourceContracts = {
     },
   },
   VortexScans: {
+    sample: '619:the-ancient-sovereign-of-eternity',
     issuedImageOwnership: false,
     methods: [...methods, ...controls], controls: true, documentLimit: 12,
     filter: (state, fields) => genre(state, fields, 'exclude'), filtered: queryGenres('genreIds', ','),
@@ -433,14 +434,33 @@ export const sourceContracts = {
       assert.equal(state.content.cover, raw.featuredImage); assert.equal(state.content.webUrl, `https://vortexscans.org/series/${slug}`);
     },
     inventory(state) {
-      const raw = json(state, url => url.pathname === '/api/chapters' && url.searchParams.get('postId') === state.id.split(':')[0]);
-      const chapters = raw.post.chapters; assert(Array.isArray(chapters));
-      if (raw.totalChapterCount !== undefined) assert.equal(chapters.length, raw.totalChapterCount, 'Native inventory truncated source total');
-      else {
-        const request = captured(state, url => url.pathname === '/api/chapters' && url.searchParams.get('postId') === state.id.split(':')[0]);
-        const take = Number(new URL(request.url).searchParams.get('take'));
-        assert(Number.isSafeInteger(take) && take > 0 && chapters.length < take, 'A saturated source chapter page without a total is not a proven complete inventory');
+      const captures = state.transport.captures.filter(item => {
+        const url = new URL(item.url);
+        return url.origin === 'https://api.vortexscans.org' && url.pathname === '/api/chapters' && url.searchParams.get('postId') === state.id.split(':')[0];
+      });
+      assert(captures.length > 0 && captures.length <= 20, 'Missing or unbounded native chapter inventory');
+      const byID = new Map(); let offset = 0, total, lastCount, take;
+      for (const capture of captures) {
+        const url = new URL(capture.url), raw = JSON.parse(capture.text), rows = raw.post?.chapters;
+        assert.equal(url.searchParams.get('skip'), String(offset)); assert.equal(url.searchParams.get('order'), 'desc');
+        take = Number(url.searchParams.get('take')); assert(Number.isSafeInteger(take) && take > 0);
+        assert(Array.isArray(rows) && rows.length <= take);
+        if (raw.totalChapterCount !== undefined) {
+          assert(Number.isSafeInteger(raw.totalChapterCount) && raw.totalChapterCount >= 0);
+          if (total !== undefined) assert.equal(raw.totalChapterCount, total, 'Source total changed during inventory');
+          total = raw.totalChapterCount;
+        }
+        for (const chapter of rows) {
+          assert(Number.isSafeInteger(chapter.id) && chapter.id > 0);
+          if (chapter.mangaPostId !== undefined) assert.equal(String(chapter.mangaPostId), state.id.split(':')[0]);
+          if (byID.has(chapter.id)) assert.deepEqual(chapter, byID.get(chapter.id), 'Overlapping chapter identity changed');
+          byID.set(chapter.id, chapter);
+        }
+        offset += rows.length; lastCount = rows.length;
       }
+      const chapters = [...byID.values()];
+      if (total !== undefined) assert.equal(chapters.length, total, 'Native inventory truncated source total');
+      else assert(lastCount < take, 'A saturated source chapter page without a total is not a proven complete inventory');
       const expected = chapters.filter(c => !c.isLocked && c.isAccessible !== false && !c.isTimeLocked && !c.isShortLinkLocked && !c.isPermanentlyLocked && !(Number(c.price) > 0 && c.isPurchased !== true && c.hasPurchased !== true))
         .sort((a, b) => Number.parseFloat(a.number) - Number.parseFloat(b.number) || new Date(a.createdAt) - new Date(b.createdAt));
       assert.deepEqual(chapterIDs(state.chapters), expected.map(c => String(c.id)), 'Native inventory/order differs from complete source chapters');
