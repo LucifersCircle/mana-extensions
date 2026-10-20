@@ -31,6 +31,7 @@ import { AlternateTitle,
     Settings,
     strictUUID,
     TagEntry,
+    TrendingEntry,
     UploadSource } from './KaganeModels'
 import { groupTags,
     tagFilterId,
@@ -88,22 +89,52 @@ export function displayTitle(title: string, settings: Settings, sources: UploadS
     return result
 }
 
-export function highlight(series: Series, settings: Settings, sources: UploadSource[]): Highlight {
+export function highlight(series: Series, settings: Settings, sources: UploadSource[], detailed = false, showUpdated = false): Highlight {
     const latest = series.latest_chapters?.[0]
-    const score = typeof series.rating === 'number' && Number.isFinite(series.rating) && series.rating > 0 && series.rating <= 100 ? (series.rating / 10).toFixed(1) : undefined
-    const badge = [series.format, score ? `★ ${score}` : undefined].filter(Boolean).join(' · ')
-    const subtitle = latest?.chapter_no ? `Ch. ${latest.chapter_no}` : latest?.volume_no ? `Vol. ${latest.volume_no}` : latest?.title?.trim()
+    const score = typeof series.rating === 'number' && Number.isFinite(series.rating) && series.rating > 0 && series.rating <= 100 ? `★ ${(series.rating / 10).toFixed(1)}` : undefined
+    const format = series.format && series.format !== 'Other' ? series.format : undefined
+    const status = statusLabel(series.publication_status)
+    const pill = score ?? format ?? status
+    const chapter = (latest?.chapter_no ? `Ch. ${latest.chapter_no}` : latest?.volume_no ? `Vol. ${latest.volume_no}` : latest?.title?.trim())
+        || (typeof series.current_books === 'number' ? `${series.current_books} Chapters` : undefined)
+    const subtitle = [chapter, detailed || !score && !format ? undefined : status].filter(Boolean).join(' • ')
+    const updated = showUpdated && latest ? relativeTime(date(latest.available_at ?? latest.created_at)) : ''
     return {
         id: series.series_id,
         title: displayTitle(preferredTitle(series.title, series.title_language), settings, sources, series.source_id, series.edition_info),
         cover: imageURL(series.cover_image_id), webUrl: seriesURL(series.series_id), contentRating: manaRating(series),
-        subtitle: subtitle || (typeof series.current_books === 'number' ? `${series.current_books} Chapters` : undefined),
-        badge: badge ? { text: badge } : undefined,
+        subtitle: subtitle || undefined,
+        badge: !detailed && pill ? { text: pill } : undefined,
+        // A row past four lines stretches the whole tile.
         info: [
-            ...(series.publication_status ? [{ key: 'Status', value: series.publication_status }] : []),
-            ...(series.start_year ? [{ key: 'Year', value: String(series.start_year) }] : [])
+            ...(updated ? [{ key: 'Updated', value: updated }] : []),
+            ...(score ? [{ key: 'Rating', value: score }] : []),
+            ...(format ? [{ key: 'Type', value: `♤ ${format}` }] : []),
+            ...(status ? [{ key: 'Status', value: `◌ ${status}` }] : []),
+            ...(typeof series.current_books === 'number' && series.current_books > 0 ? [{ key: 'Chapters', value: String(series.current_books) }] : []),
+            ...(series.start_year ? [{ key: 'Year', value: String(series.start_year) }] : []),
+            ...(series.genre_list?.length ? [{ key: 'Genres', value: series.genre_list.slice(0, 2).map((genre) => genre.name).join(', ') }] : [])
+        ].slice(0, 4)
+    }
+}
+
+// Chart rows carry no review score.
+export function chartHighlight(entry: TrendingEntry, settings: Settings, sources: UploadSource[]): Highlight {
+    const movement = entry.is_new ? 'New' : entry.delta ? `${entry.delta > 0 ? 'Up' : 'Down'} ${Math.abs(entry.delta)}` : undefined
+    return {
+        ...highlight(entry.series, settings, sources, true),
+        info: [
+            { key: 'Rank', value: String(entry.position) },
+            ...(movement ? [{ key: 'Movement', value: movement }] : []),
+            ...(entry.lift && entry.lift > 1 ? [{ key: 'Weekly growth', value: `+${Math.round((entry.lift - 1) * 100)}%` }] : [])
         ]
     }
+}
+
+export function uploadAllowed(settings: Settings, sources: UploadSource[], sourceId?: string | null): boolean {
+    if (settings.uploadSource === 'all') return true
+    const source = sources.find((entry) => entry.source_id === sourceId)
+    return !!source && (settings.uploadSource === 'official' ? source.source_type === 'Official' : source.source_type !== 'Official')
 }
 
 function statusLabel(value: unknown): string | undefined {
@@ -198,10 +229,12 @@ export function content(id: string, details: Detail, settings: Settings, sources
     const title = displayTitle(primary, settings, sources, details.source_id, details.edition_info)
     const additionalTitles = [...new Set([details.title, ...(Array.isArray(details.series_alternate_titles) ? details.series_alternate_titles : []).map((entry) => entry?.title)].filter((value): value is string => typeof value === 'string').map((value) => value.trim()).filter(Boolean))]
     const associatedNames = additionalTitles.filter((value) => value !== primary && value !== title)
+    // The site's title page prefers the Bayesian score from 150 ratings on.
+    const score = (details.total_ratings ?? 0) >= 150 && typeof details.bayesian_rating === 'number' ? details.bayesian_rating : details.average_rating
     // Group only the integer prefix; retain fractional precision and exponent notation.
     const stats = [
-        typeof details.average_rating === 'number' && Number.isFinite(details.average_rating) && details.average_rating > 0 && details.average_rating <= 100 ? `★ ${(details.average_rating / 10).toFixed(1)}` : '',
-        typeof details.total_views === 'number' && Number.isFinite(details.total_views) && details.total_views >= 0 ? `◉ ${String(details.total_views).replace(/^\d+/, (integer) => integer.replace(/\B(?=(\d{3})+(?!\d))/g, ','))} views` : ''
+        typeof score === 'number' && Number.isFinite(score) && score > 0 && score <= 100 ? `★ ${(score / 10).toFixed(1)}` : '',
+        typeof details.total_views === 'number' && Number.isFinite(details.total_views) && details.total_views >= 0 ? `⏯︎ ${String(details.total_views).replace(/^\d+/, (integer) => integer.replace(/\B(?=(\d{3})+(?!\d))/g, ','))} views` : ''
     ].filter(Boolean).join(' · ')
     const summary = [
         stats,
@@ -218,6 +251,8 @@ export function content(id: string, details: Detail, settings: Settings, sources
     }
 }
 
+const relatedItem = (id: string, title: string, cover: string | null | undefined, rating: Classification) => ({ type: AdditionalInfoType.Highlights as const, id, title, cover: imageURL(cover), webUrl: seriesURL(id), contentRating: manaRating(rating) })
+
 /** This endpoint lacks genre/tag metadata, so exclusions prohibit the request. */
 export function editionSection(rows: unknown[], currentId: string, settings: Settings, host?: readonly ContentRating[]): HighlightsSection | undefined {
     if (settings.excludedGenres.length || settings.excludedTags.length) return undefined
@@ -229,7 +264,7 @@ export function editionSection(rows: unknown[], currentId: string, settings: Set
         const source = row.source && typeof row.source === 'object' && !Array.isArray(row.source) ? row.source as Record<string, unknown> : undefined
         if (!id || !cover || !sourceId || seen.has(id) || typeof row.title !== 'string' || !row.title.trim() || hasControls(row.title)) return []
         if (!source || source.id !== row.source_id || !strictUUID(source.id) || typeof source.title !== 'string' || !source.title.trim() || hasControls(source.title) || !['Official', 'Unofficial', 'Mixed'].includes(source.source_type as string)) return []
-        if (!['Manga', 'Manhwa', 'Manhua', 'Comic', 'Other'].includes(row.format as string) || typeof row.is_disturbing !== 'boolean') return []
+        if (!['Manga', 'Manhwa', 'Manhua', 'Comic', 'Other'].includes(row.format as string) || typeof row.is_disturbing !== 'boolean' || (settings.hideDisturbing && row.is_disturbing)) return []
         const language = chapterLanguage(row.translated_language)
         if (language === 'und' || chapterLanguage(row.title_language) === 'und' || (settings.languages.length && !settings.languages.some((value) => chapterLanguage(value) === language))) return []
         if (row.edition_info != null && (typeof row.edition_info !== 'string' || hasControls(row.edition_info))) return []
@@ -237,15 +272,29 @@ export function editionSection(rows: unknown[], currentId: string, settings: Set
         if (!classify(classification) || !allowed(classification, settings, undefined, host)) return []
         if (settings.uploadSource !== 'all' && (settings.uploadSource === 'official' ? source.source_type !== 'Official' : source.source_type === 'Official')) return []
         seen.add(id)
-        return [{ type: AdditionalInfoType.Highlights as const, id, title: displayTitle(row.title, settings, [{ source_id: sourceId, title: source.title, source_type: source.source_type as string }], sourceId, row.edition_info as string | null | undefined), cover: imageURL(cover), webUrl: seriesURL(id), contentRating: manaRating(classification) }]
+        return [relatedItem(id, displayTitle(row.title, settings, [{ source_id: sourceId, title: source.title, source_type: source.source_type as string }], sourceId, row.edition_info as string | null | undefined), cover, classification)]
     })
     return items.length ? highlights.section({ id: 'other-editions', title: items.length > 10 ? 'Other Editions (first 10)' : 'Other Editions', hasMore: false, items: items.slice(0, 10) }) : undefined
+}
+
+export function similarSection(rows: Series[], settings: Settings, sources: UploadSource[]): HighlightsSection | undefined {
+    const items = rows.slice(0, 10).map((row) => relatedItem(row.series_id, displayTitle(preferredTitle(row.title, row.title_language), settings, sources, row.source_id, row.edition_info), row.cover_image_id, row))
+    return items.length ? highlights.section({ id: 'similar', title: 'More like this', hasMore: false, items }) : undefined
 }
 
 function date(value?: string | null): Date {
     if (!value) return new Date(0)
     const parsed = new Date(/(?:Z|[+-]\d{2}:?\d{2})$/i.test(value) ? value : `${value}Z`)
     return Number.isNaN(parsed.getTime()) ? new Date(0) : parsed
+}
+
+function relativeTime(when: Date): string {
+    const elapsed = Date.now() - when.getTime()
+    if (!when.getTime() || elapsed < 0) return ''
+    const unit = ([[31_536_000_000, 'year'], [2_592_000_000, 'month'], [604_800_000, 'week'], [86_400_000, 'day'], [3_600_000, 'hour'], [60_000, 'minute']] as const).find(([size]) => elapsed >= size)
+    if (!unit) return 'just now'
+    const count = Math.floor(elapsed / unit[0])
+    return `${count} ${unit[1]}${count === 1 ? '' : 's'} ago`
 }
 
 export function available(book: Book): boolean {

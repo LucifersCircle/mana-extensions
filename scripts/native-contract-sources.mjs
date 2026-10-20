@@ -302,7 +302,7 @@ export const sourceContracts = {
   Kagane: {
     reverseChapterIndices: true,
     sample: '019c2084-fa67-791d-8ba5-494744577445', methods: [...methods, ...controls, 'getPreferenceMenu'], controls: true,
-    documentLimit: 20, budgetReason: 'Official native taxonomy, alternate editions, complete index plus cursor-paginated inventory, and reader integrity bootstrap.',
+    documentLimit: 20, budgetReason: 'Official native taxonomy, alternate editions or recommendations, the one-request chapter index, and reader integrity bootstrap.',
     filter: (state, fields) => genre(state, fields, 'exclude'),
     filtered(state, _result, filter) {
       const requests = state.transport.requests.slice(state.filterRequestStart).filter(request => new URL(request.url).pathname === '/api/v2/search/series');
@@ -316,14 +316,13 @@ export const sourceContracts = {
       assert(cover?.image_id && state.content.cover.endsWith(`/api/v2/image/${cover.image_id}`), 'Native cover lost its source image identity');
     },
     inventory(state) {
-      const index = json(state, url => url.pathname === `/api/v2/series/${state.id}/books/index`), column = index.fields.indexOf('book_id');
+      const index = json(state, url => url.pathname === `/api/v2/series/${state.id}/books/index` && url.searchParams.get('fields') === 'List'), column = index.fields.indexOf('book_id');
       assert(column >= 0 && index.books.length === index.count);
-      const expected = index.books.map(row => row[column]), books = new Map();
-      for (const capture of state.transport.captures.filter(item => new URL(item.url).pathname === `/api/v2/series/${state.id}/books`)) {
-        for (const book of JSON.parse(capture.text).items) books.set(book.book_id, book);
-      }
-      assert.deepEqual([...books.keys()].sort(), expected.sort(), 'Native cursor pages must cover the complete source index');
-      const readable = [...books.values()].filter(book => !book.is_locked && !book.requires_login && !book.is_paid && (!book.available_at || new Date(book.available_at).getTime() <= Date.now()))
+      // Each row is a column array named by `fields`.
+      const books = new Map(index.books.map(row => [row[column], Object.fromEntries(index.fields.map((field, position) => [field, row[position]]))]));
+      assert.equal(books.size, index.count, 'Native chapter index has duplicate IDs');
+      const available = book => typeof book.available_at === 'number' ? book.available_at * 1000 : new Date(book.available_at).getTime();
+      const readable = [...books.values()].filter(book => !book.is_locked && !book.requires_login && !book.is_paid && (!book.available_at || available(book) <= Date.now()))
         .sort((a, b) => (a.sort_no ?? 0) - (b.sort_no ?? 0)).reverse();
       assert.deepEqual(chapterIDs(state.chapters), readable.map(book => book.book_id), 'Native chapter identity/order differs from complete source inventory'); state.books = books;
     },

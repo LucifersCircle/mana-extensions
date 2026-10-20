@@ -51,7 +51,16 @@ for (const method of ['GET', 'PUT', 'PATCH', 'DELETE', 'HEAD']) {
 accept('existing integrity bootstrap', search({}, `${origin}/api/integrity`))
 accept('existing public reader manifest', search({}, `${origin}/api/v2/books/id?is_datasaver=false`))
 accept('existing uploader taxonomy', search({ source_types: null }, `${origin}/api/v2/sources/list`))
-accept('existing public GET', { method: 'GET', url: `${origin}/api/v2/series/id/books?limit=200&before=cursor` })
+accept('chapter index GET', { method: 'GET', url: `${origin}/api/v2/series/id/books/index?fields=List` })
+accept('weekly chart GET', { method: 'GET', url: `${origin}/api/v2/series/trending?limit=5&age_rating=Safe%2CFifteenPlus&lang=en&is_pornographic=false&is_disturbing=false` })
+accept('wide chart for local language matching', { method: 'GET', url: `${origin}/api/v2/series/trending?limit=50&age_rating=Safe&is_pornographic=false` })
+accept('recommendations GET', { method: 'GET', url: `${origin}/api/v1/rec/series/id/similar?kind=similar&limit=10&age_rating=Safe&is_pornographic=false&is_disturbing=true&lang=en&source_type=Official` })
+accept('group lookup GET', { method: 'GET', url: `${origin}/api/v2/groups/search?q=team&limit=8` })
+accept('staff lookup', search({ name: 'author' }, `${origin}/api/v2/search/staff?size=8`))
+accept('language facets', search({}, `${origin}/api/v2/search/series?page=0&size=1&facets=true`))
+accept('new search filters', search({ is_disturbing: false, publication_status: ['Ongoing'], original_language: ['ja'], translated_language: ['en'], staff: { values: ['id'] }, groups: { values: ['id'] }, current_volumes: { min: 1 }, end_year: { max: 2020 } }))
+reject('old cursor GET', { method: 'GET', url: `${origin}/api/v2/series/id/books?limit=200&before=cursor` })
+reject('chapter index needs its field list', { method: 'GET', url: `${origin}/api/v2/series/id/books/index` })
 
 // The sole new read-only route must pass both independent transport guards.
 const tracker = '2a849c5f-2cc7-5d67-8be0-4a883e63565c'

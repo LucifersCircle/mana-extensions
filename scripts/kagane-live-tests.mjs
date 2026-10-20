@@ -29,7 +29,7 @@ export async function assertKaganeHostGuards({ freshSource } = {}) {
     { method: 'GET', url: `${api}/image/id?token=not-a-live-token` },
     { method: 'GET', url: `${api}/series/id/books?limit=200&before=one&before=two` },
   ]) assert.throws(() => assertPublicKaganeRequest(request), /unsupported/i);
-  for (const path of ['/api/v2/genres/list', '/api/v2/tags/list', '/api/v2/image/cover-id', '/api/v2/series/id', '/api/v2/series/id/books/index', '/api/v2/series/id/books?limit=200&before=cursor']) {
+  for (const path of ['/api/v2/genres/list', '/api/v2/tags/list', '/api/v2/image/cover-id', '/api/v2/series/id', '/api/v2/series/id/books/index?fields=List']) {
     assertPublicKaganeRequest({ method: 'GET', url: `${domain}${path}` });
   }
   const recorded = [];
@@ -287,14 +287,14 @@ export async function assertKaganeSavedSorts({ freshSource, response }) {
   for (const ascending of [undefined, false, true]) {
     await search({ id: 'relevance', ascending }); assert.equal(calls.length, relevanceCalls, 'Relevance changed its empty provider sort');
   }
-  for (const id of ['total_views', 'avg_views', 'avg_views_today', 'avg_views_week', 'avg_views_month']) {
+  for (const id of ['total_views', 'avg_views', 'avg_views_today', 'popular_now', 'avg_views_week', 'avg_views_month']) {
     await search({ id, ascending: true }); assert.equal(calls.at(-1)[3], `${id},desc`, 'Nonorderable popularity changed direction');
   }
-  for (const [listId, sort] of [['popular', 'total_views'], ['latest_updates', 'updated_at'], ['recently_added', 'created_at']]) {
+  for (const [listId, sort] of [['popular', 'avg_views'], ['latest_updates', 'updated_at'], ['recently_added', 'created_at']]) {
     await target.search({ ...request, listId, sort: { id: 'rating', ascending: true } });
     assert.equal(calls.at(-1)[0].title, undefined); assert.equal(calls.at(-1)[3], `${sort},desc`, 'Discovery lost its descending route');
   }
-  const invalid = ['series_name', 'series_name,asc', 'series_name,desc', 'series_name,invalid', 'current_books,asc', 'books_count,invalid', 'total_views,asc', 'rating,asc', 'rating,ASC', 'created_at,sideways', 'popular_now', '', null, undefined, 42, {}].map(id => ({ id }));
+  const invalid = ['series_name', 'series_name,asc', 'series_name,desc', 'series_name,invalid', 'current_books,asc', 'books_count,invalid', 'total_views,asc', 'rating,asc', 'rating,ASC', 'created_at,sideways', '', null, undefined, 42, {}].map(id => ({ id }));
   invalid.push(...[null, 'true', 0, 1, {}, []].map(ascending => ({ id: 'rating', ascending })));
   for (const sort of invalid) {
     const stale = freshSource(); let providerRequests = 0;
@@ -378,7 +378,8 @@ export async function assertKaganeNumericRanges({ freshSource, response, tags, s
     assert.equal(result.isLastPage, true);
   }
 
-  const invalidValues = [undefined, null, 0, 1, -1, 1.5, NaN, Infinity, -Infinity, true, false, {}, [], ['1'], { id: '1' },
+  // Steppers send whole numbers, so 0 and 1 are valid inputs.
+  const invalidValues = [undefined, null, -1, 1.5, NaN, Infinity, -Infinity, true, false, {}, [], ['1'], { id: '1' },
     'bad', '1x', '1.0', '1.5', '-1', '+1', '1e2', '0x10', '1_000', '1,000', '1 0', '1\n2', '１２', '١', 'NaN', 'Infinity', '9007199254740992', '9'.repeat(400)];
   const invalidFilters = Object.keys(cases.at(-1)[0]).flatMap((id) => invalidValues.map((value) => ({ [id]: value })));
   invalidFilters.push({ current_books_min: '2147483648' }, { current_books_max: '2147483648' },
@@ -433,22 +434,36 @@ export async function assertKaganeNumericRanges({ freshSource, response, tags, s
   assert.equal(paged.calls.length, before, 'Changing a bound corrupted the original continuation cache');
 }
 
-// Scores come only from the exact bulk row that produced this native item.
-export function assertKaganeListingScores({ items, rows }) {
+// Cards come only from the exact bulk row that produced this native item. Latest
+// Updates is a detailed layout: info rows lead with the update time and it draws no pill.
+export function assertKaganeListingScores({ items, rows, section }) {
+  const detailed = section === 'latest_updates';
+  const statuses = { ongoing: 'Ongoing', completed: 'Completed', hiatus: 'Hiatus', abandoned: 'Cancelled' };
   for (const item of items) {
     const raw = rows.find((row) => row.series_id === item.id);
     assert(raw, `Listing score has no consumed series_id row: ${item.id}`);
-    const score = raw.rating;
-    const expected = typeof score === 'number' && Number.isFinite(score) && score > 0 && score <= 100 ? (score / 10).toFixed(1) : undefined;
-    const badge = [raw.format, expected ? `★ ${expected}` : undefined].filter(Boolean).join(' · ');
-    assert.deepEqual(item.badge ? { ...item.badge } : undefined, badge ? { text: badge } : undefined, `Native badge differs from its exact bulk row: ${item.id}`);
+    const rating = raw.rating;
+    const score = typeof rating === 'number' && Number.isFinite(rating) && rating > 0 && rating <= 100 ? `★ ${(rating / 10).toFixed(1)}` : undefined;
+    const format = raw.format && raw.format !== 'Other' ? raw.format : undefined;
+    const status = typeof raw.publication_status === 'string' ? statuses[raw.publication_status.trim().toLowerCase()] : undefined;
+    const pill = score ?? format ?? status;
+    assert.deepEqual(item.badge ? { ...item.badge } : undefined, !detailed && pill ? { text: pill } : undefined, `Native badge differs from its exact bulk row: ${item.id}`);
     const latest = raw.latest_chapters?.[0];
-    const subtitle = latest?.chapter_no ? `Ch. ${latest.chapter_no}` : latest?.volume_no ? `Vol. ${latest.volume_no}` : latest?.title?.trim();
-    assert.equal(item.subtitle, subtitle || (typeof raw.current_books === 'number' ? `${raw.current_books} Chapters` : undefined), 'Score changed the latest-chapter subtitle');
-    assert.deepEqual(Array.from(item.info ?? [], ({ key, value }) => ({ key, value })), [
-      ...(raw.publication_status ? [{ key: 'Status', value: raw.publication_status }] : []),
+    const chapter = (latest?.chapter_no ? `Ch. ${latest.chapter_no}` : latest?.volume_no ? `Vol. ${latest.volume_no}` : latest?.title?.trim())
+      || (typeof raw.current_books === 'number' ? `${raw.current_books} Chapters` : undefined);
+    const subtitle = [chapter, detailed || !score && !format ? undefined : status].filter(Boolean).join(' • ');
+    assert.equal(item.subtitle, subtitle || undefined, `Native subtitle differs from its exact bulk row: ${item.id}`);
+    const info = Array.from(item.info ?? [], ({ key, value }) => ({ key, value }));
+    const updated = detailed && latest && info[0]?.key === 'Updated' ? info.shift() : undefined;
+    if (updated) assert.match(updated.value, /^(?:just now|\d+ (?:year|month|week|day|hour|minute)s? ago)$/);
+    assert.deepEqual(info, [
+      ...(score ? [{ key: 'Rating', value: score }] : []),
+      ...(format ? [{ key: 'Type', value: `♤ ${format}` }] : []),
+      ...(status ? [{ key: 'Status', value: `◌ ${status}` }] : []),
+      ...(typeof raw.current_books === 'number' && raw.current_books > 0 ? [{ key: 'Chapters', value: String(raw.current_books) }] : []),
       ...(raw.start_year ? [{ key: 'Year', value: String(raw.start_year) }] : []),
-    ], `Native listing info differs from its exact bulk row: ${item.id}`);
+      ...(raw.genre_list?.length ? [{ key: 'Genres', value: raw.genre_list.slice(0, 2).map((genre) => genre.name).join(', ') }] : []),
+    ].slice(0, updated ? 3 : 4), `Native listing info differs from its exact bulk row: ${item.id}`);
   }
 }
 
@@ -465,7 +480,8 @@ export async function assertKaganeListingScoreBoundaries({ freshSource, response
     [84.907, '8.5'], [92.525, '9.3'], [99.99, '10.0'], [100, '10.0'],
     [85, '8.5', missing], [0, undefined, missing], [85, '8.5', null], [85, '8.5', ''],
   ];
-  const stripScore = (items) => JSON.parse(JSON.stringify(Array.from(items, ({ badge, ...item }) => item)));
+  // The score can move the pill, the subtitle's status and every info row below it.
+  const stripScore = (items) => JSON.parse(JSON.stringify(Array.from(items, ({ badge, subtitle, info, ...item }) => item)));
   const baseline = new Map();
   for (const [value, expected, format] of cases) {
     const rows = response.content.map((row) => {
@@ -481,16 +497,13 @@ export async function assertKaganeListingScoreBoundaries({ freshSource, response
     target.api.search = async (...args) => { calls.push(args); return { ...response, content: rows, last: true }; };
     const paths = [
       ['search', async () => (await target.search({ page: 1, query: response.content[0].title })).results],
-      ...Array.from(await target.getSectionsForPage({ id: 'home' }), ({ id }) => [id, async () => (await target.resolvePageSection({ id: 'home' }, id)).items]),
+      // The weekly chart reads its own endpoint and carries no review score.
+      ...Array.from(await target.getSectionsForPage({ id: 'home' }), ({ id }) => id).filter((id) => id !== 'trending_chart').map((id) => [id, async () => (await target.resolvePageSection({ id: 'home' }, id)).items]),
     ];
     for (const [id, run] of paths) {
       const items = await run(); assert(items.length, `No visible actual rows in ${id} boundary replay`);
-      assertKaganeListingScores({ items, rows });
-      for (const item of items) {
-        const raw = rows.find((row) => row.series_id === item.id); assert(raw);
-        const text = [raw.format, expected ? `★ ${expected}` : undefined].filter(Boolean).join(' · ');
-        assert.deepEqual(item.badge ? { ...item.badge } : undefined, text ? { text } : undefined);
-      }
+      assertKaganeListingScores({ items, rows, section: id });
+      for (const item of items) assert.equal(item.info?.find((row) => row.key === 'Rating')?.value, expected ? `★ ${expected}` : undefined);
       const unchanged = stripScore(items);
       if (value === missing) baseline.set(id, unchanged);
       else assert.deepEqual(unchanged, baseline.get(id), `Rating changed unrelated native ${id} metadata, IDs, order or content policy`);
@@ -534,7 +547,8 @@ export function assertKaganeDetailMetadata({ content, metadata, sources, id, tag
   const upload = typeof metadata.upload_status === 'string' ? labels.get(metadata.upload_status.trim().toLowerCase()) : undefined;
   const description = decode((metadata.description ?? '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n\n').replace(/<[^>]*>/g, '')).trim();
   const source = sources.find((entry) => entry.source_id === metadata.source_id)?.title;
-  const score = metadata.average_rating;
+  // The site's title page prefers the Bayesian score from 150 ratings on.
+  const score = (metadata.total_ratings ?? 0) >= 150 && typeof metadata.bayesian_rating === 'number' ? metadata.bayesian_rating : metadata.average_rating;
   const views = metadata.total_views;
   // Independently group ordinary integer digits without rounding decimals or exponents.
   const viewText = typeof views === 'number' && Number.isFinite(views) && views >= 0 ? String(views).split('.') : [''];
@@ -551,7 +565,7 @@ export function assertKaganeDetailMetadata({ content, metadata, sources, id, tag
   const names = additionalTitles.filter(value => value !== primary && value !== content.title);
   const stats = [
     typeof score === 'number' && Number.isFinite(score) && score > 0 && score <= 100 ? `★ ${(score / 10).toFixed(1)}` : '',
-    typeof views === 'number' && Number.isFinite(views) && views >= 0 ? `◉ ${viewText.join('.')} views` : '',
+    typeof views === 'number' && Number.isFinite(views) && views >= 0 ? `⏯\ufe0e ${viewText.join('.')} views` : '',
   ].filter(Boolean).join(' · ');
   assert.equal(content.summary, [
     stats,
@@ -627,12 +641,13 @@ export function assertKaganeEditionMetadata({ content, rows, id, settings, allow
     if (!rating || rating[1] !== 'Pornographic' && (rating[0] !== row.is_pornographic || row.content_rating != null && legacy !== rating[1]) || !settings.contentRatings.includes(rating[1]) || allowedContentRatings && !allowedContentRatings.includes(rating[2])) return false;
     if (settings.languages.length && !settings.languages.some(value => language(value) === language(row.translated_language))) return false;
     if (settings.uploadSource !== 'all' && (settings.uploadSource === 'official' ? row.source.source_type !== 'Official' : row.source.source_type === 'Official')) return false;
+    if (settings.hideDisturbing && row.is_disturbing) return false;
     seen.add(canonical); return true;
   });
   assert.equal(sections.length, eligible.length ? 1 : 0, 'Empty or unexpected Other Editions section');
   if (!sections.length) return;
   const section = sections[0];
-  assert.equal(content.additionalInfo[0], section, 'Other Editions must be the first native additional-info section');
+  assert.equal(content.additionalInfo.at(-1), section, 'Other Editions must be the last native additional-info section');
   assert.equal(section.type, 2); assert.equal(section.hasMore, false, 'No unsafe context-free expansion');
   assert.equal(section.title, eligible.length > 10 ? 'Other Editions (first 10)' : 'Other Editions');
   assert.deepEqual(Array.from(section.items, item => item.id), Array.from(eligible.slice(0, 10), row => row.id.toLowerCase()), 'Edition identity/order/cap must match the same bulk response');
@@ -659,11 +674,16 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   const editionRows = new Map();
   const originalTrackerSeries = source.api.trackerSeries.bind(source.api);
   source.api.trackerSeries = async tracker => { const rows = await originalTrackerSeries(tracker); editionRows.set(tracker, rows); return rows; };
+  const similarRows = new Map();
+  const originalSimilar = source.api.similar.bind(source.api);
+  source.api.similar = async (id, ...args) => { const rows = await originalSimilar(id, ...args); similarRows.set(id, rows); return rows; };
   // Synthetic metadata cases reuse this run's raw editions, never refetch rows.
   const originalFreshSource = freshSource;
   freshSource = () => {
     const target = originalFreshSource();
     target.api.trackerSeries = async tracker => { assert(editionRows.has(tracker), 'Missing this run’s raw edition-response provenance'); return editionRows.get(tracker); };
+    // Recommendations only load when a title has no other editions.
+    target.api.similar = async id => similarRows.get(id) ?? [];
     return target;
   };
   let uploadSources = [];
@@ -685,6 +705,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   const nativeSearch = source.search;
   source.search = async (...args) => {
     const before = searches.length, result = await nativeSearch.apply(source, args);
+    if (args[0]?.listId === 'trending_chart') return result;
     const rows = searches.length > before ? searches.at(-1).response.content : [];
     for (const item of result.results) {
       const raw = rows.find((row) => row.series_id === item.id) ?? listingRows.get(item.info);
@@ -792,12 +813,12 @@ export async function testKagane({ source, check, highlights, searchResult, imag
     assert(detailCalls.every(request => !new URL(request.url).pathname.startsWith('/api/v2/series/') || new URL(request.url).pathname === `/api/v2/series/${item.id}`), 'Edition enrichment added per-row metadata requests');
     assertKaganeEditionMetadata({ content, rows: eligible ? editionRows.get(tracker) : [], id: item.id, settings });
     // Reuse this consumed response for compact presentation boundaries, never provider fixtures.
-    const viewSymbol = String.fromCodePoint(0x25c9);
+    const viewSymbol = String.fromCodePoint(0x23ef, 0xfe0e);
     for (const [average_rating, total_views, stats] of [
       [85, 896923, `★ 8.5 · ${viewSymbol} 896,923 views`], [85, undefined, '★ 8.5'], [0, 0, `${viewSymbol} 0 views`],
       [undefined, undefined, ''], [85, 1234.56789, `★ 8.5 · ${viewSymbol} 1,234.56789 views`], [NaN, -1, ''],
     ]) {
-      const raw = { ...metadata, average_rating, total_views, rating: 12 }, target = freshSource();
+      const raw = { ...metadata, average_rating, total_views, total_ratings: 0, rating: 12 }, target = freshSource();
       const denied = async () => assert.fail('Detail stat variants must not request provider data');
       target.api.client.request = denied;
       for (const method of ['response', 'search', 'books', 'challenge', 'genres']) target.api[method] = denied;
@@ -810,8 +831,8 @@ export async function testKagane({ source, check, highlights, searchResult, imag
       if (stats) assert.equal(variant.summary.split('\n\n')[0], stats);
       if (stats.includes(viewSymbol)) {
         const line = variant.summary.split('\n\n')[0];
-        assert.deepEqual(Array.from(line.match(/◉/u)?.[0] ?? '', character => character.codePointAt(0)), [0x25c9]);
-        assert(!/[\u{1f441}\ufe0e\ufe0f]/u.test(line));
+        assert.deepEqual(Array.from(line.match(/⏯\ufe0e/u)?.[0] ?? '', character => character.codePointAt(0)), [0x23ef, 0xfe0e]);
+        assert(!/[\u{1f441}\ufe0f]/u.test(line));
         assert(line.endsWith(' views'));
       }
       const withoutSummary = ({ summary, ...fields }) => JSON.parse(JSON.stringify(fields));
@@ -854,14 +875,16 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   await check('Native search form preserves live taxonomy and grouped tag sheets', async () => {
     form = await source.getSearchForm(); const all = fields(form);
     for (const id of ['content_rating', 'format', 'upload_status', 'genres', 'match_all_genres', 'match_all_tags', 'tag_query', 'source_id', 'exact_match']) assert(all.some((field) => field.id === id), `Missing ${id}`);
-    for (const [id, title] of [['current_books_min', 'Minimum chapters'], ['current_books_max', 'Maximum chapters'], ['start_year_min', 'Earliest start year'], ['start_year_max', 'Latest start year']]) {
+    const text = all.find((field) => field.id === 'tag_query').type, stepper = all.find((field) => field.id === 'current_volumes_min')?.type;
+    assert(stepper !== undefined && stepper !== text, 'Volume bounds are not native steppers');
+    for (const [id, title, type] of [['current_books_min', 'Chapters From', stepper], ['current_books_max', 'Chapters To', stepper], ['current_volumes_max', 'Volumes To', stepper], ['start_year_min', 'Started From', text], ['start_year_max', 'Started To', text], ['end_year_min', 'Ended From', text], ['end_year_max', 'Ended To', text]]) {
       assert.equal(all.filter((field) => field.id === id).length, 1, `Missing or duplicate native range field ${id}`);
       assert.equal(all.find((field) => field.id === id).title, title);
-      assert.equal(all.find((field) => field.id === id).type, all.find((field) => field.id === 'tag_query').type, `${id} is not a native text field`);
+      assert.equal(all.find((field) => field.id === id).type, type, `${id} changed its native field type`);
     }
-    const rangeSection = form.sections.find((section) => section.children?.some((field) => field.id === 'current_books_min'));
+    const rangeSection = form.sections.find((section) => fields({ sections: [section] }).some((field) => field.id === 'current_books_min'));
     assert.match(rangeSection?.footer ?? '', /uploaded Kagane chapter entries, not the highest chapter number/i);
-    assert.match(rangeSection.footer, /Leave either bound blank to omit it/i);
+    assert.match(rangeSection.footer, /Leave a year blank to leave that end open/i);
     const expected = ['Era', 'Adaptations', 'Spoilers', 'Taboo', 'Content Warnings', 'Sexual Content', 'BL & GL', 'Appearance', 'Personality', 'Character Roles', 'Relationships', 'Health', 'Occupations', 'Creatures', 'Places', 'Activities', 'Objects', 'Worldbuilding', 'Themes', 'Storytelling', 'Format', 'Demographic'];
     const groups = all.filter((field) => field.id?.startsWith('tags:'));
     assert(groups.length >= expected.length);
@@ -871,7 +894,7 @@ export async function testKagane({ source, check, highlights, searchResult, imag
     assert(tags.length > 1000); assert.equal(new Set(tags.map((tag) => tag.id)).size, tags.length);
     assert(all.find((field) => field.id === 'genres').options.length > 30);
     assert(all.find((field) => field.id === 'source_id').options.length > 10);
-    assert.deepEqual(Array.from(await source.getSortOptions(), (sort) => sort.id), ['relevance', 'total_views', 'avg_views', 'avg_views_today', 'avg_views_week', 'avg_views_month', 'updated_at', 'current_books', 'created_at', 'rating']);
+    assert.deepEqual(Array.from(await source.getSortOptions(), (sort) => sort.id), ['relevance', 'total_views', 'avg_views', 'avg_views_today', 'popular_now', 'avg_views_week', 'avg_views_month', 'updated_at', 'current_books', 'created_at', 'rating']);
     const sorts = await source.getSortOptions();
     assert.deepEqual(Array.from(sorts.filter(option => option.isOrderable), option => [option.id, option.title, option.defaultAscending]), [['updated_at', 'Updated', false], ['current_books', 'Chapter count', false], ['created_at', 'Added', false], ['rating', 'Rating', false]]);
     assert.equal(sorts.filter(option => option.isDefault).length, 1); assert.equal(sorts[0].isDefault, true);
@@ -1007,18 +1030,24 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   await check('All six native discovery sorts preserve live API order and continuation', async () => {
     const sections = await source.getSectionsForPage({ id: 'home' });
     assert.deepEqual(Array.from(sections, ({ id, title }) => [id, title]), [
-      ['popular', 'Popular'], ['trending_month', 'Popular This Month'], ['trending_week', 'Popular This Week'],
-      ['trending_today', 'Popular Today'], ['latest_updates', 'Latest Updates'], ['recently_added', 'Recently Added'],
+      ['popular', 'Popular'], ['trending_chart', 'Trending This Week'], ['trending_month', 'Popular This Month'], ['latest_updates', 'Latest Updates'],
+      ['trending_week', 'Popular This Week'], ['trending_today', 'Popular Today'], ['recently_added', 'Recently Added'],
     ]);
     for (const section of sections) {
       const result = await source.resolvePageSection({ id: 'home' }, section.id); assert(Array.isArray(result.items));
-      const sorts = { popular: 'total_views', trending_month: 'avg_views_month', trending_week: 'avg_views_week', trending_today: 'avg_views_today', latest_updates: 'updated_at', recently_added: 'created_at' };
+      // The chart is one ranked page from its own endpoint.
+      if (section.id === 'trending_chart') {
+        assert(result.items.length <= 5 && result.viewMoreLink === undefined);
+        assert(result.items.every((item) => [0, 1].includes(item.contentRating) && item.info?.[0]?.key === 'Rank'));
+        continue;
+      }
+      const sorts = { popular: 'avg_views', trending_month: 'avg_views_month', trending_week: 'avg_views_week', trending_today: 'avg_views_today', latest_updates: 'updated_at', recently_added: 'created_at' };
       const raw = await runTestOperation(source, () => originalSearch(safeBody, 1, 50, `${sorts[section.id]},desc`, false));
       const expected = Array.from(raw.content).filter((item) => isSafe(item) && item.cover_image_id?.trim()).map((item) => item.series_id);
       assert.deepEqual(Array.from(result.items, (item) => item.id), expected);
       if (!raw.last) assert.equal(result.viewMoreLink?.request?.listId, section.id);
       for (const item of result.items) assert(isSafe(seen.get(item.id)));
-      assertKaganeListingScores({ items: result.items, rows: result.items.map((item) => listingRows.get(item.info)) });
+      assertKaganeListingScores({ items: result.items, rows: result.items.map((item) => listingRows.get(item.info)), section: section.id });
     }
   });
   await check('A real 200-plus chapter list matches every live index ID exactly', async () => {
@@ -1032,7 +1061,9 @@ export async function testKagane({ source, check, highlights, searchResult, imag
     assert.equal(chapterList.length, index.count);
     assert.equal(new Set(chapterList.map((chapter) => chapter.chapterId)).size, index.count);
     assert.deepEqual(Array.from(chapterList, (chapter) => chapter.chapterId).sort(), expected.sort());
-    assert(requests.slice(start).some((request) => new URL(request.url).searchParams.has('before')), 'No real before-cursor page was fetched');
+    const consumed = requests.slice(start).map((request) => new URL(request.url));
+    assert(consumed.some((url) => url.pathname === `/api/v2/series/${sample}/books/index` && url.searchParams.get('fields') === 'List'), 'Chapters did not use the one-request index');
+    assert(!consumed.some((url) => url.pathname === `/api/v2/series/${sample}/books`), 'Chapters fell back to cursor pages');
     const raw = books.get(sample); assert.equal(raw.length, index.count);
     for (const [i, chapter] of chapterList.entries()) {
       assert.equal(chapter.index, chapterList.length - 1 - i); assert.equal(typeof chapter.number, 'number');
@@ -1234,4 +1265,5 @@ export async function testKagane({ source, check, highlights, searchResult, imag
   });
   source.search = nativeSearch;
   source.api.trackerSeries = originalTrackerSeries;
+  source.api.similar = originalSimilar;
 }

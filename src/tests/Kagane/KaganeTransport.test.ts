@@ -118,6 +118,17 @@ describe('Kagane SDK HTTP and image transport', () => {
         expect(sent).toHaveLength(0)
     })
 
+    test('control characters cannot disguise an issued page as a cover after settings revocation', async () => {
+        const { source, url } = await reader()
+        stored.set('Kagane.contentRatings', [])
+        const controls = ['\t', '\n', '\r', ...Array.from({ length: 32 }, (_, code) => String.fromCharCode(code)), '\u007f']
+        for (const control of new Set(controls)) {
+            const request = { url: url.replace('/books/page/', `/image/${control}../books/page/`), origin: RequestOrigin.Cover as const }
+            await expect(dispatch(source.getCoverTransport(request), request)).rejects.toThrow(/image URL/)
+        }
+        expect(sent).toHaveLength(0)
+    })
+
     test('settings revocation during an async grant check prevents outgoing image I/O', async () => {
         const { source, internals, url } = await reader(), request = { url, origin: RequestOrigin.Page as const }
         let arrive: () => void = () => undefined, release: () => void = () => undefined

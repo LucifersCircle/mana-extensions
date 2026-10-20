@@ -9,8 +9,10 @@ import {
     DeepLinkContext,
     Form,
     CoverRequestHandler,
+    HighlightsSection,
     HttpClient,
     ImageRequest,
+    Option,
     PageRequestHandler,
     RequestOrigin,
     PagedSearchResult,
@@ -20,47 +22,71 @@ import {
     ResolvedPageSection,
     SearchExcludableMultiPickerSheet,
     SearchForm,
+    SearchGroup,
     SearchListSection,
+    SearchMenuPicker,
+    SearchMultiPicker,
     SearchMultiPickerSheet,
     SearchRequest,
     SearchSortSection,
+    SearchStepper,
     SearchTextField,
     SearchToggle,
+    SectionStyle,
     SortOption,
     SourceContext,
+    SourceContextOrigin,
     SourceInfo,
     SourcePreferenceProvider,
+    UIButton,
     UIListSection,
     UIMultiPicker,
     UIPicker,
     UIToggle
 } from '@mana-app/types'
 import { KaganeApi } from './KaganeApi'
+import { chapterLanguage } from './KaganeLanguage'
 import { Challenge,
+    CHAPTER_PRESETS,
+    CHART,
+    DISTURBING_OPTIONS,
     Detail,
     DOMAIN,
     Filters,
     FORMATS,
     LANGUAGES,
     ManifestPage,
+    MIRRORS,
     options,
+    origin as siteOrigin,
     PAGE_SIZE,
+    parseURL,
+    Rating,
     RATINGS,
     SECTIONS,
+    setMirror,
+    SETTING_KEYS,
     Settings,
     SORTS,
+    SOURCE_TYPES,
     STATUSES,
     strictUUID,
+    trustedHost,
     UPLOADS,
+    UploadSource,
+    uploadTypes,
     validId } from './KaganeModels'
 import { allowed,
     available,
+    chartHighlight,
     classify,
     chapters,
     content,
     editionSection,
     highlight,
     readerExpiry,
+    similarSection,
+    uploadAllowed,
     visibleDetailTags } from './KaganeParsers'
 import { hasHidden,
     hostRatingKey,
@@ -70,7 +96,8 @@ import { hasHidden,
     readNumericRanges,
     selectedOptions,
     searchBody,
-    selectedRatings } from './KaganeSearch'
+    selectedRatings,
+    visibleRow } from './KaganeSearch'
 import { groupTags,
     tagFilterId } from './tag-groups'
 
@@ -80,13 +107,13 @@ type SearchPage = { result: PagedSearchResult, next: number, seenIDs: string[] }
 
 export class Target implements ContentSource, PageLinkResolver, CoverRequestHandler, PageRequestHandler, SourcePreferenceProvider {
     readonly info: SourceInfo = {
-        id: 'Kagane', version: '0.0.1-alpha.19', name: 'Kagane',
+        id: 'Kagane', version: '0.0.1-alpha.20', name: 'Kagane',
         description: 'Kagane with current API support, grouped tags and global four-category content settings.',
         thumbnail: 'Kagane.png', rating: CatalogRating.MIXED, website: DOMAIN,
         badges: ['Manga', 'Manhwa', 'Manhua', 'Comic'],
         developers: [{ name: 'Lucifers Circle', github: 'https://github.com/LucifersCircle' }, { name: 'PoppingMango Sources', github: 'https://github.com/PoppingMangoSources' }]
     }
-    readonly config = { cloudflareResolutionURL: `${DOMAIN}/`, owningLinks: ['kagane.org'] }
+    readonly config = { cloudflareResolutionURL: `${DOMAIN}/`, owningLinks: MIRRORS }
     private readonly api = new KaganeApi()
     private readonly coverClient = this.imageTransport(RequestOrigin.Cover)
     private readonly pageClient = this.imageTransport(RequestOrigin.Page)
@@ -99,16 +126,16 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
 
     private async settings(): Promise<Settings> {
         await this.preferenceWrite
-        const keys = ['contentRatings', 'showSource', 'showEdition', 'cleanTitle', 'showSpoilers', 'dataSaver', 'uploadSource', 'languages', 'excludedGenres', 'excludedTags', 'chapterTitle']
-        const values = await Promise.all(keys.map((key) => ObjectStore.get(`Kagane.${key}`)))
-        const [contentRatings, showSource, showEdition, cleanTitle, showSpoilers, dataSaver, uploadSource, languages, excludedGenres, excludedTags, chapterTitle] = values
+        const values = await Promise.all(SETTING_KEYS.map((key) => ObjectStore.get(`Kagane.${key}`)))
+        const [contentRatings, showSource, showEdition, cleanTitle, showSpoilers, dataSaver, uploadSource, languages, excludedGenres, excludedTags, chapterTitle, hideDisturbing, mirror] = values
         const stringArray = (value: unknown, fallback: string[]): string[] => Array.isArray(value) && value.every((item) => typeof item === 'string') ? value : fallback
         const settings: Settings = {
             contentRatings: Array.isArray(contentRatings) ? RATINGS.filter((rating) => contentRatings.includes(rating)) : [...RATINGS], showSource: showSource === true, showEdition: showEdition === true,
             cleanTitle: cleanTitle === true, showSpoilers: showSpoilers === true, dataSaver: dataSaver === true,
             uploadSource: UPLOADS.some((option) => option.id === uploadSource) ? uploadSource as string : 'all',
             languages: stringArray(languages, ['en']), excludedGenres: stringArray(excludedGenres, []), excludedTags: stringArray(excludedTags, []),
-            chapterTitle: ['optional', 'always', 'vol_chapter', 'original'].includes(chapterTitle as string) ? chapterTitle as string : 'always'
+            chapterTitle: ['optional', 'always', 'vol_chapter', 'original'].includes(chapterTitle as string) ? chapterTitle as string : 'always',
+            hideDisturbing: hideDisturbing === true, mirror: setMirror(mirror)
         }
         const key = JSON.stringify(settings)
         if (key !== this.settingsKey) {
@@ -122,14 +149,22 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
         return settings
     }
 
-    private async save(key: string, value: boolean | string | string[]): Promise<void> {
+    private async write(task: () => Promise<void>): Promise<void> {
         this.settingsRevision += 1
         this.searchPages.clear()
         this.readerImages.clear()
         this.readerSessions.clear()
         this.api.invalidate()
-        this.preferenceWrite = this.preferenceWrite.catch(() => undefined).then(() => ObjectStore.set(`Kagane.${key}`, value))
+        this.preferenceWrite = this.preferenceWrite.catch(() => undefined).then(task)
         await this.preferenceWrite
+    }
+
+    private save(key: string, value: boolean | string | string[]): Promise<void> {
+        return this.write(() => ObjectStore.set(`Kagane.${key}`, value))
+    }
+
+    private reset(keys: readonly string[]): Promise<void> {
+        return this.write(async () => { for (const key of keys) await ObjectStore.remove(`Kagane.${key}`) })
     }
 
     private async withSettings<T>(operation: (settings: Settings) => Promise<T>): Promise<T> {
@@ -143,15 +178,19 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
 
     async getPreferenceMenu(): Promise<Form> {
         const settings = await this.settings()
-        const [genres, tags] = await Promise.all([this.api.genres().catch(() => []), this.api.tags().catch(() => [])])
+        const [genres, tags, languages] = await Promise.all([this.api.genres().catch(() => []), this.api.tags().catch(() => []), this.languageOptions().catch(() => LANGUAGES)])
         return { sections: [
             UIListSection({ header: 'Content safety', footer: 'Native Mana rating policy controls visibility when supplied. All source categories are available by default; an explicitly saved source selection remains an additional filter. Selecting none hides all titles. Unclassified rating metadata uses a Suggestive compatibility fallback with a details note. Applied locally to browsing, searches, details, chapters and reading because API filters can be ignored. Other Editions cannot be shown while hidden genres or tags are active because provider edition metadata lacks them. Site labels are not a guarantee of image content.', children: [
                 UIMultiPicker({ id: 'contentRatings', title: 'Content categories to show', options: options(RATINGS), value: settings.contentRatings, didChange: (value) => this.save('contentRatings', value) }),
-                UIMultiPicker({ id: 'excludedGenres', title: 'Hidden genres', options: genres.map((genre) => ({ id: genre.id, title: genre.genre_name })), value: settings.excludedGenres, didChange: (value) => this.save('excludedGenres', value) })
+                UIMultiPicker({ id: 'excludedGenres', title: 'Hidden genres', options: genres.map((genre) => ({ id: genre.id, title: genre.genre_name })), value: settings.excludedGenres, didChange: (value) => this.save('excludedGenres', value) }),
+                UIToggle({ id: 'hideDisturbing', title: 'Hide disturbing content', value: settings.hideDisturbing, didChange: (value) => this.save('hideDisturbing', value) })
             ] }),
-            UIListSection({ header: 'Catalog', footer: 'No languages selected means all languages. Upload filters and hidden tags apply globally.', children: [
+            UIListSection({ header: 'Site', footer: 'All mirrors serve the same library; switch if one of them is unreachable.', children: [
+                UIPicker({ id: 'mirror', title: 'Preferred Mirror', options: options(MIRRORS), value: settings.mirror, didChange: (value) => this.save('mirror', value) })
+            ] }),
+            UIListSection({ header: 'Catalog', footer: 'No languages selected means all languages. Upload filters and hidden tags apply globally. Kagane allows at most 50 hidden genres and 50 hidden tags, and a grouped tag can stand for several.', children: [
                 UIPicker({ id: 'uploadSource', title: 'Uploads', options: UPLOADS, value: settings.uploadSource, didChange: (value) => this.save('uploadSource', value) }),
-                UIMultiPicker({ id: 'languages', title: 'Languages', options: LANGUAGES, value: settings.languages, didChange: (value) => this.save('languages', value) })
+                UIMultiPicker({ id: 'languages', title: 'Languages', options: languages, value: settings.languages, didChange: (value) => this.save('languages', value) })
             ] }),
             ...groupTags(tags.map((tag) => ({ id: tag.id, title: tag.tag_name }))).map(({ group, options }) => UIListSection({ header: `Hidden tags: ${group.title}`, children: [
                 UIMultiPicker({ id: `excludedTags:${group.id}`, title: group.title, options, value: settings.excludedTags.filter((id) => options.some((option) => option.id === id)), didChange: async (value) => { const current = await this.settings(); await this.save('excludedTags', [...current.excludedTags.filter((id) => !options.some((option) => option.id === id)), ...value]) } })
@@ -159,28 +198,48 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
             UIListSection({ header: 'Titles and reader', children: [
                 ...([['showSource', 'Show upload source in titles'], ['showEdition', 'Show edition in titles'], ['cleanTitle', 'Clean trailing title labels'], ['showSpoilers', 'Show spoiler tags'], ['dataSaver', 'Data saver']] as const).map(([key, title]) => UIToggle({ id: key, title, value: settings[key], didChange: (value) => this.save(key, value) })),
                 UIPicker({ id: 'chapterTitle', title: 'Chapter titles', options: [{ id: 'always', title: 'Ch.X + Title' }, { id: 'vol_chapter', title: 'Vol.X Ch.Y + Title' }, { id: 'optional', title: 'Title only' }, { id: 'original', title: 'Original website title' }], value: settings.chapterTitle, didChange: (value) => this.save('chapterTitle', value) })
+            ] }),
+            UIListSection({ footer: 'Reset returns the content settings and hidden lists, or every setting, to their defaults.', children: [
+                UIButton({ id: 'resetContentFilters', title: 'Reset Content Filters', isDestructive: true, action: () => this.reset(['contentRatings', 'excludedGenres', 'excludedTags', 'hideDisturbing']) }),
+                UIButton({ id: 'resetAll', title: 'Reset All Settings', isDestructive: true, action: () => this.reset(SETTING_KEYS) })
             ] })
         ] }
     }
 
     async getSearchForm(): Promise<SearchForm> {
         return this.withSettings(async (settings) => {
-            const [genres, tags, sources] = await Promise.all([this.api.genres(), this.api.tags(), this.api.sources()])
+            const [genres, tags, sources, languages] = await Promise.all([this.api.genres(), this.api.tags(), this.api.sources(), this.languageOptions()])
+            const sides = [['min', 'From'], ['max', 'To']] as const
+            const stepperFields = (field: string, title: string, upperBound: number, step: number) => sides.map(([side, label]) => SearchStepper({ id: `${field}_${side}`, title: `${title} ${label}`, lowerBound: 0, upperBound, step }))
+            const yearFields = (field: string, title: string) => sides.map(([side, label]) => SearchTextField({ id: `${field}_${side}`, title: `${title} ${label}`, placeholder: label }))
             return { sections: [
                 SearchListSection({ header: 'Filters', children: [
-                    SearchMultiPickerSheet({ id: 'content_rating', title: 'Content rating', options: options(settings.contentRatings) }),
-                    SearchMultiPickerSheet({ id: 'format', title: 'Format', options: FORMATS }),
+                    SearchMultiPicker({ id: 'content_rating', title: 'Content rating', options: options(settings.contentRatings) }),
+                    SearchMultiPicker({ id: 'format', title: 'Format', options: FORMATS }),
+                    SearchMultiPicker({ id: 'publication_status', title: 'Publication Status', options: STATUSES }),
                     SearchMultiPickerSheet({ id: 'upload_status', title: 'Upload Status', options: STATUSES }),
-                    SearchMultiPickerSheet({ id: 'source_id', title: 'Upload sources', options: sources.filter((source) => settings.uploadSource === 'all' || (settings.uploadSource === 'official' ? source.source_type === 'Official' : source.source_type !== 'Official')).map((source) => ({ id: source.source_id, title: source.title })) }),
+                    // Saved settings bound what a search can show, since titles outside them cannot be opened.
+                    ...(settings.hideDisturbing ? [] : [SearchMenuPicker({ id: 'is_disturbing', title: 'Disturbing content', subtitle: 'None uses your setting: Include', options: DISTURBING_OPTIONS })]),
+                    SearchMultiPicker({ id: 'source_type', title: 'Source type', options: SOURCE_TYPES.filter((type) => uploadTypes(settings.uploadSource).includes(type.id)) }),
+                    SearchMultiPickerSheet({ id: 'source_id', title: 'Upload sources', options: sources.filter((source) => uploadAllowed(settings, [source], source.source_id)).map((source) => ({ id: source.source_id, title: source.title })) }),
                     SearchToggle({ id: 'exact_match', title: 'Exact title match' }),
                     SearchExcludableMultiPickerSheet({ id: 'genres', title: 'Genres', options: genres.map((genre) => ({ id: genre.id, title: genre.genre_name })) }),
                     SearchToggle({ id: 'match_all_genres', title: 'Match all genres' })
                 ] }),
-                SearchListSection({ header: 'Chapter count and start year', footer: 'Chapter count means uploaded Kagane chapter entries, not the highest chapter number. Leave either bound blank to omit it.', children: [
-                    SearchTextField({ id: 'current_books_min', title: 'Minimum chapters', placeholder: '0–2147483647 (optional)' }),
-                    SearchTextField({ id: 'current_books_max', title: 'Maximum chapters', placeholder: '0–2147483647 (optional)' }),
-                    SearchTextField({ id: 'start_year_min', title: 'Earliest start year', placeholder: '1–9999 (optional)' }),
-                    SearchTextField({ id: 'start_year_max', title: 'Latest start year', placeholder: '1–9999 (optional)' })
+                SearchListSection({ header: 'Advanced Search', footer: 'Chapter count means uploaded Kagane chapter entries, not the highest chapter number. A stepper left at 0 is not applied, and Chapters From or To replaces the chapter count choice. Leave a year blank to leave that end open.', children: [
+                    SearchGroup({ id: 'chapters', title: 'Chapters', children: [SearchMenuPicker({ id: 'chapter_range', title: 'Chapter count', options: CHAPTER_PRESETS }), ...stepperFields('current_books', 'Chapters', 5000, 10)] }),
+                    SearchGroup({ id: 'volumes', title: 'Volumes', children: stepperFields('current_volumes', 'Volumes', 300, 1) }),
+                    SearchGroup({ id: 'start_year', title: 'Year Started', children: yearFields('start_year', 'Started') }),
+                    SearchGroup({ id: 'end_year', title: 'Year Ended', children: yearFields('end_year', 'Ended') })
+                ] }),
+                SearchListSection({ header: 'Languages', footer: 'Reading languages replace the languages in Settings for this search.', children: [
+                    SearchMultiPickerSheet({ id: 'content_lang', title: 'Reading languages', options: languages }),
+                    SearchMultiPickerSheet({ id: 'original_language', title: 'Original language', options: LANGUAGES }),
+                    SearchMultiPickerSheet({ id: 'translated_language', title: 'Translated into', options: LANGUAGES })
+                ] }),
+                SearchListSection({ header: 'Authors, Artists & Groups', footer: 'Enter one full name to find their series.', children: [
+                    SearchTextField({ id: 'staff', title: 'Author or artist', placeholder: 'Full author or artist name' }),
+                    SearchTextField({ id: 'groups', title: 'Scanlation group', placeholder: 'Full scanlation group name' })
                 ] }),
                 SearchListSection({ header: 'Tags', footer: 'Match All Tags is off by default. Comma-separated tag names can be prefixed with - to exclude them.', children: [
                     SearchTextField({ id: 'tag_query', title: 'Find tags by name', placeholder: 'Tag, -excluded tag' }),
@@ -190,6 +249,11 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
                 SearchSortSection({ header: 'Sort' })
             ] }
         })
+    }
+
+    // Keeps the site menu's names where facet codes overlap.
+    private async languageOptions(): Promise<Option[]> {
+        return (await this.api.languages()).map((code) => LANGUAGES.find((option) => option.id.toLowerCase() === code.toLowerCase()) ?? { id: code, title: code })
     }
 
     async getSortOptions(): Promise<SortOption[]> { return SORTS }
@@ -219,13 +283,24 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
             const ratings = selectedRatings(request, settings)
             const explicitSourceRatings = selectedOptions(request.filters, 'content_rating')
             if (!ratings.length) return { results: [], isLastPage: true }
+            if (section?.id === CHART) return page > 1 ? { results: [], isLastPage: true } : this.chart(settings, ratings, request.context)
             const tags = needsTagTaxonomy(request.filters, settings.excludedTags) ? await this.api.tags() : []
             // Validate the original tag inputs even when discovery keeps its own body.
             const filteredBody = searchBody(request, settings, tags)
             const conceptualTags = includedTagGroups(request.filters, tags)
             const body = section ? searchBody({ ...request, query: undefined, filters: undefined }, settings, tags) : filteredBody
+            if (!section) {
+                for (const kind of ['staff', 'groups'] as const) {
+                    const value = request.filters?.[kind]
+                    const name = typeof value === 'string' ? value.trim() : ''
+                    if (name) body[kind] = { values: [await this.api.resolvePerson(kind, name)] }
+                }
+            }
             const exact = request.filters?.exact_match === true
-            const key = `${JSON.stringify(settings)}:${JSON.stringify(body)}:${sortParameter}:${exact}:${JSON.stringify(conceptualTags)}:${request.filters?.match_all_tags === true}:${hostRatingKey(request.context?.allowedContentRatings)}`
+            // These layouts draw info rows and no cover pill.
+            const detailed = section?.style === SectionStyle.DetailedTripleRowPaged || section?.style === SectionStyle.DetailedVerticalListGrouped
+            const showUpdated = section?.id === 'latest_updates'
+            const key = `${JSON.stringify(settings)}:${JSON.stringify(body)}:${sortParameter}:${exact}:${section?.id ?? ''}:${JSON.stringify(conceptualTags)}:${request.filters?.match_all_tags === true}:${hostRatingKey(request.context?.allowedContentRatings)}`
             let cached = this.searchPages.get(key)
             if (!cached || Date.now() - cached.at > 30_000) {
                 if (this.searchPages.size >= 25) this.searchPages.delete(this.searchPages.keys().next().value as string)
@@ -251,11 +326,11 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
                             seenIDs.add(item.series_id)
                             if (seenIDs.size > 10000) throw new Error('Kagane pagination exceeded its bounded title limit; refresh')
                             if (!classify(item) && explicitSourceRatings.length) return false
-                            return matchesTagGroups(item.tags, conceptualTags, request.filters?.match_all_tags === true) && allowed(item, settings, ratings, request.context?.allowedContentRatings) && !!item.cover_image_id?.trim() && !hasHidden(item.genres, settings.excludedGenres) && !hasHidden(item.tags, settings.excludedTags)
+                            return matchesTagGroups(item.tags, conceptualTags, request.filters?.match_all_tags === true) && allowed(item, settings, ratings, request.context?.allowedContentRatings) && !!item.cover_image_id?.trim() && !hasHidden(item.genres, settings.excludedGenres) && !hasHidden(item.tags, settings.excludedTags) && !(body.is_disturbing === false && item.is_disturbing === true)
                         })
                         if (visible.length || response.last) {
                             const sources = settings.showSource ? await this.api.sources() : []
-                            return { result: { results: visible.map((item) => highlight(item, settings, sources)), isLastPage: response.last }, next: rawPage + 1, seenIDs: [...seenIDs] }
+                            return { result: { results: visible.map((item) => highlight(item, settings, sources, detailed, showUpdated)), isLastPage: response.last }, next: rawPage + 1, seenIDs: [...seenIDs] }
                         }
                     }
                     throw new Error('Kagane returned too many repeated or filtered-out pages; narrow your search')
@@ -270,13 +345,22 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
         })
     }
 
+    private async chart(settings: Settings, ratings: Rating[], context?: SourceContext): Promise<PagedSearchResult> {
+        const [entries, sources] = await Promise.all([
+            this.api.trending(ratings, settings.languages, settings.hideDisturbing),
+            settings.showSource || settings.uploadSource !== 'all' ? this.api.sources() : Promise.resolve([])
+        ])
+        const languages = settings.languages.length > 5 ? new Set(settings.languages.map(chapterLanguage)) : undefined
+        const results = entries.filter(({ hidden_by_filter: hidden, series }) => !hidden && visibleRow(series, settings, ratings, sources, context) && (!languages || languages.has(chapterLanguage(series.translated_language))))
+        return { results: results.slice(0, 5).map((entry) => ({ ...chartHighlight(entry, settings, sources), context })), isLastPage: true }
+    }
+
     private async requireAllowed(id: string, settings: Settings, context?: SourceContext): Promise<Detail> {
         validId(id)
         if (!settings.contentRatings.length || context?.allowedContentRatings?.length === 0) throw new Error('This title is excluded by Kagane or Mana content-rating policy')
         const details = await this.api.series(id)
-        if (!allowed(details, settings, undefined, context?.allowedContentRatings) || hasHidden(details.genres?.map((genre) => genre.genre_id ?? ''), settings.excludedGenres) || hasHidden(details.tags?.map((tag) => tag.tag_id ?? ''), settings.excludedTags)) throw new Error('This title is excluded by Kagane content settings or its rating cannot be verified')
-        const source = settings.uploadSource !== 'all' ? (await this.api.sources()).find((entry) => entry.source_id === details.source_id) : undefined
-        if (settings.uploadSource !== 'all' && (!source || (settings.uploadSource === 'official' ? source.source_type !== 'Official' : source.source_type === 'Official'))) throw new Error('This title is excluded by Kagane upload-source settings')
+        if (!allowed(details, settings, undefined, context?.allowedContentRatings) || hasHidden(details.genres?.map((genre) => genre.genre_id ?? ''), settings.excludedGenres) || hasHidden(details.tags?.map((tag) => tag.tag_id ?? ''), settings.excludedTags) || (settings.hideDisturbing && details.is_disturbing === true)) throw new Error('This title is excluded by Kagane content settings or its rating cannot be verified')
+        if (!uploadAllowed(settings, settings.uploadSource === 'all' ? [] : await this.api.sources(), details.source_id)) throw new Error('This title is excluded by Kagane upload-source settings')
         return details
     }
 
@@ -285,16 +369,29 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
         return this.withSettings(async (settings) => {
             const details = await this.requireAllowed(contentId, settings, context)
             const tracker = strictUUID(details.tracker_id)
+            // A migration only needs metadata.
+            const migrating = context?.origin === SourceContextOrigin.MIGRATION
             const [sources, rows, tags] = await Promise.all([
                 this.api.sources(),
-                tracker && !settings.excludedGenres.length && !settings.excludedTags.length ? this.api.trackerSeries(tracker) : Promise.resolve([]),
+                tracker && !migrating && !settings.excludedGenres.length && !settings.excludedTags.length ? this.api.trackerSeries(tracker) : Promise.resolve([]),
                 visibleDetailTags(details, settings).length ? this.api.tags() : Promise.resolve([])
             ])
             const result = content(contentId, details, settings, sources, tags)
-            const editions = editionSection(rows, contentId, settings, context?.allowedContentRatings)
-            if (editions) result.additionalInfo = [editions, ...(result.additionalInfo ?? [])]
-            return result
+            const editions = migrating ? undefined : editionSection(rows, contentId, settings, context?.allowedContentRatings) ?? await this.similar(contentId, settings, sources, context)
+            return editions ? { ...result, additionalInfo: [...(result.additionalInfo ?? []), editions] } : result
         })
+    }
+
+    private async similar(id: string, settings: Settings, sources: UploadSource[], context?: SourceContext): Promise<HighlightsSection | undefined> {
+        const ratings = selectedRatings({ page: 1, context }, settings)
+        if (!ratings.length) return undefined
+        const rows = await this.api.similar(id, ratings, settings.languages, settings.uploadSource, settings.hideDisturbing).catch(() => [])
+        const seen = new Set([id])
+        return similarSection(rows.filter((row) => {
+            if (seen.has(row.series_id) || row.hidden_by_filter || !visibleRow(row, settings, ratings, sources, context)) return false
+            seen.add(row.series_id)
+            return true
+        }), settings, sources)
     }
 
     async getChapters(contentId: string): Promise<Chapter[]> {
@@ -331,7 +428,7 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
     async getSectionsForPage(link: PageLink): Promise<PageSection[]> {
         assertRatingPolicy(link.context)
         this.home(link)
-        return SECTIONS.map(({ id, title, style }) => ({ id, title, style }))
+        return SECTIONS.map(({ id, title, subtitle, style }) => ({ id, title, subtitle, style }))
     }
 
     async resolvePageSection(link: PageLink, sectionId: string): Promise<ResolvedPageSection> {
@@ -345,10 +442,11 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
     private home(link: PageLink): void { if (link.id !== 'home') throw new Error('Unknown Kagane page') }
 
     async handleURL(value: string): Promise<DeepLinkContext | null> {
-        const match = /^https?:\/\/(?:www\.)?kagane\.org\/series\/([A-Za-z0-9_-]+)\/?(?:[?#].*)?$/i.exec(value)
-        if (!match?.[1]) return null
-        const result = await this.getContent(match[1])
-        return { content: { id: match[1], title: result.title, cover: result.cover, contentRating: result.contentRating, webUrl: result.webUrl } }
+        const match = /^https?:\/\/(?:www\.)?([a-z.]+)\/series\/([A-Za-z0-9_-]+)\/?(?:[?#].*)?$/i.exec(value)
+        const [, host, id] = match ?? []
+        if (!host || !id || !MIRRORS.includes(host.toLowerCase())) return null
+        const result = await this.getContent(id)
+        return { content: { id, title: result.title, cover: result.cover, contentRating: result.contentRating, webUrl: result.webUrl } }
     }
 
     getCoverTransport(request: ImageRequest): HttpClient {
@@ -368,13 +466,13 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
         return new HttpClient().addRequestInterceptor(async (request, context) => {
             if (context.origin !== origin) throw new Error('Invalid Kagane image origin')
             const url = await this.authorizedImageURL(request.url, origin)
-            return { ...request, url, headers: request.headers.setAll({ Referer: `${DOMAIN}/`, Origin: DOMAIN, Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5' }) }
+            return { ...request, url, headers: request.headers.setAll({ Referer: `${siteOrigin()}/`, Origin: siteOrigin(), Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5' }) }
         })
     }
 
     private async authorizedImageURL(url: string, origin: RequestOrigin.Cover | RequestOrigin.Page): Promise<string> {
-        const target = new URL(url)
-        if (target.protocol !== 'https:' || target.username || target.password || (target.port && target.port !== '443') || (target.hostname !== 'kstatic.to' && target.hostname !== 'kagane.org' && !target.hostname.endsWith('.kagane.org'))) throw new Error('Untrusted Kagane image URL')
+        const target = parseURL(url)
+        if (!target || !trustedHost(target.hostname)) throw new Error('Untrusted Kagane image URL')
         const path = origin === RequestOrigin.Cover ? '/api/v2/image/' : '/api/v2/books/page/'
         if (!target.pathname.startsWith(path)) throw new Error('Invalid Kagane image URL for this origin')
         let resolvedURL = url
