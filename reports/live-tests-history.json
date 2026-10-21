@@ -1,5 +1,48 @@
 [
   {
+    "checkedAt": "2026-10-21T20:58:09.059Z",
+    "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/39674489933",
+    "sha": "f60a4a587344092836d10765beb96ca7cdd469ba",
+    "sources": {
+      "GenzToons": {
+        "status": "pass"
+      },
+      "GourmetScans": {
+        "status": "cloudflared"
+      },
+      "Hijala": {
+        "status": "pass"
+      },
+      "Kagane": {
+        "status": "pass"
+      },
+      "MangaStash": {
+        "status": "fail"
+      },
+      "MangaSushi": {
+        "status": "pass"
+      },
+      "MangaTaro": {
+        "status": "pass"
+      },
+      "ManhwaNex": {
+        "status": "pass"
+      },
+      "Marumaru": {
+        "status": "fail"
+      },
+      "QiScans": {
+        "status": "cloudflared"
+      },
+      "VortexScans": {
+        "status": "pass"
+      },
+      "VyManga": {
+        "status": "error"
+      }
+    }
+  },
+  {
     "checkedAt": "2026-10-21T17:23:07.207Z",
     "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/39642939159",
     "sha": "fe7a420f282456736ec76d2253019191f2a06e97",
@@ -865,34 +908,6 @@
     "checkedAt": "2026-10-17T21:38:22.272Z",
     "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/39071223344",
     "sha": "aadb80256a5229076911b4451b26d6dc56016670",
-    "sources": {
-      "Hijala": {
-        "status": "pass"
-      },
-      "Kagane": {
-        "status": "pass"
-      },
-      "MangaStash": {
-        "status": "pass"
-      },
-      "MangaSushi": {
-        "status": "pass"
-      },
-      "ManhwaNex": {
-        "status": "pass"
-      },
-      "Marumaru": {
-        "status": "pass"
-      },
-      "VortexScans": {
-        "status": "pass"
-      }
-    }
-  },
-  {
-    "checkedAt": "2026-10-17T19:00:41.160Z",
-    "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/39060025139",
-    "sha": "2ac6378c1b38d043d3cfc68f2c8d25b4a0af21dc",
     "sources": {
       "Hijala": {
         "status": "pass"
