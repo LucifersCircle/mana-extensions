@@ -1,5 +1,48 @@
 [
   {
+    "checkedAt": "2026-10-22T19:35:26.073Z",
+    "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/39841128760",
+    "sha": "14c005b3afab23c1d3fdbccef3ec155592807f1b",
+    "sources": {
+      "GenzToons": {
+        "status": "pass"
+      },
+      "GourmetScans": {
+        "status": "cloudflared"
+      },
+      "Hijala": {
+        "status": "pass"
+      },
+      "Kagane": {
+        "status": "pass"
+      },
+      "MangaStash": {
+        "status": "fail"
+      },
+      "MangaSushi": {
+        "status": "pass"
+      },
+      "MangaTaro": {
+        "status": "pass"
+      },
+      "ManhwaNex": {
+        "status": "pass"
+      },
+      "Marumaru": {
+        "status": "fail"
+      },
+      "QiScans": {
+        "status": "cloudflared"
+      },
+      "VortexScans": {
+        "status": "pass"
+      },
+      "VyManga": {
+        "status": "error"
+      }
+    }
+  },
+  {
     "checkedAt": "2026-10-22T15:43:22.744Z",
     "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/39807182316",
     "sha": "37da9688a24336a46b5a961f173f8c5e3a50e0a4",
@@ -922,40 +965,6 @@
     "checkedAt": "2026-10-18T14:56:36.381Z",
     "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/39138089104",
     "sha": "0515ed99168585380166099c443fd136524fa2e7",
-    "sources": {
-      "Hijala": {
-        "status": "pass"
-      },
-      "Kagane": {
-        "status": "pass"
-      },
-      "MangaStash": {
-        "status": "fail"
-      },
-      "MangaSushi": {
-        "status": "pass"
-      },
-      "MangaTaro": {
-        "status": "pass"
-      },
-      "ManhwaNex": {
-        "status": "pass"
-      },
-      "Marumaru": {
-        "status": "fail"
-      },
-      "QiScans": {
-        "status": "fail"
-      },
-      "VortexScans": {
-        "status": "pass"
-      }
-    }
-  },
-  {
-    "checkedAt": "2026-10-18T11:49:24.807Z",
-    "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/39124597008",
-    "sha": "2c0da15ea15a91a283717a3324287ca3d3911ac9",
     "sources": {
       "Hijala": {
         "status": "pass"
