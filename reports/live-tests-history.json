@@ -1,5 +1,48 @@
 [
   {
+    "checkedAt": "2026-10-22T15:43:22.744Z",
+    "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/39807182316",
+    "sha": "37da9688a24336a46b5a961f173f8c5e3a50e0a4",
+    "sources": {
+      "GenzToons": {
+        "status": "pass"
+      },
+      "GourmetScans": {
+        "status": "cloudflared"
+      },
+      "Hijala": {
+        "status": "pass"
+      },
+      "Kagane": {
+        "status": "pass"
+      },
+      "MangaStash": {
+        "status": "fail"
+      },
+      "MangaSushi": {
+        "status": "pass"
+      },
+      "MangaTaro": {
+        "status": "pass"
+      },
+      "ManhwaNex": {
+        "status": "pass"
+      },
+      "Marumaru": {
+        "status": "fail"
+      },
+      "QiScans": {
+        "status": "cloudflared"
+      },
+      "VortexScans": {
+        "status": "pass"
+      },
+      "VyManga": {
+        "status": "error"
+      }
+    }
+  },
+  {
     "checkedAt": "2026-10-22T10:19:39.342Z",
     "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/39762005949",
     "sha": "a78882e318a52c69f04767fc747882de02791cde",
@@ -922,40 +965,6 @@
       },
       "MangaStash": {
         "status": "fail"
-      },
-      "MangaSushi": {
-        "status": "pass"
-      },
-      "MangaTaro": {
-        "status": "pass"
-      },
-      "ManhwaNex": {
-        "status": "pass"
-      },
-      "Marumaru": {
-        "status": "fail"
-      },
-      "QiScans": {
-        "status": "fail"
-      },
-      "VortexScans": {
-        "status": "pass"
-      }
-    }
-  },
-  {
-    "checkedAt": "2026-10-18T06:40:28.127Z",
-    "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/39104771128",
-    "sha": "c037e821b232c03b7595948a3b7b00ad052af512",
-    "sources": {
-      "Hijala": {
-        "status": "pass"
-      },
-      "Kagane": {
-        "status": "pass"
-      },
-      "MangaStash": {
-        "status": "pass"
       },
       "MangaSushi": {
         "status": "pass"
