@@ -1,5 +1,48 @@
 [
   {
+    "checkedAt": "2026-10-23T20:33:29.216Z",
+    "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/40019855894",
+    "sha": "e7ac635bd2c9f1a337d2505aa8dbbd667ff04acf",
+    "sources": {
+      "GenzToons": {
+        "status": "pass"
+      },
+      "GourmetScans": {
+        "status": "cloudflared"
+      },
+      "Hijala": {
+        "status": "pass"
+      },
+      "Kagane": {
+        "status": "pass"
+      },
+      "MangaStash": {
+        "status": "fail"
+      },
+      "MangaSushi": {
+        "status": "pass"
+      },
+      "MangaTaro": {
+        "status": "pass"
+      },
+      "ManhwaNex": {
+        "status": "pass"
+      },
+      "Marumaru": {
+        "status": "fail"
+      },
+      "QiScans": {
+        "status": "cloudflared"
+      },
+      "VortexScans": {
+        "status": "pass"
+      },
+      "VyManga": {
+        "status": "error"
+      }
+    }
+  },
+  {
     "checkedAt": "2026-10-23T17:17:56.876Z",
     "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/39993635449",
     "sha": "863ddbefa9020d4a53e91198b30a8e3df06d6f29",
@@ -976,46 +1019,6 @@
       },
       "Marumaru": {
         "status": "fail"
-      },
-      "QiScans": {
-        "status": "fail"
-      },
-      "VortexScans": {
-        "status": "pass"
-      }
-    }
-  },
-  {
-    "checkedAt": "2026-10-19T07:57:00.460Z",
-    "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/39218962667",
-    "sha": "46df188f120b9ac20e2475f1d158aa8e74aa6b72",
-    "sources": {
-      "GenzToons": {
-        "status": "fail"
-      },
-      "GourmetScans": {
-        "status": "fail"
-      },
-      "Hijala": {
-        "status": "pass"
-      },
-      "Kagane": {
-        "status": "pass"
-      },
-      "MangaStash": {
-        "status": "fail"
-      },
-      "MangaSushi": {
-        "status": "pass"
-      },
-      "MangaTaro": {
-        "status": "pass"
-      },
-      "ManhwaNex": {
-        "status": "pass"
-      },
-      "Marumaru": {
-        "status": "pass"
       },
       "QiScans": {
         "status": "fail"
