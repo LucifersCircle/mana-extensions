@@ -1,5 +1,48 @@
 [
   {
+    "checkedAt": "2026-10-23T23:36:00.569Z",
+    "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/40040400235",
+    "sha": "8f2bcc13dd97c83ba0fb52d8b11812c3e3896d2d",
+    "sources": {
+      "GenzToons": {
+        "status": "pass"
+      },
+      "GourmetScans": {
+        "status": "cloudflared"
+      },
+      "Hijala": {
+        "status": "pass"
+      },
+      "Kagane": {
+        "status": "pass"
+      },
+      "MangaStash": {
+        "status": "fail"
+      },
+      "MangaSushi": {
+        "status": "pass"
+      },
+      "MangaTaro": {
+        "status": "pass"
+      },
+      "ManhwaNex": {
+        "status": "pass"
+      },
+      "Marumaru": {
+        "status": "fail"
+      },
+      "QiScans": {
+        "status": "cloudflared"
+      },
+      "VortexScans": {
+        "status": "pass"
+      },
+      "VyManga": {
+        "status": "error"
+      }
+    }
+  },
+  {
     "checkedAt": "2026-10-23T20:33:29.216Z",
     "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/40019855894",
     "sha": "e7ac635bd2c9f1a337d2505aa8dbbd667ff04acf",
@@ -985,46 +1028,6 @@
       },
       "VyManga": {
         "status": "error"
-      }
-    }
-  },
-  {
-    "checkedAt": "2026-10-19T15:45:26.874Z",
-    "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/39280006939",
-    "sha": "07ad847c8737cb447e41f8de94653589f7cc0830",
-    "sources": {
-      "GenzToons": {
-        "status": "pass"
-      },
-      "GourmetScans": {
-        "status": "fail"
-      },
-      "Hijala": {
-        "status": "pass"
-      },
-      "Kagane": {
-        "status": "pass"
-      },
-      "MangaStash": {
-        "status": "fail"
-      },
-      "MangaSushi": {
-        "status": "pass"
-      },
-      "MangaTaro": {
-        "status": "pass"
-      },
-      "ManhwaNex": {
-        "status": "pass"
-      },
-      "Marumaru": {
-        "status": "fail"
-      },
-      "QiScans": {
-        "status": "fail"
-      },
-      "VortexScans": {
-        "status": "pass"
       }
     }
   }
