@@ -1,5 +1,48 @@
 [
   {
+    "checkedAt": "2026-10-23T17:17:56.876Z",
+    "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/39993635449",
+    "sha": "863ddbefa9020d4a53e91198b30a8e3df06d6f29",
+    "sources": {
+      "GenzToons": {
+        "status": "pass"
+      },
+      "GourmetScans": {
+        "status": "cloudflared"
+      },
+      "Hijala": {
+        "status": "pass"
+      },
+      "Kagane": {
+        "status": "pass"
+      },
+      "MangaStash": {
+        "status": "fail"
+      },
+      "MangaSushi": {
+        "status": "pass"
+      },
+      "MangaTaro": {
+        "status": "pass"
+      },
+      "ManhwaNex": {
+        "status": "pass"
+      },
+      "Marumaru": {
+        "status": "fail"
+      },
+      "QiScans": {
+        "status": "cloudflared"
+      },
+      "VortexScans": {
+        "status": "pass"
+      },
+      "VyManga": {
+        "status": "error"
+      }
+    }
+  },
+  {
     "checkedAt": "2026-10-23T12:13:57.695Z",
     "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/39951536428",
     "sha": "9027b19ce03aa2fb3772f790412ddeba3f4864f9",
@@ -949,46 +992,6 @@
     "sources": {
       "GenzToons": {
         "status": "fail"
-      },
-      "GourmetScans": {
-        "status": "fail"
-      },
-      "Hijala": {
-        "status": "pass"
-      },
-      "Kagane": {
-        "status": "pass"
-      },
-      "MangaStash": {
-        "status": "fail"
-      },
-      "MangaSushi": {
-        "status": "pass"
-      },
-      "MangaTaro": {
-        "status": "pass"
-      },
-      "ManhwaNex": {
-        "status": "pass"
-      },
-      "Marumaru": {
-        "status": "pass"
-      },
-      "QiScans": {
-        "status": "fail"
-      },
-      "VortexScans": {
-        "status": "pass"
-      }
-    }
-  },
-  {
-    "checkedAt": "2026-10-19T01:51:36.605Z",
-    "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/39187105927",
-    "sha": "41f193f2ac25ac3746d0e14bdf13681b6fada949",
-    "sources": {
-      "GenzToons": {
-        "status": "pass"
       },
       "GourmetScans": {
         "status": "fail"
