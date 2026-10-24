@@ -247,7 +247,8 @@ export const sourceContracts = {
         total = raw.totalItems; pageCount = raw.totalPages;
         assert.equal(raw.next, page === pageCount ? null : page + 1);
         for (const row of raw.data) {
-          text(row.slug, 'Source chapter slug'); assert(!ids.has(row.slug), 'Source v1 continuation repeated a chapter identity');
+          assert(typeof row.slug === 'string' && row.slug.trim(), 'Source chapter slug is empty');
+          assert(!ids.has(row.slug), 'Source v1 continuation repeated a chapter identity');
           ids.add(row.slug); rows.push(row);
         }
       }
