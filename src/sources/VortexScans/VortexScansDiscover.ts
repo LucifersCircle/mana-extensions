@@ -76,7 +76,8 @@ export interface VortexHomeData {
 export function parseVortexHome(html: string, ratingMetadataOnly = false): VortexHomeData {
     const $ = load(html)
     const scripts = $('script').toArray().map((element) => $(element).text())
-        .filter((script) => script.startsWith('(self.$R=self.$R||{})["tsr"]=[];') && script.includes('$_TSR.router='))
+        .filter((script) => (script.startsWith('(self.$R=self.$R||{})["tsr"]=[];')
+            || script.startsWith('$_TSR.router=')) && script.includes('$_TSR.router='))
     if (scripts.length !== 1) throw new Error('VortexScans returned missing or ambiguous router data')
     const property = <T>(key: string): T => serializedProperty<T>(scripts[0]!, key, ratingMetadataOnly)
     const posts = (value: unknown): VortexPost[] => {
