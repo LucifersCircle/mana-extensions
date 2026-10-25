@@ -385,13 +385,14 @@ export const sourceContracts = {
       if (!response) { console.log(`MangaStash diagnostic: ${home ? 'home' : 'reader'} has no exact successful consumed response`); return; }
       const $ = load(response.text), count = nodes => Math.min(nodes.length, 1000);
       if (home) {
-        // Only public navigation vocabulary is retained, never arbitrary body
-        // text, titles, headers, cookies, scripts or raw provider exceptions.
-        const words = new Set('popular this month week new additions latest updates trending recently added today hot all time'.split(' '));
+        // Only bounded public navigation labels and DOM markers are retained;
+        // no story body, headers, cookies, scripts or raw provider exceptions.
+        const marker = node => ({ tag: /^[a-z][a-z0-9-]{0,39}$/.test(node.tagName ?? '') ? node.tagName : '<other>', id: ($(node).attr('id') ?? '').slice(0, 80), class: ($(node).attr('class') ?? '').slice(0, 120) });
         const sections = $('section.home-section');
         const headings = sections.slice(0, 12).toArray().map(node => {
           const titles = $(node).find('h2.section-title'), title = norm(titles.first().text());
-          return { titleCount: count(titles), title: title.slice(0, 96).toLowerCase().split(/\s+/).slice(0, 16).map(word => words.has(word) ? word : '<other>').join(' '),
+          return { titleCount: count(titles), title: title.slice(0, 96), ...marker(node),
+            children: $(node).children().slice(0, 12).toArray().map(marker),
             cards: count($(node).find('.series-card')), updates: count($(node).find('.update-row')) };
         });
         console.log(`MangaStash home shape: ${JSON.stringify({ sections: count(sections), headings })}`);
@@ -407,11 +408,22 @@ export const sourceContracts = {
           } catch { return 'invalid'; }
         };
         const back = $('.reader-back'), selected = $('.chapter-select option[selected]'), options = $('.chapter-select option');
+        const marker = node => ({ tag: /^[a-z][a-z0-9-]{0,39}$/.test(node.tagName ?? '') ? node.tagName : '<other>', id: ($(node).attr('id') ?? '').slice(0, 80), class: ($(node).attr('class') ?? '').slice(0, 120) });
+        const ownerAnchors = $('a[href]').filter((_, node) => identity($(node).attr('href'), expectedSeries) === 'exact-resolved');
+        const chapterAnchors = $('a[href]').filter((_, node) => identity($(node).attr('href'), expected) === 'exact-resolved');
+        const article = $('script[type="application/ld+json"]').toArray().flatMap(node => { try { const value = JSON.parse($(node).html() ?? ''); return value['@type'] === 'Article' ? [value] : []; } catch { return []; } });
         console.log(`MangaStash reader shape: ${JSON.stringify({ readers: count($('.reader')), backCount: count(back), back: identity(back.attr('href'), expectedSeries),
           selectedCount: count(selected), selected: identity(selected.attr('value'), expected), options: count(options),
           matchingOptions: count(options.filter((_, node) => identity($(node).attr('value'), expected) === 'exact-resolved')),
           canonicalCount: count($('link[rel="canonical"]')), canonical: identity($('link[rel="canonical"]').attr('href'), expected),
-          pageContainers: count($('#reader-pages > .reader-page')) })}`);
+          pageContainers: count($('#reader-pages > .reader-page')),
+          ownerAnchors: ownerAnchors.slice(0, 12).toArray().map(marker), chapterAnchors: chapterAnchors.slice(0, 12).toArray().map(marker),
+          navigation: $('.reader').children().slice(0, 12).toArray().map(node => ({ ...marker(node), children: $(node).children().slice(0, 12).toArray().map(marker) })),
+          selects: $('select').slice(0, 12).toArray().map(node => ({ ...marker(node), options: count($(node).find('option')), selected: count($(node).find('option[selected]')) })),
+          articleCount: article.length, articleURL: article[0]?.url === expected, articleID: article[0]?.['@id'] === expected,
+          articleOwner: article[0]?.isPartOf?.url === expectedSeries, articleOwnerTitle: article[0]?.isPartOf?.name === state.content.title,
+          headingCount: count($('.reader-chapter-title')), headingMatchesArticle: norm($('.reader-chapter-title').text()) === article[0]?.headline,
+          configScripts: count($('script:not([src])').filter((_, node) => /\bconst\s+readerConfig\s*=/.test($(node).html() ?? ''))) })}`);
       }
     },
     filter: genre, filtered: queryGenres('genre[]'),
