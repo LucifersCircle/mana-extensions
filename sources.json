@@ -25,7 +25,7 @@
       "path": "GenzToons",
       "environment": "source",
       "intents": 106957832,
-      "hash": "34d505d834d505d834d505d834d505d834d505d834d505d834d505d834d505d8"
+      "hash": "68427f0f68427f0f68427f0f68427f0f68427f0f68427f0f68427f0f68427f0f"
     },
     {
       "id": "GourmetScans",
@@ -50,7 +50,7 @@
       "path": "GourmetScans",
       "environment": "source",
       "intents": 106961928,
-      "hash": "028e5fd4028e5fd4028e5fd4028e5fd4028e5fd4028e5fd4028e5fd4028e5fd4"
+      "hash": "30df19aa30df19aa30df19aa30df19aa30df19aa30df19aa30df19aa30df19aa"
     },
     {
       "id": "Hijala",
@@ -78,7 +78,7 @@
       "path": "Hijala",
       "environment": "source",
       "intents": 106961929,
-      "hash": "0da8a2a80da8a2a80da8a2a80da8a2a80da8a2a80da8a2a80da8a2a80da8a2a8"
+      "hash": "41161c6541161c6541161c6541161c6541161c6541161c6541161c6541161c65"
     },
     {
       "id": "Kagane",
@@ -100,7 +100,7 @@
       "path": "Kagane",
       "environment": "source",
       "intents": 106961929,
-      "hash": "4505acab4505acab4505acab4505acab4505acab4505acab4505acab4505acab"
+      "hash": "11982ff011982ff011982ff011982ff011982ff011982ff011982ff011982ff0"
     },
     {
       "id": "MangaStash",
@@ -125,7 +125,7 @@
       "path": "MangaStash",
       "environment": "source",
       "intents": 106961929,
-      "hash": "7585ebc07585ebc07585ebc07585ebc07585ebc07585ebc07585ebc07585ebc0"
+      "hash": "4218c3fd4218c3fd4218c3fd4218c3fd4218c3fd4218c3fd4218c3fd4218c3fd"
     },
     {
       "id": "MangaSushi",
@@ -150,7 +150,7 @@
       "path": "MangaSushi",
       "environment": "source",
       "intents": 106961929,
-      "hash": "1179aa661179aa661179aa661179aa661179aa661179aa661179aa661179aa66"
+      "hash": "44e6d18444e6d18444e6d18444e6d18444e6d18444e6d18444e6d18444e6d184"
     },
     {
       "id": "MangaTaro",
@@ -175,7 +175,7 @@
       "path": "MangaTaro",
       "environment": "source",
       "intents": 106961928,
-      "hash": "1a598b6f1a598b6f1a598b6f1a598b6f1a598b6f1a598b6f1a598b6f1a598b6f"
+      "hash": "19139bf019139bf019139bf019139bf019139bf019139bf019139bf019139bf0"
     },
     {
       "id": "ManhwaNex",
@@ -200,7 +200,7 @@
       "path": "ManhwaNex",
       "environment": "source",
       "intents": 106961929,
-      "hash": "0a13ff190a13ff190a13ff190a13ff190a13ff190a13ff190a13ff190a13ff19"
+      "hash": "29592ad129592ad129592ad129592ad129592ad129592ad129592ad129592ad1"
     },
     {
       "id": "Marumaru",
@@ -225,7 +225,7 @@
       "path": "Marumaru",
       "environment": "source",
       "intents": 102761480,
-      "hash": "34af5cd534af5cd534af5cd534af5cd534af5cd534af5cd534af5cd534af5cd5"
+      "hash": "014232aa014232aa014232aa014232aa014232aa014232aa014232aa014232aa"
     },
     {
       "id": "QiScans",
@@ -250,11 +250,11 @@
       "path": "QiScans",
       "environment": "source",
       "intents": 106961928,
-      "hash": "45c3c05c45c3c05c45c3c05c45c3c05c45c3c05c45c3c05c45c3c05c45c3c05c"
+      "hash": "125696d0125696d0125696d0125696d0125696d0125696d0125696d0125696d0"
     },
     {
       "id": "VortexScans",
-      "version": "0.0.1-alpha.15",
+      "version": "0.0.1-alpha.16",
       "name": "VortexScans",
       "description": "Read manga, manhwa, and manhua from VortexScans.",
       "thumbnail": "VortexScans.png",
@@ -275,7 +275,7 @@
       "path": "VortexScans",
       "environment": "source",
       "intents": 106961928,
-      "hash": "218a44f2218a44f2218a44f2218a44f2218a44f2218a44f2218a44f2218a44f2"
+      "hash": "212c9314212c9314212c9314212c9314212c9314212c9314212c9314212c9314"
     },
     {
       "id": "VyManga",
@@ -300,7 +300,7 @@
       "path": "VyManga",
       "environment": "source",
       "intents": 106961928,
-      "hash": "6570d2116570d2116570d2116570d2116570d2116570d2116570d2116570d211"
+      "hash": "672206f3672206f3672206f3672206f3672206f3672206f3672206f3672206f3"
     }
   ]
 }
