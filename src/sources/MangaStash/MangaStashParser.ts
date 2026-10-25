@@ -246,7 +246,7 @@ export function parseReader(html: string, id: string, chapter: Chapter, title: s
     const body = scripts[0]?.match(/\bconst\s+readerConfig\s*=\s*\{([\s\S]{1,4096})\};/)?.[1]
     if (!body) throw new Error('MangaStash reader configuration is malformed')
     const fields = new Map<string, string>()
-    const keys = new Set(['seriesSlug', 'chapterNum', 'chapterId', 'seriesId', 'midrollInterval', 'totalPages', 'format', 'prevChapter', 'nextChapter'])
+    const keys = new Set(['seriesSlug', 'chapterNum', 'chapterId', 'seriesId', 'midrollInterval', 'totalPages', 'format', 'prevChapter', 'nextChapter', 'totalChapters', 'chapterLabel', 'hasPrev', 'hasNext', 'resumePage'])
     for (const line of body.split('\n').map((line) => line.trim()).filter((line) => line && !line.startsWith('//'))) {
         const field = line.match(/^([A-Za-z][A-Za-z0-9]*):\s*(.*?),?$/), key = field?.[1], value = field?.[2]
         if (!key || value === undefined || !keys.has(key) || fields.has(key)) throw new Error('MangaStash reader configuration contains duplicate or unsupported declarations')
@@ -273,6 +273,18 @@ export function parseReader(html: string, id: string, chapter: Chapter, title: s
     const seriesNumber = numeric('seriesId'), chapterNumber = numeric('chapterId'), total = numeric('totalPages')
     if (slug !== id || numeric('chapterNum') !== chapter.number || !Number.isSafeInteger(seriesNumber) || seriesNumber < 1 || !Number.isSafeInteger(chapterNumber) || chapterNumber < 1
         || !Number.isSafeInteger(total) || total < 1 || total > 1000) throw new Error('MangaStash reader configuration identity mismatch')
+    // New reader UI state is parsed as bounded literals only. It never replaces
+    // canonical identity, chapter membership, or the complete ordered pages.
+    if (fields.has('totalChapters') && (!Number.isSafeInteger(numeric('totalChapters')) || numeric('totalChapters') < 1)) throw new Error('MangaStash reader chapter count is malformed')
+    if (fields.has('resumePage') && (!Number.isSafeInteger(numeric('resumePage')) || numeric('resumePage') < 0 || numeric('resumePage') > total)) throw new Error('MangaStash reader resume page is malformed')
+    if (fields.has('chapterLabel')) {
+        const label = fields.get('chapterLabel') ?? ''
+        if (!/^(?:'[^'\\]{1,160}'|"[^"\\]{1,160}")$/.test(label) || [...label].some(character => character.charCodeAt(0) < 32 || [127, 0x2028, 0x2029].includes(character.charCodeAt(0)))) throw new Error('MangaStash reader chapter label is not a bounded literal')
+    }
+    for (const [flag, adjacent] of [['hasPrev', 'prevChapter'], ['hasNext', 'nextChapter']]) if (fields.has(flag ?? '')) {
+        const value = fields.get(flag ?? '')?.trim(), navigation = fields.get(adjacent ?? '')
+        if (!/^(?:true|false)$/.test(value ?? '') || navigation === undefined || (value === 'true') !== (JSON.parse(navigation) !== null)) throw new Error('MangaStash reader navigation state is inconsistent')
+    }
     const headings = $('.reader h1.rd-sr-only'), heading = text(headings.text())
     if (headings.length !== 1 || heading !== article[0]?.headline || heading !== `${title} Ch. ${chapter.number}`) throw new Error('MangaStash reader heading identity mismatch')
     const containers = $('#reader-pages > .reader-page')
