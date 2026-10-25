@@ -376,6 +376,44 @@ export const sourceContracts = {
   ManhwaNex: madara('manhwanex.com', 'logging-10000-years-into-the-future'),
   MangaStash: {
     sample: 'ayashimon', chapter: 'ayashimon/chapter-1', separateBrowseAndSearch: true, methods: [...methods, ...controls, 'getPreferenceMenu'], controls: true, documentLimit: 12,
+    diagnoseFailure(state, label, captures) {
+      const home = label === 'Native discovery schema and representative section';
+      const reader = label === 'Native reader identity, ordered manifest and first/last image bytes';
+      if (!home && !reader) return;
+      const expected = home ? 'https://mangastash.org/' : `https://mangastash.org/${state.chapter?.chapterId}`;
+      const response = captures.filter(item => item.url === expected && item.responseURL === expected && item.status === 200).at(-1);
+      if (!response) { console.log(`MangaStash diagnostic: ${home ? 'home' : 'reader'} has no exact successful consumed response`); return; }
+      const $ = load(response.text), count = nodes => Math.min(nodes.length, 1000);
+      if (home) {
+        // Only public navigation vocabulary is retained, never arbitrary body
+        // text, titles, headers, cookies, scripts or raw provider exceptions.
+        const words = new Set('popular this month week new additions latest updates trending recently added today hot all time'.split(' '));
+        const sections = $('section.home-section');
+        const headings = sections.slice(0, 12).toArray().map(node => {
+          const titles = $(node).find('h2.section-title'), title = norm(titles.first().text());
+          return { titleCount: count(titles), title: title.slice(0, 96).toLowerCase().split(/\s+/).slice(0, 16).map(word => words.has(word) ? word : '<other>').join(' '),
+            cards: count($(node).find('.series-card')), updates: count($(node).find('.update-row')) };
+        });
+        console.log(`MangaStash home shape: ${JSON.stringify({ sections: count(sections), headings })}`);
+      } else {
+        const expectedSeries = `https://mangastash.org/${state.id}/`;
+        const identity = (value, target) => {
+          if (value === undefined) return 'missing';
+          if (!value) return 'empty';
+          try {
+            const url = new URL(value, 'https://mangastash.org');
+            if (url.href === target) return value === value.trim() ? 'exact-resolved' : 'whitespace-resolved';
+            return url.origin === 'https://mangastash.org' ? 'different-same-origin' : 'other-origin';
+          } catch { return 'invalid'; }
+        };
+        const back = $('.reader-back'), selected = $('.chapter-select option[selected]'), options = $('.chapter-select option');
+        console.log(`MangaStash reader shape: ${JSON.stringify({ readers: count($('.reader')), backCount: count(back), back: identity(back.attr('href'), expectedSeries),
+          selectedCount: count(selected), selected: identity(selected.attr('value'), expected), options: count(options),
+          matchingOptions: count(options.filter((_, node) => identity($(node).attr('value'), expected) === 'exact-resolved')),
+          canonicalCount: count($('link[rel="canonical"]')), canonical: identity($('link[rel="canonical"]').attr('href'), expected),
+          pageContainers: count($('#reader-pages > .reader-page')) })}`);
+      }
+    },
     filter: genre, filtered: queryGenres('genre[]'),
     detail(state) {
       const $ = html(state, url => url.href === `https://mangastash.org/${state.id}/`);
