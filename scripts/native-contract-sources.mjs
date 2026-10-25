@@ -411,6 +411,13 @@ export const sourceContracts = {
         const marker = node => ({ tag: /^[a-z][a-z0-9-]{0,39}$/.test(node.tagName ?? '') ? node.tagName : '<other>', id: ($(node).attr('id') ?? '').slice(0, 80), class: ($(node).attr('class') ?? '').slice(0, 120) });
         const ownerAnchors = $('a[href]').filter((_, node) => identity($(node).attr('href'), expectedSeries) === 'exact-resolved');
         const chapterAnchors = $('a[href]').filter((_, node) => identity($(node).attr('href'), expected) === 'exact-resolved');
+        const configs = $('script:not([src])').toArray().map(node => $(node).html() ?? '').filter(script => /\bconst\s+readerConfig\s*=/.test(script));
+        const configBody = configs.length === 1 ? configs[0].match(/\bconst\s+readerConfig\s*=\s*\{([\s\S]{1,4096})\};/)?.[1] : undefined;
+        const declarations = configBody?.split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('//')).slice(0, 32).map(line => {
+          const field = line.match(/^([A-Za-z][A-Za-z0-9]{0,39}):\s*(.*?),?$/), value = field?.[2];
+          const kind = value === undefined ? 'unrecognized' : /^\d+(?:\.\d+)?$/.test(value) ? 'number' : /^(?:true|false)$/.test(value) ? 'boolean' : value === 'null' ? 'null' : /^(?:'[^'\\]*'|"[^"\\]*")$/.test(value) ? 'string' : value.startsWith('{') ? 'object' : 'other';
+          return { key: field?.[1] ?? '<other>', kind };
+        });
         const article = $('script[type="application/ld+json"]').toArray().flatMap(node => { try { const value = JSON.parse($(node).html() ?? ''); return value['@type'] === 'Article' ? [value] : []; } catch { return []; } });
         console.log(`MangaStash reader shape: ${JSON.stringify({ readers: count($('.reader')), backCount: count(back), back: identity(back.attr('href'), expectedSeries),
           selectedCount: count(selected), selected: identity(selected.attr('value'), expected), options: count(options),
@@ -423,7 +430,7 @@ export const sourceContracts = {
           articleCount: article.length, articleURL: article[0]?.url === expected, articleID: article[0]?.['@id'] === expected,
           articleOwner: article[0]?.isPartOf?.url === expectedSeries, articleOwnerTitle: article[0]?.isPartOf?.name === state.content.title,
           headingCount: count($('.reader-chapter-title')), headingMatchesArticle: norm($('.reader-chapter-title').text()) === article[0]?.headline,
-          configScripts: count($('script:not([src])').filter((_, node) => /\bconst\s+readerConfig\s*=/.test($(node).html() ?? ''))) })}`);
+          configScripts: configs.length, configDeclarations: declarations ?? 'unparsed' })}`);
       }
     },
     filter: genre, filtered: queryGenres('genre[]'),
