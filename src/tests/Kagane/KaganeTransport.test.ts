@@ -202,6 +202,17 @@ describe('Kagane SDK HTTP and image transport', () => {
         expect(sent).toHaveLength(0)
     })
 
+    test('reader manifests may reuse an image at several positions but not repeat a position', async () => {
+        const api = new KaganeApi(), internals = api as unknown as { token: string, expiry: number }
+        internals.token = 'test-only-token'
+        internals.expiry = Date.now() + 60000
+        const pages = [{ page_id: 'page-one', page_no: 1, ext: 'webp' }, { page_id: 'shared', page_no: 2, ext: 'webp' }, { page_id: 'page-three', page_no: 3, ext: 'webp' }, { page_id: 'shared', page_no: 4, ext: 'webp' }]
+        response = { status: 200, headers: { 'content-type': 'application/json' }, text: JSON.stringify({ access_token: 'test-only-token', cache_url: 'https://kstatic.to', manifest: { pages } }) }
+        await expect(api.challenge('repeated-image', false)).resolves.toMatchObject({ manifest: { pages } })
+        response = { ...response, text: JSON.stringify({ access_token: 'test-only-token', cache_url: 'https://kstatic.to', manifest: { pages: [...pages, { page_id: 'page-five', page_no: 4, ext: 'webp' }] } }) }
+        await expect(api.challenge('repeated-position', false)).rejects.toThrow('Kagane reader manifest contains invalid pages')
+    })
+
     test('typed JSON reaches the bridge unchanged and general HTTP rejects error statuses', async () => {
         const api = new KaganeApi()
         response = { status: 200, headers: { 'content-type': 'application/json' }, text: '{"content":[],"last":true}' }
