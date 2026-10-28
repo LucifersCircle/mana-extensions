@@ -280,11 +280,10 @@ export class KaganeApi {
                 const result = await this.parse<Challenge>(response)
                 const pages = result?.manifest?.pages
                 if (!result || typeof result.access_token !== 'string' || !result.access_token || !Array.isArray(pages) || !pages.length) throw new Error('Kagane reader manifest is missing pages')
-                const ids = new Set<string>()
                 const positions = new Set<number>()
                 for (const page of pages) {
-                    if (!page || !Number.isInteger(page.page_no) || page.page_no < 0 || typeof page.page_id !== 'string' || !/^[A-Za-z0-9_-]+$/.test(page.page_id) || (page.ext != null && !/^[a-z0-9]+$/i.test(page.ext)) || ids.has(page.page_id) || positions.has(page.page_no)) throw new Error('Kagane reader manifest contains invalid pages')
-                    ids.add(page.page_id)
+                    // Chapters may legitimately reuse one image at several positions; only positions must be unique.
+                    if (!page || !Number.isInteger(page.page_no) || page.page_no < 0 || typeof page.page_id !== 'string' || !/^[A-Za-z0-9_-]+$/.test(page.page_id) || (page.ext != null && !/^[a-z0-9]+$/i.test(page.ext)) || positions.has(page.page_no)) throw new Error('Kagane reader manifest contains invalid pages')
                     positions.add(page.page_no)
                 }
                 const ordered = [...positions].sort((left, right) => left - right)
