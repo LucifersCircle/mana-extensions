@@ -1,5 +1,48 @@
 [
   {
+    "checkedAt": "2026-11-03T17:55:40.627Z",
+    "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/41688615054",
+    "sha": "eedfacc333949d399e591e2abdf10da554811293",
+    "sources": {
+      "GenzToons": {
+        "status": "pass"
+      },
+      "GourmetScans": {
+        "status": "cloudflared"
+      },
+      "Hijala": {
+        "status": "pass"
+      },
+      "Kagane": {
+        "status": "fail"
+      },
+      "MangaStash": {
+        "status": "fail"
+      },
+      "MangaSushi": {
+        "status": "pass"
+      },
+      "MangaTaro": {
+        "status": "pass"
+      },
+      "ManhwaNex": {
+        "status": "fail"
+      },
+      "Marumaru": {
+        "status": "fail"
+      },
+      "QiScans": {
+        "status": "cloudflared"
+      },
+      "VortexScans": {
+        "status": "pass"
+      },
+      "VyManga": {
+        "status": "error"
+      }
+    }
+  },
+  {
     "checkedAt": "2026-11-03T10:09:31.995Z",
     "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/41616659285",
     "sha": "13c0230a252ac1b8ea5384f2d244934a555132c5",
@@ -973,49 +1016,6 @@
       },
       "ManhwaNex": {
         "status": "fail"
-      },
-      "Marumaru": {
-        "status": "fail"
-      },
-      "QiScans": {
-        "status": "cloudflared"
-      },
-      "VortexScans": {
-        "status": "pass"
-      },
-      "VyManga": {
-        "status": "error"
-      }
-    }
-  },
-  {
-    "checkedAt": "2026-10-28T23:20:03.629Z",
-    "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/40786394309",
-    "sha": "8639264b7cc7a31ae6b094e2f58624511132bd40",
-    "sources": {
-      "GenzToons": {
-        "status": "pass"
-      },
-      "GourmetScans": {
-        "status": "cloudflared"
-      },
-      "Hijala": {
-        "status": "pass"
-      },
-      "Kagane": {
-        "status": "pass"
-      },
-      "MangaStash": {
-        "status": "fail"
-      },
-      "MangaSushi": {
-        "status": "pass"
-      },
-      "MangaTaro": {
-        "status": "pass"
-      },
-      "ManhwaNex": {
-        "status": "pass"
       },
       "Marumaru": {
         "status": "fail"
