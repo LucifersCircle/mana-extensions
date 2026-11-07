@@ -1,5 +1,48 @@
 [
   {
+    "checkedAt": "2026-11-07T09:18:51.813Z",
+    "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/42359083488",
+    "sha": "b4746db76c0b3e411bc3fff00fba73713c2cec92",
+    "sources": {
+      "GenzToons": {
+        "status": "pass"
+      },
+      "GourmetScans": {
+        "status": "cloudflared"
+      },
+      "Hijala": {
+        "status": "pass"
+      },
+      "Kagane": {
+        "status": "fail"
+      },
+      "MangaStash": {
+        "status": "fail"
+      },
+      "MangaSushi": {
+        "status": "pass"
+      },
+      "MangaTaro": {
+        "status": "pass"
+      },
+      "ManhwaNex": {
+        "status": "fail"
+      },
+      "Marumaru": {
+        "status": "fail"
+      },
+      "QiScans": {
+        "status": "cloudflared"
+      },
+      "VortexScans": {
+        "status": "pass"
+      },
+      "VyManga": {
+        "status": "error"
+      }
+    }
+  },
+  {
     "checkedAt": "2026-11-07T02:26:08.061Z",
     "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/42329074824",
     "sha": "181579b817d8286a31473e7bab74a4fe56a35952",
@@ -949,49 +992,6 @@
     "checkedAt": "2026-11-01T06:23:03.479Z",
     "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/41280489413",
     "sha": "41f2097c72e390ff36049085861b30e8c090f2c2",
-    "sources": {
-      "GenzToons": {
-        "status": "pass"
-      },
-      "GourmetScans": {
-        "status": "cloudflared"
-      },
-      "Hijala": {
-        "status": "pass"
-      },
-      "Kagane": {
-        "status": "fail"
-      },
-      "MangaStash": {
-        "status": "fail"
-      },
-      "MangaSushi": {
-        "status": "pass"
-      },
-      "MangaTaro": {
-        "status": "pass"
-      },
-      "ManhwaNex": {
-        "status": "pass"
-      },
-      "Marumaru": {
-        "status": "fail"
-      },
-      "QiScans": {
-        "status": "cloudflared"
-      },
-      "VortexScans": {
-        "status": "pass"
-      },
-      "VyManga": {
-        "status": "error"
-      }
-    }
-  },
-  {
-    "checkedAt": "2026-10-31T23:49:36.915Z",
-    "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/41254005858",
-    "sha": "1291f44ae98b8557e7ad78fe3d50857120690947",
     "sources": {
       "GenzToons": {
         "status": "pass"
