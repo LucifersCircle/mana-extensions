@@ -376,6 +376,63 @@ export const sourceContracts = {
   ManhwaNex: madara('manhwanex.com', 'logging-10000-years-into-the-future'),
   MangaStash: {
     sample: 'ayashimon', chapter: 'ayashimon/chapter-1', separateBrowseAndSearch: true, methods: [...methods, ...controls, 'getPreferenceMenu'], controls: true, documentLimit: 12,
+    diagnoseFailure(state, label, captures) {
+      const home = label === 'Native discovery schema and representative section';
+      const reader = label === 'Native reader identity, ordered manifest and first/last image bytes';
+      if (!home && !reader) return;
+      const expected = home ? 'https://mangastash.org/' : `https://mangastash.org/${state.chapter?.chapterId}`;
+      const response = captures.filter(item => item.url === expected && item.responseURL === expected && item.status === 200).at(-1);
+      if (!response) { console.log(`MangaStash diagnostic: ${home ? 'home' : 'reader'} has no exact successful consumed response`); return; }
+      const $ = load(response.text), count = nodes => Math.min(nodes.length, 1000);
+      if (home) {
+        // Only bounded public navigation labels and DOM markers are retained;
+        // no story body, headers, cookies, scripts or raw provider exceptions.
+        const marker = node => ({ tag: /^[a-z][a-z0-9-]{0,39}$/.test(node.tagName ?? '') ? node.tagName : '<other>', id: ($(node).attr('id') ?? '').slice(0, 80), class: ($(node).attr('class') ?? '').slice(0, 120) });
+        const sections = $('section.home-section');
+        const headings = sections.slice(0, 12).toArray().map(node => {
+          const titles = $(node).find('h2.section-title'), title = norm(titles.first().text());
+          return { titleCount: count(titles), title: title.slice(0, 96), ...marker(node),
+            children: $(node).children().slice(0, 12).toArray().map(marker),
+            cards: count($(node).find('.series-card')), updates: count($(node).find('.update-row')) };
+        });
+        console.log(`MangaStash home shape: ${JSON.stringify({ sections: count(sections), headings })}`);
+      } else {
+        const expectedSeries = `https://mangastash.org/${state.id}/`;
+        const identity = (value, target) => {
+          if (value === undefined) return 'missing';
+          if (!value) return 'empty';
+          try {
+            const url = new URL(value, 'https://mangastash.org');
+            if (url.href === target) return value === value.trim() ? 'exact-resolved' : 'whitespace-resolved';
+            return url.origin === 'https://mangastash.org' ? 'different-same-origin' : 'other-origin';
+          } catch { return 'invalid'; }
+        };
+        const back = $('.reader-back'), selected = $('.chapter-select option[selected]'), options = $('.chapter-select option');
+        const marker = node => ({ tag: /^[a-z][a-z0-9-]{0,39}$/.test(node.tagName ?? '') ? node.tagName : '<other>', id: ($(node).attr('id') ?? '').slice(0, 80), class: ($(node).attr('class') ?? '').slice(0, 120) });
+        const ownerAnchors = $('a[href]').filter((_, node) => identity($(node).attr('href'), expectedSeries) === 'exact-resolved');
+        const chapterAnchors = $('a[href]').filter((_, node) => identity($(node).attr('href'), expected) === 'exact-resolved');
+        const configs = $('script:not([src])').toArray().map(node => $(node).html() ?? '').filter(script => /\bconst\s+readerConfig\s*=/.test(script));
+        const configBody = configs.length === 1 ? configs[0].match(/\bconst\s+readerConfig\s*=\s*\{([\s\S]{1,4096})\};/)?.[1] : undefined;
+        const declarations = configBody?.split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('//')).slice(0, 32).map(line => {
+          const field = line.match(/^([A-Za-z][A-Za-z0-9]{0,39}):\s*(.*?),?$/), value = field?.[2];
+          const kind = value === undefined ? 'unrecognized' : /^\d+(?:\.\d+)?$/.test(value) ? 'number' : /^(?:true|false)$/.test(value) ? 'boolean' : value === 'null' ? 'null' : /^(?:'[^'\\]*'|"[^"\\]*")$/.test(value) ? 'string' : value.startsWith('{') ? 'object' : 'other';
+          return { key: field?.[1] ?? '<other>', kind };
+        });
+        const article = $('script[type="application/ld+json"]').toArray().flatMap(node => { try { const value = JSON.parse($(node).html() ?? ''); return value['@type'] === 'Article' ? [value] : []; } catch { return []; } });
+        console.log(`MangaStash reader shape: ${JSON.stringify({ readers: count($('.reader')), backCount: count(back), back: identity(back.attr('href'), expectedSeries),
+          selectedCount: count(selected), selected: identity(selected.attr('value'), expected), options: count(options),
+          matchingOptions: count(options.filter((_, node) => identity($(node).attr('value'), expected) === 'exact-resolved')),
+          canonicalCount: count($('link[rel="canonical"]')), canonical: identity($('link[rel="canonical"]').attr('href'), expected),
+          pageContainers: count($('#reader-pages > .reader-page')),
+          ownerAnchors: ownerAnchors.slice(0, 12).toArray().map(marker), chapterAnchors: chapterAnchors.slice(0, 12).toArray().map(marker),
+          navigation: $('.reader').children().slice(0, 12).toArray().map(node => ({ ...marker(node), children: $(node).children().slice(0, 12).toArray().map(marker) })),
+          selects: $('select').slice(0, 12).toArray().map(node => ({ ...marker(node), options: count($(node).find('option')), selected: count($(node).find('option[selected]')) })),
+          articleCount: article.length, articleURL: article[0]?.url === expected, articleID: article[0]?.['@id'] === expected,
+          articleOwner: article[0]?.isPartOf?.url === expectedSeries, articleOwnerTitle: article[0]?.isPartOf?.name === state.content.title,
+          headingCount: count($('.reader-chapter-title')), headingMatchesArticle: norm($('.reader-chapter-title').text()) === article[0]?.headline,
+          configScripts: configs.length, configDeclarations: declarations ?? 'unparsed' })}`);
+      }
+    },
     filter: genre, filtered: queryGenres('genre[]'),
     detail(state) {
       const $ = html(state, url => url.href === `https://mangastash.org/${state.id}/`);
