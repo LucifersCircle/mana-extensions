@@ -395,7 +395,9 @@ export const sourceContracts = {
     },
     reader(state) {
       const $ = html(state, url => url.href === `https://mangastash.org/${state.chapter.chapterId}`);
-      assert.equal($('.chapter-select option[selected]').attr('value'), `/${state.chapter.chapterId}`);
+      const selected = $('a.rd-sheet__row.is-current');
+      assert.equal(selected.length, 1, 'Exactly one source current chapter');
+      assert.equal(new URL(selected.attr('href'), 'https://mangastash.org').href, `https://mangastash.org/${state.chapter.chapterId}`);
       const pages = $('#reader-pages > .reader-page .reader-page-inner > img').toArray().map(node => new URL($(node).attr('data-src') || $(node).attr('src'), 'https://mangastash.org').href);
       assert.deepEqual(Array.from(state.reader.pages, page => page.url), pages, 'Native reader differs from complete source image order');
     },
