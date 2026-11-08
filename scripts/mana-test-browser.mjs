@@ -51,10 +51,10 @@ export function createManaTestTransport({ solverURL = process.env.FLARESOLVERR_U
     async fetch(input, init = {}) {
       const target = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
       // CDN and actual reader image-byte checks never go through a helper.
-      if (!['kagane.org', 'marumaru105.com', 'api.storagewebtoon.store'].includes(target.hostname)) return fetchImpl(input, init);
+      if (!['kagane.org', 'kagane.moe', 'marumaru105.com', 'api.storagewebtoon.store'].includes(target.hostname)) return fetchImpl(input, init);
       const method = init.method ?? (input instanceof Request ? input.method : 'GET');
       const body = init.body ?? null;
-      const marumaru = target.hostname !== 'kagane.org', catalog = target.hostname === 'marumaru105.com';
+      const marumaru = !['kagane.org', 'kagane.moe'].includes(target.hostname), catalog = target.hostname === 'marumaru105.com';
       (marumaru ? assertPublicMarumaruRequest : assertPublicKaganeRequest)({
         url: typeof input === 'string' ? input : target.href, method, body,
       });

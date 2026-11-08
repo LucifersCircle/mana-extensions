@@ -23,6 +23,7 @@ SEARCH_KEYS = {'source_type', 'title', 'content_rating', 'age_rating',
                'groups', 'current_books', 'current_volumes', 'start_year', 'end_year'}
 HEADERS = {'accept', 'content-type', 'origin', 'referer', 'user-agent', 'x-integrity-token'}
 WARM_URLS = {'kagane.org': 'https://kagane.org/',
+             'kagane.moe': 'https://kagane.moe/',
              'marumaru105.com': 'https://marumaru105.com/manhwa',
              'api.storagewebtoon.store': 'https://api.storagewebtoon.store/'}
 
@@ -96,7 +97,7 @@ def assert_public_request(payload):
     url = urlparse(payload.get('url', ''))
     if url.hostname in ('marumaru105.com', 'api.storagewebtoon.store'):
         return assert_public_marumaru_request(payload)
-    if (url.scheme != 'https' or url.hostname != 'kagane.org'
+    if (url.scheme != 'https' or url.hostname not in ('kagane.org', 'kagane.moe')
             or url.port not in (None, 443) or url.username or url.password
             or url.fragment or url.params):
         raise ValueError('Unsupported Kagane target')
@@ -107,7 +108,7 @@ def assert_public_request(payload):
     method, body = payload.get('method'), payload.get('body')
     if method == 'GET' and body is None:
         # Match the exact raw bulk-read URL, not a normalized path or tracker prefix.
-        if re.fullmatch(r'https://kagane\.org/api/v2/trackers/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}/series', payload.get('url', '')):
+        if re.fullmatch(r'https://kagane\.(?:org|moe)/api/v2/trackers/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}/series', payload.get('url', '')):
             return
         if not url.query and url.path in ('/', '/api/v2/genres/list', '/api/v2/tags/list'):
             return
@@ -269,7 +270,7 @@ def register(app):
                 raise ValueError('Unsupported payload')
             assert_public_request(payload)
             site = urlparse(payload['url']).hostname
-            marumaru = site != 'kagane.org'
+            marumaru = site not in ('kagane.org', 'kagane.moe')
             catalog = site == 'marumaru105.com'
             headers = payload['headers']
             allowed = (HEADERS - {'x-integrity-token'} | ({'x-site'} if catalog else set())) if marumaru else HEADERS
