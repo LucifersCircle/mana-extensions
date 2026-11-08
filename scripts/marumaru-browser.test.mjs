@@ -75,10 +75,16 @@ test('separate anonymous host sessions reuse their warm-up and leave images dire
   try {
     await Promise.all([f.transport.fetch(detail, { headers }), f.transport.fetch(catalog, { headers })]);
     await f.transport.fetch('https://kagane.org/api/v2/genres/list');
+    await f.transport.fetch('https://kagane.moe/api/v2/genres/list');
+    await f.transport.fetch('https://kagane.moe/api/v2/books/public-book', {
+      method: 'POST', body: '{}', headers: { 'x-integrity-token': 'public-reader-test-token' },
+    });
     const creates = f.calls.filter(call => call.cmd === 'sessions.create');
-    assert.equal(creates.length, 2);
+    assert.equal(creates.length, 3);
     assert.notEqual(creates[0].session, creates[1].session);
-    assert.deepEqual(f.calls.filter(call => call.path === '/browser/warm').map(call => call.site), ['marumaru105.com', 'kagane.org']);
+    assert.deepEqual(f.calls.filter(call => call.path === '/browser/warm').map(call => call.site), ['marumaru105.com', 'kagane.org', 'kagane.moe']);
+    assert.notEqual(creates[1].session, creates[2].session);
+    assert.equal(f.calls.find(call => call.url === 'https://kagane.moe/api/v2/books/public-book').headers['x-integrity-token'], 'public-reader-test-token');
     const marumaru = f.calls.filter(call => call.url?.startsWith(origin));
     assert.equal(marumaru.length, 2);
     assert(marumaru.every(call => call.session === creates[0].session && call.method === 'GET' && call.body === null));
@@ -93,7 +99,7 @@ test('separate anonymous host sessions reuse their warm-up and leave images dire
     }
     assert.equal(f.direct.length, 2);
   } finally { await f.transport.close(); }
-  assert.equal(f.calls.filter(call => call.cmd === 'sessions.destroy').length, 3);
+  assert.equal(f.calls.filter(call => call.cmd === 'sessions.destroy').length, 4);
   await assert.rejects(f.transport.fetch(detail, { headers }), /closed/);
 });
 

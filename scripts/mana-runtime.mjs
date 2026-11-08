@@ -68,13 +68,13 @@ export function assertPublicMarumaruRequest(request) {
 export function assertPublicKaganeRequest(request) {
     const target = new URL(request.url)
     const reject = () => { throw new Error('Live test browser rejects unsupported Kagane operation') }
-    if (target.origin !== 'https://kagane.org' || target.username || target.password || target.hash) return reject()
+    if (!['https://kagane.org', 'https://kagane.moe'].includes(target.origin) || target.username || target.password || target.hash) return reject()
     const params = [...target.searchParams.keys()]
     if (new Set(params).size !== params.length) return reject()
     if (request.method === 'POST') return assertReadOnlyKaganePost(request)
     if (request.method !== 'GET' || request.body != null) return reject()
     // Only the proven bulk edition read, matched before URL normalization can hide syntax.
-    if (typeof request.url === 'string' && /^https:\/\/kagane\.org\/api\/v2\/trackers\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}\/series$/.test(request.url)) return
+    if (typeof request.url === 'string' && /^https:\/\/kagane\.(?:org|moe)\/api\/v2\/trackers\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}\/series$/.test(request.url)) return
     if (!target.search && ['/', '/api/v2/genres/list', '/api/v2/tags/list'].includes(target.pathname)) return
     if (/^\/api\/v2\/image\/[A-Za-z0-9-]+$/.test(target.pathname) && !target.search) return
     if (/^\/api\/v2\/series\/[A-Za-z0-9-]+$/.test(target.pathname) && !target.search) return
@@ -97,7 +97,7 @@ export function assertPublicKaganeRequest(request) {
 
 function assertReadOnlyPost(request) {
     const target = new URL(request.url)
-    if (target.origin === 'https://kagane.org') return assertReadOnlyKaganePost(request)
+    if (['https://kagane.org', 'https://kagane.moe'].includes(target.origin)) return assertReadOnlyKaganePost(request)
     if (target.origin === 'https://manhwanex.com') return assertReadOnlyManhwaNexPost(request)
     if (target.origin === 'https://mangataro.org') return assertReadOnlyMangaTaroPost(request)
     return assertReadOnlyMangaSushiPost(request)
@@ -109,7 +109,7 @@ function assertReadOnlyPost(request) {
 export function assertReadOnlyKaganePost(request) {
     const target = new URL(request.url)
     const reject = () => { throw new Error('Live test host rejects unsupported Kagane operation') }
-    if (request.method !== 'POST' || target.origin !== 'https://kagane.org' || target.username || target.password || target.hash) return reject()
+    if (request.method !== 'POST' || !['https://kagane.org', 'https://kagane.moe'].includes(target.origin) || target.username || target.password || target.hash) return reject()
     const params = [...target.searchParams.keys()]
     if (new Set(params).size !== params.length) return reject()
     let body = request.body
