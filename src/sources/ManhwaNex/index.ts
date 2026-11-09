@@ -70,7 +70,7 @@ class ExcludedContentError extends Error {}
 
 export class Target implements ContentSource, PageLinkResolver, CoverRequestHandler, PageRequestHandler, SourcePreferenceProvider {
     readonly info: SourceInfo = {
-        id: 'ManhwaNex', version: '0.0.1-alpha.12', name: 'ManhwaNex',
+        id: 'ManhwaNex', version: '0.0.1-alpha.13', name: 'ManhwaNex',
         description: 'ManhwaNex with native discovery, search filters and Mana content-rating policy.',
         thumbnail: 'ManhwaNex.png', rating: CatalogRating.MIXED, website: DOMAIN,
         badges: ['Manhwa', 'Manhua', 'Manga'], supportedLanguages: ['en_US'],
@@ -257,7 +257,9 @@ export class Target implements ContentSource, PageLinkResolver, CoverRequestHand
 
     private searchURL(request: SearchRequest<Filters>, exclude: boolean): string {
         if (request.sort && request.sort.id !== 'relevance') throw new Error('Unknown ManhwaNex sort')
-        const params = new URLSearchParams({ s: request.query?.trim() ?? '', post_type: 'wp-manga' }), filters = request.filters
+        // Displayed titles use typographic apostrophes, but provider search matches ASCII apostrophes.
+        const query = request.query?.trim().replace(/\u2019/g, '\'') ?? ''
+        const params = new URLSearchParams({ s: query, post_type: 'wp-manga' }), filters = request.filters
         for (const genre of filters?.genres ?? []) { if (!GENRES.has(genre.id)) throw new Error('Unknown ManhwaNex genre'); params.append('genre[]', genre.id) }
         if (filters?.condition && !['or', 'and'].includes(filters.condition.id)) throw new Error('Unknown ManhwaNex genre condition')
         if (filters?.condition?.id === 'and') params.set('op', '1')
