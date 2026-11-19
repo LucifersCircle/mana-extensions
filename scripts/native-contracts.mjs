@@ -165,7 +165,15 @@ export async function testNativeContract({ name, source, manifestEntry, check: r
   const check = async (label, fn, prerequisite) => {
     const outcome = await runCheck(label, async () => {
       if (prerequisite && outcomes.get(prerequisite) !== 'pass') throw new NativeDependencyBlocked(prerequisite);
-      await fn();
+      const captureStart = transport.captures.length;
+      try { await fn(); }
+      catch (error) {
+        // Inspect only this failed capability's already-consumed responses. A
+        // diagnostic must not replace the original failure or make requests.
+        try { config.diagnoseFailure?.(state, label, transport.captures.slice(captureStart)); }
+        catch { console.log(`DIAGNOSTIC ${name}: unavailable`); }
+        throw error;
+      }
     });
     outcomes.set(label, outcome ?? 'pass');
   };
