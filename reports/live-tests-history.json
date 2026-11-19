@@ -1,5 +1,48 @@
 [
   {
+    "checkedAt": "2026-11-19T08:01:24.900Z",
+    "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/44483842440",
+    "sha": "b47ec80e3c673743a31a5c0907af3f06090d7a82",
+    "sources": {
+      "GenzToons": {
+        "status": "pass"
+      },
+      "GourmetScans": {
+        "status": "cloudflared"
+      },
+      "Hijala": {
+        "status": "pass"
+      },
+      "Kagane": {
+        "status": "fail"
+      },
+      "MangaStash": {
+        "status": "fail"
+      },
+      "MangaSushi": {
+        "status": "pass"
+      },
+      "MangaTaro": {
+        "status": "pass"
+      },
+      "ManhwaNex": {
+        "status": "pass"
+      },
+      "Marumaru": {
+        "status": "fail"
+      },
+      "QiScans": {
+        "status": "cloudflared"
+      },
+      "VortexScans": {
+        "status": "pass"
+      },
+      "VyManga": {
+        "status": "error"
+      }
+    }
+  },
+  {
     "checkedAt": "2026-11-19T00:32:37.870Z",
     "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/44429576015",
     "sha": "f708e96657a32163d2690334f277ef089a6b0d5e",
@@ -958,49 +1001,6 @@
       },
       "Hijala": {
         "status": "pass"
-      },
-      "Kagane": {
-        "status": "fail"
-      },
-      "MangaStash": {
-        "status": "fail"
-      },
-      "MangaSushi": {
-        "status": "pass"
-      },
-      "MangaTaro": {
-        "status": "pass"
-      },
-      "ManhwaNex": {
-        "status": "pass"
-      },
-      "Marumaru": {
-        "status": "fail"
-      },
-      "QiScans": {
-        "status": "cloudflared"
-      },
-      "VortexScans": {
-        "status": "pass"
-      },
-      "VyManga": {
-        "status": "error"
-      }
-    }
-  },
-  {
-    "checkedAt": "2026-11-12T11:56:05.781Z",
-    "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/43213159050",
-    "sha": "ffa29391ac69bb7c5a6ad247f6b41da656d7c21e",
-    "sources": {
-      "GenzToons": {
-        "status": "pass"
-      },
-      "GourmetScans": {
-        "status": "cloudflared"
-      },
-      "Hijala": {
-        "status": "fail"
       },
       "Kagane": {
         "status": "fail"
