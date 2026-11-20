@@ -8,6 +8,7 @@ import { createManaTestWebView } from './mana-test-webview.mjs';
 import { testNativeContract, createContractTransport, cloudflareEvidence, NativeDependencyBlocked } from './native-contracts.mjs';
 import { sourceContracts } from './native-contract-sources.mjs';
 import { failedSources } from './test-sources.mjs';
+import { configureLiveTestSource, KAGANE_TEST_ORIGIN } from './kagane-test-config.mjs';
 import { readSelection } from './changed-sources.mjs';
 
 rmSync('bundles/live-test-results.json', { force: true });
@@ -38,6 +39,8 @@ try {
     try {
       const entries = manifest.sources.filter(entry => entry.id === name); assert.equal(entries.length, 1, 'Source needs one built manifest entry');
       const context = vm.createContext(createManaRuntime({ fetchImpl: transport.fetch }));
+      await configureLiveTestSource(name, context);
+      if (name === 'Kagane') console.log(`TEST MIRROR Kagane: ${KAGANE_TEST_ORIGIN}`);
       vm.runInContext(readFileSync(`dist/sources/${name}.mana`, 'utf8'), context, { timeout: 10_000 });
       const prelude = Object.getOwnPropertyDescriptor(context, '__manaSerializedFunctionPrelude')?.value;
       assert(typeof prelude === 'string' && prelude.length > 0, 'Built source lacks native serialized function helpers');
