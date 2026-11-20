@@ -1,0 +1,45 @@
+{
+  "name": "@mana-app/types",
+  "version": "0.1.1",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "mana-sync-http": "scripts/sync-http-runtime.cjs"
+  },
+  "scripts": {
+    "build": "rm -rf ./dist && tsc && node scripts/build-http-runtime.cjs",
+    "prepack": "npm run build",
+    "test": "npm run build && node --test tests/*.test.cjs",
+    "check:circular": "dpdm .",
+    "sync:http": "node scripts/sync-http-runtime.cjs",
+    "check:http": "node scripts/build-http-runtime.cjs --check",
+    "check:examples": "tsc --noEmit --strict --target ES2020 --module commonjs --skipLibCheck examples/http-client.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "@typescript-eslint/eslint-plugin": "^7.3.1",
+    "dpdm": "^3.14.0",
+    "esbuild": "0.28.2",
+    "eslint": "^8.57.0",
+    "prettier": "^3.2.5",
+    "typescript": "^5.4.3"
+  },
+  "keywords": [
+    "mana"
+  ],
+  "author": {
+    "name": "Seyden",
+    "email": "saiifii@live.de",
+    "url": "https://github.com/Seyden"
+  },
+  "license": "MIT",
+  "description": "Types & Interfaces for Mana’s JavaScriptCore and WebKit environment.",
+  "files": [
+    "/dist",
+    "/scripts/sync-http-runtime.cjs"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Mana-iOS/types.git"
+  }
+}

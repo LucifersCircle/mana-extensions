@@ -93,3 +93,19 @@ issued-image and paid/login guards. Relative images use the final reader respons
 URL, not the catalog origin. Reader redirects, image bytes and complete manifests
 remain unverified pending on-device tests. These adaptations remain GPL-3.0-or-later.
 See LICENSE and the isolated trial feed documentation; this is not a production release.
+
+## MangaHub isolated on-device candidate
+
+MangaHub route/query shapes, chapter-title normalization and encrypted page-envelope
+format are adapted from Elrulia's GPL-3.0-only Paperback 0.9 implementation:
+https://github.com/Elrulia/paperback-extension/tree/d7f9ff1f53b8152d4b6947cd4f4a9d618857abfa/src/MangaHub
+The original MangaHub source-brand icon is retained without modification.
+Chapter owner fields also reference Nicartjay's MangaHub template:
+https://github.com/Nicartjay/PaperbackExt/blob/a6ef7b8f4f96b37327ab27429fdea7f9e5d8a658/src/utils/mangahub/template.ts
+Nicartjay's MIT notice is retained in licenses/MangaHub-Nicartjay-LICENSE.
+Native Mana integration copyright © 2026 Lucifers Circle. The derived MangaHub
+source files are GPL-3.0-only; see LICENSE for GPL version 3 terms.
+The upstream quota-reset, rotating identity, fabricated history cookies and
+alternative-cover lookup behaviors are not included. Native authenticated GCM
+uses @mana-app/types and the application's native bridge, not custom cryptography.
+This isolated candidate is not a live-verified production release.
