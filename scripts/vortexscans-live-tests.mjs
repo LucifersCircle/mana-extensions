@@ -156,10 +156,10 @@ export async function testVortexRatings({ source, check, freshSource, requests }
   const canonicalHref = (href) => /^\/series\/[^/?#]+$/.test(href ?? '') ? decodeURIComponent(href.slice(8)) : undefined;
   const sameIDs = (actual, expected) => assert.deepEqual(ids(actual), Array.from(expected, canonicalID));
   const transformedHTML = (fields) => `<script>(self.$R=self.$R||{})["tsr"]=[];$_TSR.router=($R=>$R[0]=${JSON.stringify(fields).replaceAll('"id":', 'id:').replaceAll('"slug":', 'slug:')})({});</script>`;
-  const fieldsFor = ({ featured = homeData.featured, latest = homeData.latest, today = homeData.today, popular = homeData.popular } = {}) => ({
+  const fieldsFor = ({ featured = homeData.featured, latest = homeData.latest, today = homeData.today, popular = homeData.popular, pinned = [] } = {}) => ({
     combinedSliderPosts: featured, latestMangaPosts: latest, todayPosts: { data: { posts: today } }, monthlyPosts: popular,
     transformedTopSeries: popular.map((post, index) => ({ id: index + 1, slug: post.slug, title: post.postTitle, coverImage: post.featuredImage })),
-    perPage: 36, hasPinnedSeriesSection: false, latestReleaseFilters: ['latest', 'new'],
+    perPage: 36, hasPinnedSeriesSection: pinned.length > 0, pinnedPosts: pinned, latestReleaseFilters: ['latest', 'new'],
   });
   await check('All real home rows share one cold homepage and repeat without provider requests or N+1', async () => {
     homeTarget = freshSource(); const getText = homeTarget.api.getText.bind(homeTarget.api); let homeRequests = 0;
@@ -177,13 +177,19 @@ export async function testVortexRatings({ source, check, freshSource, requests }
     await Promise.all(homeSections.map((section) => homeTarget.resolvePageSection({ id: 'home' }, section.id)));
     assert.equal(requests.length, warm); console.log(`VORTEX HOME ${homeSections.length} sections: cold${cold.length}/warm0/home${homeRequests}`);
   });
-  await check('Featured Popular Today Latest Releases and monthly ranking match exact same-response website IDs order and originals', async () => {
+  await check('Featured Popular Today optional Pinned Series Latest Releases and monthly ranking match same-response website IDs order and originals', async () => {
     assert(homeHTML && homeData); const $ = load(homeHTML), posts = new Map();
     for (const match of homeHTML.matchAll(/\{id:(\d+),slug:("(?:\\.|[^"\\])*")/g)) {
       const name = JSON.parse(match[2]); if (posts.has(name)) assert.equal(posts.get(name), Number(match[1])); posts.set(name, Number(match[1]));
     }
     const domSlugs = (anchors) => [...new Set(anchors.toArray().map((node) => canonicalHref($(node).attr('href'))).filter(Boolean))];
+    const pinnedSection = $('section[aria-label="Pinned Series"]');
+    assert(pinnedSection.length <= 1, 'Ambiguous provider Pinned Series section');
+    const pinned = domSlugs(pinnedSection.find('a[href^="/series/"]'));
+    assert.equal(homeSections.some((section) => section.id === 'pinned-series'), pinnedSection.length === 1);
+    if (pinnedSection.length) assert(pinned.length, 'Visible Pinned Series must contain canonical posts');
     const domRows = {
+      ...(pinnedSection.length ? { 'pinned-series': pinned } : {}),
       featured: domSlugs($('a[aria-label^="Open "][href^="/series/"]')),
       'popular-today': domSlugs($('h2').filter((_, node) => $(node).text().trim() === 'Popular Today').first().closest('section').find('a[href^="/series/"]')),
       latest: domSlugs($('h2').filter((_, node) => $(node).text().trim() === 'Latest Releases').first().parent().parent().next().find('a[href^="/series/"]')),
@@ -198,11 +204,11 @@ export async function testVortexRatings({ source, check, freshSource, requests }
     }
     const collections = homeSections.filter((section) => section.id.startsWith('collection:'));
     assert.deepEqual(Array.from(collections, (section) => ({ id: section.id, title: section.title })), $('a[href^="/collections/"]').toArray().map((node) => ({ id: `collection:${$(node).attr('href').slice('/collections/'.length)}`, title: $(node).text().trim() })));
-    assert.deepEqual(Array.from(homeSections, (section) => section.title), ['Featured', 'Popular Today', 'Latest Releases', 'New', ...collections.map((section) => section.title), 'Most Popular']);
+    assert.deepEqual(Array.from(homeSections, (section) => section.title), ['Featured', 'Popular Today', ...(pinnedSection.length ? ['Pinned Series'] : []), 'Latest Releases', 'New', ...collections.map((section) => section.title), 'Most Popular']);
     assert(homeData.popular.every((post) => post.id > 10), 'Canonical monthly post IDs must not be ranking positions');
   });
-  await check('Bounded Featured Popular Today and monthly snapshots never advertise invented continuation', async () => {
-    for (const id of ['featured', 'popular-today', 'most-popular']) {
+  await check('Bounded home snapshots never advertise invented continuation', async () => {
+    for (const id of ['featured', 'popular-today', 'pinned-series', 'most-popular']) {
       const result = await homeTarget.resolvePageSection({ id: 'home' }, id); assert.equal(result.viewMoreLink, undefined);
     }
     await assert.rejects(homeTarget.search({ page: 1, listId: 'featured' }), /Unknown VortexScans section/);
@@ -277,7 +283,7 @@ export async function testVortexRatings({ source, check, freshSource, requests }
     const before = requests.length;
     for (const allowed of [undefined, [], [0], [1], [2], [3], [0, 2]]) {
       const context = { allowedContentRatings: allowed, origin: 0 };
-      for (const id of ['featured', 'popular-today', 'latest', 'most-popular']) {
+      for (const id of ['featured', 'popular-today', 'pinned-series', 'latest', 'most-popular']) {
         const result = await homeTarget.resolvePageSection({ id: 'home', context }, id);
         assert(result.items.every((item) => item.context === context));
         if (allowed !== undefined) assert(result.items.every((item) => allowed.includes(item.contentRating)));
@@ -288,15 +294,43 @@ export async function testVortexRatings({ source, check, freshSource, requests }
     const absent = await homeTarget.resolvePageSection({ id: 'home' }, 'featured'); assert(absent.items.every((item) => item.context === undefined));
     assert.equal(requests.length, before);
   });
+  await check('Pinned Series follows the verified homepage flag and ordinary native content policy without alternate requests', async () => {
+    const before = requests.length;
+    const post = { ...homeData.featured[0], isPinned: true, isNovel: false, genres: [{ id: 1, name: 'Mature' }] };
+    for (const pinned of [[], [post]]) {
+      const target = freshSource();
+      let homeCalls = 0;
+      target.api.getText = async () => { homeCalls++; return transformedHTML(fieldsFor({ pinned })); };
+      target.api.getCollections = async () => ({ collections: [] });
+      const sections = await target.getSectionsForPage({ id: 'home' });
+      assert.deepEqual(Array.from(sections.slice(0, pinned.length ? 4 : 3), (section) => section.id),
+        ['featured', 'popular-today', ...(pinned.length ? ['pinned-series'] : []), 'latest']);
+      const open = await target.resolvePageSection({ id: 'home' }, 'pinned-series');
+      sameIDs(open.items, pinned);
+      assert.equal(open.viewMoreLink, undefined);
+      const hidden = await target.resolvePageSection({ id: 'home', context: { allowedContentRatings: [0] } }, 'pinned-series');
+      assert.equal(hidden.items.length, 0);
+      assert.equal(homeCalls, 1);
+    }
+    assert.equal(requests.length, before);
+  });
   await check('Ambiguous or conflicting homepage ranking and changed release configuration fail visibly without alternate requests', async () => {
-    const fields = fieldsFor();
+    const fields = fieldsFor(), pinned = { ...homeData.featured[0], isPinned: true, isNovel: false };
     for (const changed of [
       { ...fields, transformedTopSeries: [{ ...fields.transformedTopSeries[0], slug: 'missing-canonical-slug' }] },
       { ...fields, transformedTopSeries: [fields.transformedTopSeries[0], fields.transformedTopSeries[0]] },
-      { ...fields, perPage: 48 }, { ...fields, hasPinnedSeriesSection: true },
+      { ...fields, perPage: 48 }, { ...fields, hasPinnedSeriesSection: 'true' },
+      { ...fields, hasPinnedSeriesSection: true, pinnedPosts: undefined },
+      { ...fields, hasPinnedSeriesSection: true },
+      fieldsFor({ pinned: [{ ...pinned, isPinned: false }] }),
+      fieldsFor({ pinned: [{ ...pinned, isNovel: undefined }] }),
+      fieldsFor({ pinned: [{ ...pinned, seriesType: ' ' }] }),
+      fieldsFor({ pinned: [pinned, pinned] }),
+      fieldsFor({ pinned: [pinned, { ...pinned, slug: `${pinned.slug}-foreign` }] }),
+      fieldsFor({ pinned: [{ ...pinned, featuredImage: 'https://example.invalid/foreign-cover.webp' }] }),
     ]) {
       const target = freshSource(); target.api.getText = async () => transformedHTML(changed); const before = requests.length;
-      await assert.rejects(target.resolvePageSection({ id: 'home' }, 'most-popular'), /conflicting canonical identity|configuration changed/); assert.equal(requests.length, before);
+      await assert.rejects(target.resolvePageSection({ id: 'home' }, 'most-popular'), /conflicting canonical identity|configuration changed|missing pinnedPosts|invalid pinned posts|invalid pinned cover|repeated home identity/); assert.equal(requests.length, before);
     }
   });
   let readerSeed;

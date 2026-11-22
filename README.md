@@ -527,9 +527,10 @@ The [icon](assets/ManhwaNex.png) comes from the website's published icon.
 
 **Discover and search**
 
-- Featured, Popular Today, Latest Releases, New, source collections and the
-  rendered Most Popular selection retain website order. Shared homepage data
-  avoids per-title enrichment; Latest continues with the source feed.
+- Featured, Popular Today, Pinned Series (when enabled), Latest Releases, New,
+  source collections and the rendered Most Popular selection retain website
+  order. Shared homepage data avoids per-title enrichment; Latest continues
+  with the source feed.
 - Native search provides source genres, inclusion/exclusion, status, type and
   supported sorting filters. Distinct curated sections remain distinct.
 
