@@ -2,6 +2,7 @@ import { createHash, createDecipheriv } from 'node:crypto';
 // Small source-specific seeds/oracles for the same native method contract.
 // Oracles inspect consumed live responses only; they do not fetch reference copies.
 import assert from 'node:assert/strict';
+import { KAGANE_TEST_ORIGIN } from './kagane-test-config.mjs';
 import { load } from 'cheerio';
 import { decode } from 'html-entities';
 const plain = value => JSON.parse(JSON.stringify(value));
@@ -312,7 +313,7 @@ export const sourceContracts = {
     detail(state) {
       const raw = json(state, url => url.pathname === `/api/v2/series/${state.id}`);
       assert.equal(raw.series_id, state.id);
-      assert.equal(state.content.webUrl, `https://kagane.org/series/${state.id}`);
+      assert.equal(state.content.webUrl, `${KAGANE_TEST_ORIGIN}/series/${state.id}`);
       const cover = [...raw.series_covers].sort((a, b) => Number(b.is_main) - Number(a.is_main))[0];
       assert(cover?.image_id && state.content.cover.endsWith(`/api/v2/image/${cover.image_id}`), 'Native cover lost its source image identity');
     },
@@ -333,7 +334,7 @@ export const sourceContracts = {
       const manifest = json(state, url => url.pathname === `/api/v2/books/${state.chapter.chapterId}`);
       const ordered = [...manifest.manifest.pages].sort((a, b) => a.page_no - b.page_no);
       assert.deepEqual(Array.from(state.reader.pages, page => new URL(page.url).pathname), ordered.map(page => `/api/v2/books/page/${state.chapter.chapterId}/${encodeURIComponent(page.page_id)}.${page.ext || 'jxl'}`), 'Native reader identity/order differs from the complete consumed manifest');
-      for (const page of state.reader.pages) assert.equal(new URL(page.url).origin, new URL(manifest.cache_url || 'https://kagane.org').origin, 'Native reader changed the advertised image server');
+      for (const page of state.reader.pages) assert.equal(new URL(page.url).origin, new URL(manifest.cache_url || KAGANE_TEST_ORIGIN).origin, 'Native reader changed the advertised image server');
     },
   },
   MangaTaro: {

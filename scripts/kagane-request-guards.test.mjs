@@ -83,6 +83,12 @@ for (const url of [
 for (const method of ['POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']) reject(`bulk edition rejects ${method}`, { method, url: editions })
 for (const body of ['', {}, 'null']) reject('bulk edition rejects body', { method: 'GET', url: editions, body })
 
+// Exercise every accepted operation and rejection on the selected test mirror too.
+fixtures.push(...fixtures.map(fixture => ({
+    ...fixture, name: `moe: ${fixture.name}`,
+    request: { ...fixture.request, url: fixture.request.url.replaceAll('kagane.org', 'kagane.moe') },
+})))
+
 test('Mana guard accepts only the exact range schemas on existing read-only routes', () => {
     for (const { name, request, allowed } of fixtures) {
         if (allowed) assert.doesNotThrow(() => assertPublicKaganeRequest(request), name)
@@ -169,7 +175,7 @@ test('finalized range requests fail closed before transport and accepted bodies 
     for (const { name, request, allowed } of fixtures) {
         // The official SDK drops a fragment before transport. The raw guard
         // rejects it above; below we separately verify its normalized wire URL.
-        if (!allowed && request.method === 'POST' && request.url !== `${searchURL}#fragment`) {
+        if (!allowed && request.method === 'POST' && request.url !== `${searchURL}#fragment` && request.url !== `${searchURL.replace('kagane.org', 'kagane.moe')}#fragment`) {
             const body = typeof request.body === 'string' ? sdk.Body.text(request.body, 'application/json') : sdk.Body.json(request.body)
             await assert.rejects(host.runOperation(() => client.request({ url: request.url, method: sdk.HttpMethod.Post, body })), undefined, name)
         }
