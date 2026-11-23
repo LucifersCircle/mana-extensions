@@ -1,0 +1,31 @@
+{
+  "repositoryName": "MangaHub ODT candidate (not live verified)",
+  "thumbnail": "https://avatars.githubusercontent.com/LucifersCircle",
+  "sources": [
+    {
+      "id": "MangaHub",
+      "name": "MangaHub",
+      "version": "0.0.1-odt.alpha.1",
+      "website": "https://mangahub.io",
+      "thumbnail": "MangaHub.png",
+      "rating": 1,
+      "description": "Isolated Mana ODT candidate, not live-verified. One ordinary homepage session; access failures stop without refresh or bypass. Native AES-GCM required for encrypted pages. Unknown ratings use Suggestive compatibility, not a verified age rating. Missing/relative dates are unknown (epoch sentinel).",
+      "supportedLanguages": [
+        "en_US"
+      ],
+      "badges": [
+        "English"
+      ],
+      "developers": [
+        {
+          "name": "Lucifers Circle",
+          "github": "https://github.com/LucifersCircle"
+        }
+      ],
+      "path": "MangaHub",
+      "environment": "source",
+      "intents": 106957832,
+      "hash": "71e0efe371e0efe371e0efe371e0efe371e0efe371e0efe371e0efe371e0efe3"
+    }
+  ]
+}
