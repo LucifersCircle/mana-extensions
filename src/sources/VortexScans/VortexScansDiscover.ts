@@ -68,46 +68,77 @@ export function parsePopularToday(html: string): Highlight[] {
 export interface VortexHomeData {
     featured: VortexPost[]
     today: VortexPost[]
+    pinned: VortexPost[]
     latest: VortexPost[]
     popular: VortexPost[]
     perPage: number
 }
 
-export function parseVortexHome(html: string, ratingMetadataOnly = false): VortexHomeData {
+type HomeProperty = <T>(key: string) => T
+
+function homeProperty(html: string, ratingMetadataOnly = false): HomeProperty {
     const $ = load(html)
     const scripts = $('script').toArray().map((element) => $(element).text())
         .filter((script) => (script.startsWith('(self.$R=self.$R||{})["tsr"]=[];')
             || script.startsWith('$_TSR.router=')) && script.includes('$_TSR.router='))
     if (scripts.length !== 1) throw new Error('VortexScans returned missing or ambiguous router data')
-    const property = <T>(key: string): T => serializedProperty<T>(scripts[0]!, key, ratingMetadataOnly)
-    const posts = (value: unknown): VortexPost[] => {
-        if (!Array.isArray(value) || value.length > 1000) throw new Error('VortexScans returned invalid home posts')
-        const seen = new Set<string>()
-        for (const post of value as VortexPost[]) {
-            if (!Number.isSafeInteger(post?.id) || post.id < 1 || typeof post.slug !== 'string' || !post.slug.trim()
-                || (/[\\/]/.test(post.slug) || post.slug.includes(String.fromCharCode(0))) || !post.postTitle?.trim() || (!ratingMetadataOnly && typeof post.featuredImage !== 'string')) {
-                throw new Error('VortexScans returned invalid home identity')
-            }
-            if (!ratingMetadataOnly) {
-                const cover = new URL(post.featuredImage as string)
-                if (cover.protocol !== 'https:' || cover.username || cover.password) throw new Error('VortexScans returned invalid home cover')
-            }
-            if (seen.has(post.slug)) throw new Error('VortexScans returned repeated home identity')
-            seen.add(post.slug)
+    return <T>(key: string): T => serializedProperty<T>(scripts[0]!, key, ratingMetadataOnly)
+}
+
+function homePosts(value: unknown, ratingMetadataOnly: boolean): VortexPost[] {
+    if (!Array.isArray(value) || value.length > 1000) throw new Error('VortexScans returned invalid home posts')
+    const seen = new Set<string>()
+    for (const post of value as VortexPost[]) {
+        if (!Number.isSafeInteger(post?.id) || post.id < 1 || typeof post.slug !== 'string' || !post.slug.trim()
+            || (/[\\/]/.test(post.slug) || post.slug.includes(String.fromCharCode(0))) || !post.postTitle?.trim() || (!ratingMetadataOnly && typeof post.featuredImage !== 'string')) {
+            throw new Error('VortexScans returned invalid home identity')
         }
-        return value as VortexPost[]
+        if (!ratingMetadataOnly) {
+            const cover = new URL(post.featuredImage as string)
+            if (cover.protocol !== 'https:' || cover.username || cover.password) throw new Error('VortexScans returned invalid home cover')
+        }
+        if (seen.has(post.slug)) throw new Error('VortexScans returned repeated home identity')
+        seen.add(post.slug)
     }
+    return value as VortexPost[]
+}
+
+function pinnedPosts(property: HomeProperty, ratingMetadataOnly: boolean): VortexPost[] {
+    const enabled: unknown = property('hasPinnedSeriesSection')
+    if (typeof enabled !== 'boolean') throw new Error('VortexScans homepage release configuration changed')
+    if (!enabled) return []
+
+    const posts = homePosts(property('pinnedPosts'), ratingMetadataOnly)
+    if (!posts.length || new Set(posts.map((post) => post.id)).size !== posts.length
+        || posts.some((post: VortexPost & { isPinned?: boolean }) => post.isPinned !== true
+            || typeof post.isNovel !== 'boolean' || typeof post.seriesType !== 'string'
+            || !post.seriesType || post.seriesType !== post.seriesType.trim())) {
+        throw new Error('VortexScans returned invalid pinned posts')
+    }
+    if (!ratingMetadataOnly && posts.some((post) => !isOriginalCoverURL(new URL(post.featuredImage as string)))) {
+        throw new Error('VortexScans returned invalid pinned cover')
+    }
+    return posts
+}
+
+export function hasVortexPinnedSection(html: string): boolean {
+    return pinnedPosts(homeProperty(html), false).length > 0
+}
+
+export function parseVortexHome(html: string, ratingMetadataOnly = false): VortexHomeData {
+    const property = homeProperty(html, ratingMetadataOnly)
+    const posts = (value: unknown) => homePosts(value, ratingMetadataOnly)
     const featured = posts(property('combinedSliderPosts'))
     const latest = posts(property('latestMangaPosts'))
     const today = posts(property<{ data?: { posts?: VortexPost[] } }>('todayPosts')?.data?.posts)
     const monthly = posts(property('monthlyPosts'))
     const ranked = property<{ slug: string, title: string, coverImage: string, tags?: { name: string }[] }[]>('transformedTopSeries')
     const perPage = property<number>('perPage')
-    if (perPage !== 36 || property<boolean>('hasPinnedSeriesSection') !== false
-        || property<string[]>('latestReleaseFilters')?.join(',') !== 'latest,new'
+    if (perPage !== 36 || property<string[]>('latestReleaseFilters')?.join(',') !== 'latest,new'
         || !Array.isArray(ranked) || ranked.length > 100 || latest.length > perPage) {
         throw new Error('VortexScans homepage release configuration changed')
     }
+    const pinned = pinnedPosts(property, ratingMetadataOnly)
     // Ranking IDs are positions, never post IDs. Only same-response canonical
     // monthly records may identify the website's first nine ranking cards.
     const canonical = new Map(monthly.map((post) => [post.slug, post]))
@@ -126,7 +157,7 @@ export function parseVortexHome(html: string, ratingMetadataOnly = false): Vorte
     const complete = (post: VortexPost): boolean => Array.isArray(post.genres) && post.genres.length > 0
         && post.genres.every((genre) => Number.isSafeInteger(genre?.id) && genre.id > 0 && typeof genre.name === 'string' && !!genre.name.trim())
     const metadata = new Map<string, VortexPost[]>()
-    for (const post of [...featured, ...latest, ...popular, ...monthly, ...today]) {
+    for (const post of [...featured, ...latest, ...popular, ...monthly, ...today, ...pinned]) {
         const id = buildVortexContentId(post.id, post.slug)
         metadata.set(id, [...(metadata.get(id) ?? []), post])
     }
@@ -150,7 +181,7 @@ export function parseVortexHome(html: string, ratingMetadataOnly = false): Vorte
         }
         return { ...post, genres, ratingGenres }
     })
-    return { featured: enrich(featured), today: enrich(today), latest: enrich(latest), popular: enrich(popular), perPage }
+    return { featured: enrich(featured), today: enrich(today), pinned: enrich(pinned), latest: enrich(latest), popular: enrich(popular), perPage }
 }
 
 export function selectPublishedCollections(
@@ -180,7 +211,8 @@ export function parseCollectionHighlights(
 }
 
 export function buildVortexHomeSections(
-    collectionsResponse: VortexCollectionsResponse
+    collectionsResponse: VortexCollectionsResponse,
+    hasPinned: boolean
 ): VortexHomeSection[] {
     const collections = selectPublishedCollections(collectionsResponse)
 
@@ -195,6 +227,7 @@ export function buildVortexHomeSections(
             title: 'Popular Today',
             style: SectionStyle.SimpleHeroPaged
         },
+        ...(hasPinned ? [{ id: 'pinned-series', title: 'Pinned Series', style: SectionStyle.SimpleSingleRow }] : []),
         {
             id: 'latest',
             title: 'Latest Releases',
@@ -248,13 +281,17 @@ function parseSerializedPosts(html: string): Map<string, SerializedPost> {
     return posts
 }
 
+function isOriginalCoverURL(url: URL): boolean {
+    return url.origin === 'https://storage.vortexscans.org' && !url.username && !url.password
+        && !url.search && !url.hash && url.pathname.startsWith('/upload/')
+}
+
 function originalCover(value: string | undefined, current: string): string | undefined {
     if (!value?.trim()) return undefined
     try {
         const original = new URL(value.trim())
         const image = new URL(current)
-        if (original.origin !== 'https://storage.vortexscans.org' || original.username || original.password
-            || original.search || original.hash || !original.pathname.startsWith('/upload/')) return undefined
+        if (!isOriginalCoverURL(original)) return undefined
         const sameOriginal = image.origin === original.origin && image.pathname === original.pathname && image.search === original.search
         const sameProxyAsset = image.protocol === 'https:' && /^i[0-3]\.wp\.com$/.test(image.hostname)
             && !image.username && !image.password && !image.hash

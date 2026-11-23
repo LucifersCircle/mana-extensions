@@ -33,6 +33,7 @@ import { assertRatingPolicy,
 import { VortexScansApi } from './VortexScansApi'
 import {
     buildVortexHomeSections,
+    hasVortexPinnedSection,
     parseCollectionHighlights,
     parsePopularToday,
     parseVortexHome,
@@ -109,7 +110,7 @@ export class Target implements
     PageRequestHandler {
     readonly info: SourceInfo = {
         id: 'VortexScans',
-        version: '0.0.1-alpha.16',
+        version: '0.0.1-alpha.17',
         name: 'VortexScans',
         description: 'Read manga, manhwa, and manhua from VortexScans.',
         thumbnail: 'VortexScans.png',
@@ -296,9 +297,9 @@ export class Target implements
         }
 
         if (link.context?.allowedContentRatings?.length === 0) return []
-        const collections = await this.collections()
+        const [collections, html] = await Promise.all([this.collections(), this.homeText()])
 
-        return buildVortexHomeSections(collections).map((section) => ({
+        return buildVortexHomeSections(collections, hasVortexPinnedSection(html)).map((section) => ({
             id: section.id,
             title: section.title,
             style: section.style
@@ -386,7 +387,7 @@ export class Target implements
                         // Cover-only malformed strings retain the verified DOM
                         // image; malformed identity/rating data must fail visibly.
                         const home = parseVortexHome(await this.homeText(), true)
-                        const metadata = this.parser.parseHighlights([...home.today, ...home.featured, ...home.latest, ...home.popular])
+                        const metadata = this.parser.parseHighlights([...home.today, ...home.featured, ...home.latest, ...home.popular, ...home.pinned])
                         const byID = new Map(metadata.map((item) => [item.id, item]))
                         return items.map((item) => {
                             const exact = byID.get(item.id)
@@ -395,6 +396,8 @@ export class Target implements
                         })
                     }), context)
                 }
+            case 'pinned-series':
+                return { items: this.visible(this.parser.parseHighlights((await this.home()).pinned, true), context) }
             case 'latest':
                 return {
                     items: this.visible(this.parser.parseHighlights((await this.home()).latest, true), context),
