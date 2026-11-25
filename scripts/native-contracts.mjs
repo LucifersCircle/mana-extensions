@@ -122,17 +122,32 @@ export function createContractTransport(fetchImpl, { documentLimit = 12, imageLi
   };
 }
 
+// Log only fixed MIME labels, never a raw or user-defined Content-Type value.
+const diagnosticMimes = new Set([
+  'application/json', 'application/octet-stream', 'binary/octet-stream',
+  'text/html', 'text/plain', 'image/avif', 'image/gif', 'image/jpeg',
+  'image/jxl', 'image/png', 'image/webp'
+]);
+function diagnosticMime(mime) {
+  const essence = mime?.split(';', 1)[0].trim().toLowerCase();
+  return !essence ? 'missing' : diagnosticMimes.has(essence) ? essence : 'other';
+}
+
 // MIME labels are not pixel-decoding proof. GenzToons serves WebP pages as
 // text/plain; device testing confirmed rendering. This exception preserves the
 // same complete-container structural checks used for image/* responses.
-export function verifyNativeImageBody({ sourceId, origin, url, mime, bytes }) {
+export function verifyNativeImageBody({ sourceId, origin, url, mime, bytes }, onGenzPageMimeFailure) {
   const metadata = verifyRasterImageBytes(bytes);
   const target = new URL(url);
   const genzWebP = sourceId === 'GenzToons' && origin === 'page' && mime === 'text/plain' && metadata.format === 'WEBP'
     && target.href === url && target.origin === 'https://cdn.meowing.org' && !target.username && !target.password && !target.search && !target.hash
     && target.pathname.startsWith('/uploads/') && target.pathname.slice(9).length <= 100
     && /^[A-Za-z0-9_-]+(?:\.(?:avif|webp|png|jpe?g))?$/.test(target.pathname.slice(9));
-  assert(mime?.startsWith('image/') || (origin === 'cover' && ['Marumaru', 'VortexScans'].includes(sourceId) && mime === 'application/octet-stream') || genzWebP, 'Native image MIME is unsupported');
+  const supported = mime?.startsWith('image/') || (origin === 'cover' && ['Marumaru', 'VortexScans'].includes(sourceId) && mime === 'application/octet-stream') || genzWebP;
+  if (!supported && sourceId === 'GenzToons' && origin === 'page') {
+    onGenzPageMimeFailure?.({ mime: diagnosticMime(mime), format: metadata.format, byteCount: bytes.length });
+  }
+  assert(supported, 'Native image MIME is unsupported');
   return metadata;
 }
 
@@ -152,7 +167,9 @@ async function image(source, url, origin, transport, captureCoverImage) {
   }
   // Complete PNG/JPEG/WebP containers and dimensions, not per-response pixel
   // decoding. Preserve the actual MIME in evidence, including compatibility cases.
-  const { format } = verifyNativeImageBody({ sourceId: source.info.id, origin, url, mime, bytes });
+  const { format } = verifyNativeImageBody({ sourceId: source.info.id, origin, url, mime, bytes }, (failure) => {
+    console.log(`IMAGE DIAGNOSTIC GenzToons page: MIME ${failure.mime}, raster ${failure.format}, ${failure.byteCount} bytes`);
+  });
   console.log(`IMAGE ${origin}: ${format}, ${bytes.length} complete bytes, MIME ${mime}, structural validation`);
 }
 
