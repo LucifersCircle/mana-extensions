@@ -115,6 +115,32 @@ test('Genz page MIME compatibility remains structurally validated and narrowly s
   }
 });
 
+test('Genz page MIME failure reports only bounded evidence without changing acceptance', () => {
+  const bytes = Buffer.from('UklGRjQAAABXRUJQVlA4ICgAAACQAQCdASoCAAMAAUAmJZACdLoAA5gA/vSIh/VcnYnxw/ubHOLZDAAA', 'base64');
+  const input = { sourceId: 'GenzToons', origin: 'page', url: 'https://cdn.meowing.org/uploads/test.webp', mime: 'text/plain', bytes };
+  const events = [], record = (event) => events.push(event);
+  for (const [mime, safe] of [
+    ['Application/Octet-Stream; private=secret', 'application/octet-stream'],
+    [' TEXT/HTML ; private=secret ', 'text/html'],
+    [' IMAGE/AVIF ; private=secret ', 'image/avif'],
+    ['application/x-private-header-value', 'other'],
+    ['application/x-private\nresult: leaked', 'other'],
+    [undefined, 'missing']
+  ]) {
+    assert.throws(() => verifyNativeImageBody({ ...input, mime, url: input.url + '?private=secret' }, record),
+      { message: 'Native image MIME is unsupported' });
+    assert.deepEqual(events.splice(0), [{ mime: safe, format: 'WEBP', byteCount: bytes.length }]);
+  }
+  assert.equal(verifyNativeImageBody(input, record).format, 'WEBP');
+  assert.equal(verifyNativeImageBody({ ...input, mime: 'image/avif' }, record).format, 'WEBP');
+  for (const patch of [
+    { sourceId: 'OtherSource', mime: 'application/octet-stream' },
+    { origin: 'cover', mime: 'application/octet-stream' },
+    { bytes: bytes.subarray(0, -1), mime: 'application/octet-stream' }
+  ]) assert.throws(() => verifyNativeImageBody({ ...input, ...patch }, record));
+  assert.deepEqual(events, []);
+});
+
 test('Cloudflare classification requires exact current fatal SDK response evidence', async () => {
   const { cloudflareEvidence } = await import('./native-contracts.mjs');
   const url = 'https://example.invalid/private?token=not-recorded';
