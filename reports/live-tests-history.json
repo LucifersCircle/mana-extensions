@@ -1,5 +1,48 @@
 [
   {
+    "checkedAt": "2026-11-26T04:32:29.326Z",
+    "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/45755686214",
+    "sha": "d4bc6672227fb0c53bdb4c4672639ae36c581a06",
+    "sources": {
+      "GenzToons": {
+        "status": "fail"
+      },
+      "GourmetScans": {
+        "status": "cloudflared"
+      },
+      "Hijala": {
+        "status": "pass"
+      },
+      "Kagane": {
+        "status": "fail"
+      },
+      "MangaStash": {
+        "status": "fail"
+      },
+      "MangaSushi": {
+        "status": "pass"
+      },
+      "MangaTaro": {
+        "status": "pass"
+      },
+      "ManhwaNex": {
+        "status": "fail"
+      },
+      "Marumaru": {
+        "status": "fail"
+      },
+      "QiScans": {
+        "status": "cloudflared"
+      },
+      "VortexScans": {
+        "status": "pass"
+      },
+      "VyManga": {
+        "status": "error"
+      }
+    }
+  },
+  {
     "checkedAt": "2026-11-25T22:38:35.295Z",
     "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/45714690234",
     "sha": "b035c88e699a3f97e5c1cdf3c8f44bbd0a30bde1",
@@ -982,49 +1025,6 @@
       },
       "VortexScans": {
         "status": "fail"
-      },
-      "VyManga": {
-        "status": "error"
-      }
-    }
-  },
-  {
-    "checkedAt": "2026-11-18T09:16:19.103Z",
-    "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/44274110026",
-    "sha": "7c3255a24655398b16b857a7b7b11f789a584cef",
-    "sources": {
-      "GenzToons": {
-        "status": "pass"
-      },
-      "GourmetScans": {
-        "status": "cloudflared"
-      },
-      "Hijala": {
-        "status": "pass"
-      },
-      "Kagane": {
-        "status": "fail"
-      },
-      "MangaStash": {
-        "status": "fail"
-      },
-      "MangaSushi": {
-        "status": "pass"
-      },
-      "MangaTaro": {
-        "status": "pass"
-      },
-      "ManhwaNex": {
-        "status": "pass"
-      },
-      "Marumaru": {
-        "status": "fail"
-      },
-      "QiScans": {
-        "status": "cloudflared"
-      },
-      "VortexScans": {
-        "status": "pass"
       },
       "VyManga": {
         "status": "error"
