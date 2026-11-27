@@ -1,5 +1,48 @@
 [
   {
+    "checkedAt": "2026-11-27T15:40:37.757Z",
+    "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/46026743655",
+    "sha": "ce3efc1abb3d4bad5eb72855f03db117c303daba",
+    "sources": {
+      "GenzToons": {
+        "status": "fail"
+      },
+      "GourmetScans": {
+        "status": "cloudflared"
+      },
+      "Hijala": {
+        "status": "pass"
+      },
+      "Kagane": {
+        "status": "fail"
+      },
+      "MangaStash": {
+        "status": "fail"
+      },
+      "MangaSushi": {
+        "status": "pass"
+      },
+      "MangaTaro": {
+        "status": "pass"
+      },
+      "ManhwaNex": {
+        "status": "fail"
+      },
+      "Marumaru": {
+        "status": "fail"
+      },
+      "QiScans": {
+        "status": "cloudflared"
+      },
+      "VortexScans": {
+        "status": "pass"
+      },
+      "VyManga": {
+        "status": "error"
+      }
+    }
+  },
+  {
     "checkedAt": "2026-11-27T05:27:02.130Z",
     "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/45945730443",
     "sha": "978f1a289769b7f08941789837af45adffdab314",
@@ -952,49 +995,6 @@
     "sources": {
       "GenzToons": {
         "status": "pass"
-      },
-      "GourmetScans": {
-        "status": "cloudflared"
-      },
-      "Hijala": {
-        "status": "pass"
-      },
-      "Kagane": {
-        "status": "fail"
-      },
-      "MangaStash": {
-        "status": "fail"
-      },
-      "MangaSushi": {
-        "status": "pass"
-      },
-      "MangaTaro": {
-        "status": "pass"
-      },
-      "ManhwaNex": {
-        "status": "pass"
-      },
-      "Marumaru": {
-        "status": "fail"
-      },
-      "QiScans": {
-        "status": "cloudflared"
-      },
-      "VortexScans": {
-        "status": "pass"
-      },
-      "VyManga": {
-        "status": "error"
-      }
-    }
-  },
-  {
-    "checkedAt": "2026-11-19T17:27:36.691Z",
-    "runUrl": "https://github.com/LucifersCircle/mana-extensions/actions/runs/44577118361",
-    "sha": "4eb6b8ae09779bf6966d42ca373c595c6349d5ed",
-    "sources": {
-      "GenzToons": {
-        "status": "fail"
       },
       "GourmetScans": {
         "status": "cloudflared"
