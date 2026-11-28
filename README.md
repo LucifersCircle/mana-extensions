@@ -36,25 +36,25 @@ publishing. Pull requests never publish sources.
 
 <!-- LIVE_TEST_STATUS:START -->
 
-Last checked: **2026-11-27 23:46:54 UTC** · [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/46084247712)
+Last checked: **2026-11-28 05:03:14 UTC** · [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/46110177734)
 Live scope: all; 12/12 sources selected; 11 complete reports. Non-PR events run the full live suite
-Selected tests: 51/87 passed; 13 failed; 6 Cloudflared; 17 blocked. Cloudflared and blocked tests are not verified passes.
-Started: 2026-11-27 23:45:31 UTC
-Tested commit: `d43200b`
+Selected tests: 57/87 passed; 10 failed; 6 Cloudflared; 14 blocked. Cloudflared and blocked tests are not verified passes.
+Started: 2026-11-28 05:01:23 UTC
+Tested commit: `ff54fbd`
 
 | Extension | Result | Passed | Failed | Cloudflared | Blocked | Duration |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| GenzToons | ❌ Fail | 2/8 | 3 | 0 | 3 | 1.07s |
-| GourmetScans | ☁️ Cloudflared | 2/8 | 0 | 3 | 3 | 1.06s |
-| Hijala | ✅ Pass | 8/8 | 0 | 0 | 0 | 4.58s |
-| Kagane | ❌ Fail | 7/8 | 1 | 0 | 0 | 10.44s |
-| MangaStash | ❌ Fail | 2/8 | 3 | 0 | 3 | 2.30s |
-| MangaSushi | ✅ Pass | 8/8 | 0 | 0 | 0 | 4.90s |
-| MangaTaro | ✅ Pass | 8/8 | 0 | 0 | 0 | 3.21s |
-| ManhwaNex | ❌ Fail | 2/8 | 3 | 0 | 3 | 0.70s |
-| Marumaru | ❌ Fail | 2/7 | 3 | 0 | 2 | 1.96s |
-| QiScans | ☁️ Cloudflared | 2/8 | 0 | 3 | 3 | 0.73s |
-| VortexScans | ✅ Pass | 8/8 | 0 | 0 | 0 | 3.50s |
+| GenzToons | ❌ Fail | 7/8 | 1 | 0 | 0 | 3.32s |
+| GourmetScans | ☁️ Cloudflared | 2/8 | 0 | 3 | 3 | 1.11s |
+| Hijala | ✅ Pass | 8/8 | 0 | 0 | 0 | 9.31s |
+| Kagane | ❌ Fail | 7/8 | 1 | 0 | 0 | 15.81s |
+| MangaStash | ❌ Fail | 3/8 | 2 | 0 | 3 | 3.99s |
+| MangaSushi | ✅ Pass | 8/8 | 0 | 0 | 0 | 8.65s |
+| MangaTaro | ✅ Pass | 8/8 | 0 | 0 | 0 | 3.91s |
+| ManhwaNex | ❌ Fail | 2/8 | 3 | 0 | 3 | 0.73s |
+| Marumaru | ❌ Fail | 2/7 | 3 | 0 | 2 | 3.02s |
+| QiScans | ☁️ Cloudflared | 2/8 | 0 | 3 | 3 | 0.75s |
+| VortexScans | ✅ Pass | 8/8 | 0 | 0 | 0 | 4.34s |
 | VyManga | ⚠️ Error | 0/0 | 0 | 0 | 0 | 0.03s |
 
 VyManga: Source suite aborted before completion; remaining checks were not run. AssertionError [ERR_ASSERTION]: No native contract configuration for VyManga     at testNativeContract (file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:178:3)     at file:///home/runner/work/mana-extensions/mana-extensions/scripts/live-tests.mjs:46:13     at process.processTicksAndRejection
@@ -65,91 +65,91 @@ VyManga: Source suite aborted before completion; remaining checks were not run. 
 | Extension | Test | Result | Duration | Failure |
 | --- | --- | --- | ---: | --- |
 | GenzToons | Native initialization and advertised capabilities | ✅ Pass | 0.00s | — |
-| GenzToons | Native discovery schema and representative section | ❌ Fail | 0.14s | Error: GenzToons unavailable (HTTP 404)     at Api.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:48:271637)     at Generator.next (&lt;anonymous&gt;)     at fulfilled (evalmachine.&lt;anonymous&gt;:41:1186)     at /home/runner/work/mana-extensions/mana-extensions/node_modules/@mana-app/types/dist/runtime/http-host.generated.js:293:55     at within (/home/runner/work/mana-extensions/mana-extensi |
-| GenzToons | Native catalog search and offered continuation | ❌ Fail | 0.41s | Error: GenzToons unavailable (HTTP 404)     at Api.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:48:271637)     at Generator.next (&lt;anonymous&gt;)     at fulfilled (evalmachine.&lt;anonymous&gt;:41:1186)     at /home/runner/work/mana-extensions/mana-extensions/node_modules/@mana-app/types/dist/runtime/http-host.generated.js:293:55     at within (/home/runner/work/mana-extensions/mana-extensi |
-| GenzToons | Native details identity, metadata and complete cover bytes | ❌ Fail | 0.49s | Error: GenzToons unavailable (HTTP 404)     at Api.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:48:271637)     at Generator.next (&lt;anonymous&gt;)     at fulfilled (evalmachine.&lt;anonymous&gt;:41:1186)     at /home/runner/work/mana-extensions/mana-extensions/node_modules/@mana-app/types/dist/runtime/http-host.generated.js:293:55     at within (/home/runner/work/mana-extensions/mana-extensi |
-| GenzToons | Native complete chapter inventory, identity and ordering | ⏸️ Blocked | 0.00s | Error: Native prerequisite was not verified: Native details identity, metadata and complete cover bytes     at file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:184:72     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/live-tests.mjs:25:19)     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts |
-| GenzToons | Native reader identity, ordered manifest and first/last image bytes | ⏸️ Blocked | 0.00s | Error: Native prerequisite was not verified: Native complete chapter inventory, identity and ordering     at file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:184:72     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/live-tests.mjs:25:19)     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.m |
-| GenzToons | Native advertised controls and representative filtered search | ⏸️ Blocked | 0.00s | Error: Native prerequisite was not verified: Native details identity, metadata and complete cover bytes     at file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:184:72     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/live-tests.mjs:25:19)     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts |
+| GenzToons | Native discovery schema and representative section | ✅ Pass | 0.62s | — |
+| GenzToons | Native catalog search and offered continuation | ✅ Pass | 0.37s | — |
+| GenzToons | Native details identity, metadata and complete cover bytes | ✅ Pass | 0.63s | — |
+| GenzToons | Native complete chapter inventory, identity and ordering | ✅ Pass | 0.41s | — |
+| GenzToons | Native reader identity, ordered manifest and first/last image bytes | ❌ Fail | 0.72s | AssertionError [ERR_ASSERTION]: Native image MIME is unsupported     at verifyNativeImageBody (file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:150:3)     at image (file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:170:22)     at process.processTicksAndRejections (node:internal/process/task_queues:104:5)     at async file:/// |
+| GenzToons | Native advertised controls and representative filtered search | ✅ Pass | 0.52s | — |
 | GenzToons | Native policy and image-origin guards fail before network | ✅ Pass | 0.00s | — |
 | GourmetScans | Native initialization and advertised capabilities | ✅ Pass | 0.00s | — |
-| GourmetScans | Native discovery schema and representative section | ☁️ Cloudflared | 0.06s | CloudflareError: The requested resource is Cloudflare protected     at RequestExecution.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:41:62410)     at Generator.next (&lt;anonymous&gt;)     at evalmachine.&lt;anonymous&gt;:41:54597     at new Promise (&lt;anonymous&gt;)     at __awaiter (evalmachine.&lt;anonymous&gt;:41:54238)     at RequestExecution.checkChallenge (evalmachine.&lt;anonymous&gt |
-| GourmetScans | Native catalog search and offered continuation | ☁️ Cloudflared | 0.47s | CloudflareError: The requested resource is Cloudflare protected     at RequestExecution.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:41:62410)     at Generator.next (&lt;anonymous&gt;)     at evalmachine.&lt;anonymous&gt;:41:54597     at new Promise (&lt;anonymous&gt;)     at __awaiter (evalmachine.&lt;anonymous&gt;:41:54238)     at RequestExecution.checkChallenge (evalmachine.&lt;anonymous&gt |
-| GourmetScans | Native details identity, metadata and complete cover bytes | ☁️ Cloudflared | 0.50s | CloudflareError: The requested resource is Cloudflare protected     at RequestExecution.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:41:62410)     at Generator.next (&lt;anonymous&gt;)     at evalmachine.&lt;anonymous&gt;:41:54597     at new Promise (&lt;anonymous&gt;)     at __awaiter (evalmachine.&lt;anonymous&gt;:41:54238)     at RequestExecution.checkChallenge (evalmachine.&lt;anonymous&gt |
+| GourmetScans | Native discovery schema and representative section | ☁️ Cloudflared | 0.09s | CloudflareError: The requested resource is Cloudflare protected     at RequestExecution.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:41:62410)     at Generator.next (&lt;anonymous&gt;)     at evalmachine.&lt;anonymous&gt;:41:54597     at new Promise (&lt;anonymous&gt;)     at __awaiter (evalmachine.&lt;anonymous&gt;:41:54238)     at RequestExecution.checkChallenge (evalmachine.&lt;anonymous&gt |
+| GourmetScans | Native catalog search and offered continuation | ☁️ Cloudflared | 0.44s | CloudflareError: The requested resource is Cloudflare protected     at RequestExecution.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:41:62410)     at Generator.next (&lt;anonymous&gt;)     at evalmachine.&lt;anonymous&gt;:41:54597     at new Promise (&lt;anonymous&gt;)     at __awaiter (evalmachine.&lt;anonymous&gt;:41:54238)     at RequestExecution.checkChallenge (evalmachine.&lt;anonymous&gt |
+| GourmetScans | Native details identity, metadata and complete cover bytes | ☁️ Cloudflared | 0.52s | CloudflareError: The requested resource is Cloudflare protected     at RequestExecution.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:41:62410)     at Generator.next (&lt;anonymous&gt;)     at evalmachine.&lt;anonymous&gt;:41:54597     at new Promise (&lt;anonymous&gt;)     at __awaiter (evalmachine.&lt;anonymous&gt;:41:54238)     at RequestExecution.checkChallenge (evalmachine.&lt;anonymous&gt |
 | GourmetScans | Native complete chapter inventory, identity and ordering | ⏸️ Blocked | 0.00s | Error: Native prerequisite was not verified: Native details identity, metadata and complete cover bytes     at file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:184:72     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/live-tests.mjs:25:19)     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts |
 | GourmetScans | Native reader identity, ordered manifest and first/last image bytes | ⏸️ Blocked | 0.00s | Error: Native prerequisite was not verified: Native complete chapter inventory, identity and ordering     at file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:184:72     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/live-tests.mjs:25:19)     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.m |
 | GourmetScans | Native advertised controls and representative filtered search | ⏸️ Blocked | 0.00s | Error: Native prerequisite was not verified: Native details identity, metadata and complete cover bytes     at file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:184:72     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/live-tests.mjs:25:19)     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts |
 | GourmetScans | Native policy and image-origin guards fail before network | ✅ Pass | 0.00s | — |
 | Hijala | Native initialization and advertised capabilities | ✅ Pass | 0.00s | — |
-| Hijala | Native discovery schema and representative section | ✅ Pass | 1.21s | — |
-| Hijala | Native catalog search and offered continuation | ✅ Pass | 1.07s | — |
-| Hijala | Native details identity, metadata and complete cover bytes | ✅ Pass | 0.94s | — |
-| Hijala | Native complete chapter inventory, identity and ordering | ✅ Pass | 0.14s | — |
-| Hijala | Native reader identity, ordered manifest and first/last image bytes | ✅ Pass | 0.54s | — |
-| Hijala | Native advertised controls and representative filtered search | ✅ Pass | 0.65s | — |
+| Hijala | Native discovery schema and representative section | ✅ Pass | 1.72s | — |
+| Hijala | Native catalog search and offered continuation | ✅ Pass | 1.31s | — |
+| Hijala | Native details identity, metadata and complete cover bytes | ✅ Pass | 2.05s | — |
+| Hijala | Native complete chapter inventory, identity and ordering | ✅ Pass | 0.23s | — |
+| Hijala | Native reader identity, ordered manifest and first/last image bytes | ✅ Pass | 2.85s | — |
+| Hijala | Native advertised controls and representative filtered search | ✅ Pass | 1.11s | — |
 | Hijala | Native policy and image-origin guards fail before network | ✅ Pass | 0.00s | — |
 | Kagane | Native initialization and advertised capabilities | ✅ Pass | 0.00s | — |
-| Kagane | Native discovery schema and representative section | ✅ Pass | 2.38s | — |
-| Kagane | Native catalog search and offered continuation | ✅ Pass | 1.92s | — |
-| Kagane | Native details identity, metadata and complete cover bytes | ✅ Pass | 2.99s | — |
-| Kagane | Native complete chapter inventory, identity and ordering | ✅ Pass | 0.38s | — |
-| Kagane | Native reader identity, ordered manifest and first/last image bytes | ❌ Fail | 1.35s | HttpStatusError: HTTP 404     at _HttpResponse.requireOk (evalmachine.&lt;anonymous&gt;:41:47036)     at Object.&lt;anonymous&gt; (/home/runner/work/mana-extensions/mana-extensions/node_modules/@mana-app/types/dist/runtime/http-host.generated.js:158:18)     at Generator.next (&lt;anonymous&gt;)     at fulfilled (/home/runner/work/mana-extensions/mana-extensions/node_modules/@mana-app/types/dist/ru |
-| Kagane | Native advertised controls and representative filtered search | ✅ Pass | 1.40s | — |
+| Kagane | Native discovery schema and representative section | ✅ Pass | 4.14s | — |
+| Kagane | Native catalog search and offered continuation | ✅ Pass | 3.07s | — |
+| Kagane | Native details identity, metadata and complete cover bytes | ✅ Pass | 4.39s | — |
+| Kagane | Native complete chapter inventory, identity and ordering | ✅ Pass | 0.50s | — |
+| Kagane | Native reader identity, ordered manifest and first/last image bytes | ❌ Fail | 1.72s | HttpStatusError: HTTP 404     at _HttpResponse.requireOk (evalmachine.&lt;anonymous&gt;:41:47036)     at Object.&lt;anonymous&gt; (/home/runner/work/mana-extensions/mana-extensions/node_modules/@mana-app/types/dist/runtime/http-host.generated.js:158:18)     at Generator.next (&lt;anonymous&gt;)     at fulfilled (/home/runner/work/mana-extensions/mana-extensions/node_modules/@mana-app/types/dist/ru |
+| Kagane | Native advertised controls and representative filtered search | ✅ Pass | 1.97s | — |
 | Kagane | Native policy and image-origin guards fail before network | ✅ Pass | 0.00s | — |
 | MangaStash | Native initialization and advertised capabilities | ✅ Pass | 0.00s | — |
-| MangaStash | Native discovery schema and representative section | ❌ Fail | 0.54s | Error: MangaStash home section changed     at parseHome (evalmachine.&lt;anonymous&gt;:48:270399)     at Target.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:49:11801)     at Generator.next (&lt;anonymous&gt;)     at fulfilled (evalmachine.&lt;anonymous&gt;:41:1186)     at /home/runner/work/mana-extensions/mana-extensions/node_modules/@mana-app/types/dist/runtime/http-host.generated.js:293:55   |
-| MangaStash | Native catalog search and offered continuation | ❌ Fail | 1.22s | Error: MangaStash cover has wrong owner     at imageURL (evalmachine.&lt;anonymous&gt;:48:266906)     at cover (evalmachine.&lt;anonymous&gt;:48:269134)     at evalmachine.&lt;anonymous&gt;:48:269973     at Array.map (&lt;anonymous&gt;)     at cards (evalmachine.&lt;anonymous&gt;:48:269268)     at parseListing (evalmachine.&lt;anonymous&gt;:48:272117)     at Target.&lt;anonymous&gt; (evalmachine.& |
-| MangaStash | Native details identity, metadata and complete cover bytes | ❌ Fail | 0.50s | Error: MangaStash detail title or language is missing     at parseDetail (evalmachine.&lt;anonymous&gt;:48:274620)     at Target.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:49:13854)     at Generator.next (&lt;anonymous&gt;)     at fulfilled (evalmachine.&lt;anonymous&gt;:41:1186)     at /home/runner/work/mana-extensions/mana-extensions/node_modules/@mana-app/types/dist/runtime/http-host.gene |
+| MangaStash | Native discovery schema and representative section | ❌ Fail | 0.83s | Error: MangaStash home section changed     at parseHome (evalmachine.&lt;anonymous&gt;:48:270399)     at Target.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:49:11801)     at Generator.next (&lt;anonymous&gt;)     at fulfilled (evalmachine.&lt;anonymous&gt;:41:1186)     at /home/runner/work/mana-extensions/mana-extensions/node_modules/@mana-app/types/dist/runtime/http-host.generated.js:293:55   |
+| MangaStash | Native catalog search and offered continuation | ✅ Pass | 2.41s | — |
+| MangaStash | Native details identity, metadata and complete cover bytes | ❌ Fail | 0.72s | Error: MangaStash detail title or language is missing     at parseDetail (evalmachine.&lt;anonymous&gt;:48:274620)     at Target.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:49:13854)     at Generator.next (&lt;anonymous&gt;)     at fulfilled (evalmachine.&lt;anonymous&gt;:41:1186)     at /home/runner/work/mana-extensions/mana-extensions/node_modules/@mana-app/types/dist/runtime/http-host.gene |
 | MangaStash | Native complete chapter inventory, identity and ordering | ⏸️ Blocked | 0.00s | Error: Native prerequisite was not verified: Native details identity, metadata and complete cover bytes     at file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:184:72     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/live-tests.mjs:25:19)     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts |
 | MangaStash | Native reader identity, ordered manifest and first/last image bytes | ⏸️ Blocked | 0.00s | Error: Native prerequisite was not verified: Native complete chapter inventory, identity and ordering     at file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:184:72     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/live-tests.mjs:25:19)     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.m |
 | MangaStash | Native advertised controls and representative filtered search | ⏸️ Blocked | 0.00s | Error: Native prerequisite was not verified: Native details identity, metadata and complete cover bytes     at file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:184:72     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/live-tests.mjs:25:19)     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts |
 | MangaStash | Native policy and image-origin guards fail before network | ✅ Pass | 0.00s | — |
 | MangaSushi | Native initialization and advertised capabilities | ✅ Pass | 0.00s | — |
-| MangaSushi | Native discovery schema and representative section | ✅ Pass | 0.81s | — |
-| MangaSushi | Native catalog search and offered continuation | ✅ Pass | 1.34s | — |
-| MangaSushi | Native details identity, metadata and complete cover bytes | ✅ Pass | 0.55s | — |
-| MangaSushi | Native complete chapter inventory, identity and ordering | ✅ Pass | 0.39s | — |
-| MangaSushi | Native reader identity, ordered manifest and first/last image bytes | ✅ Pass | 0.66s | — |
-| MangaSushi | Native advertised controls and representative filtered search | ✅ Pass | 1.11s | — |
+| MangaSushi | Native discovery schema and representative section | ✅ Pass | 1.12s | — |
+| MangaSushi | Native catalog search and offered continuation | ✅ Pass | 1.98s | — |
+| MangaSushi | Native details identity, metadata and complete cover bytes | ✅ Pass | 0.71s | — |
+| MangaSushi | Native complete chapter inventory, identity and ordering | ✅ Pass | 0.37s | — |
+| MangaSushi | Native reader identity, ordered manifest and first/last image bytes | ✅ Pass | 2.65s | — |
+| MangaSushi | Native advertised controls and representative filtered search | ✅ Pass | 1.79s | — |
 | MangaSushi | Native policy and image-origin guards fail before network | ✅ Pass | 0.00s | — |
 | MangaTaro | Native initialization and advertised capabilities | ✅ Pass | 0.00s | — |
-| MangaTaro | Native discovery schema and representative section | ✅ Pass | 0.66s | — |
-| MangaTaro | Native catalog search and offered continuation | ✅ Pass | 0.84s | — |
-| MangaTaro | Native details identity, metadata and complete cover bytes | ✅ Pass | 0.77s | — |
-| MangaTaro | Native complete chapter inventory, identity and ordering | ✅ Pass | 0.36s | — |
-| MangaTaro | Native reader identity, ordered manifest and first/last image bytes | ✅ Pass | 0.26s | — |
-| MangaTaro | Native advertised controls and representative filtered search | ✅ Pass | 0.29s | — |
+| MangaTaro | Native discovery schema and representative section | ✅ Pass | 0.56s | — |
+| MangaTaro | Native catalog search and offered continuation | ✅ Pass | 1.04s | — |
+| MangaTaro | Native details identity, metadata and complete cover bytes | ✅ Pass | 0.87s | — |
+| MangaTaro | Native complete chapter inventory, identity and ordering | ✅ Pass | 0.41s | — |
+| MangaTaro | Native reader identity, ordered manifest and first/last image bytes | ✅ Pass | 0.73s | — |
+| MangaTaro | Native advertised controls and representative filtered search | ✅ Pass | 0.25s | — |
 | MangaTaro | Native policy and image-origin guards fail before network | ✅ Pass | 0.00s | — |
 | ManhwaNex | Native initialization and advertised capabilities | ✅ Pass | 0.00s | — |
-| ManhwaNex | Native discovery schema and representative section | ❌ Fail | 0.01s | NetworkError: fetch failed     at transportError (evalmachine.&lt;anonymous&gt;:41:64317)     at RequestExecution.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:41:60546)     at Generator.throw (&lt;anonymous&gt;)     at rejected (evalmachine.&lt;anonymous&gt;:41:54376)     at /home/runner/work/mana-extensions/mana-extensions/node_modules/@mana-app/types/dist/runtime/http-host.generated.js:293:5 |
-| ManhwaNex | Native catalog search and offered continuation | ❌ Fail | 0.33s | NetworkError: fetch failed     at transportError (evalmachine.&lt;anonymous&gt;:41:64317)     at RequestExecution.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:41:60546)     at Generator.throw (&lt;anonymous&gt;)     at rejected (evalmachine.&lt;anonymous&gt;:41:54376)     at /home/runner/work/mana-extensions/mana-extensions/node_modules/@mana-app/types/dist/runtime/http-host.generated.js:293:5 |
-| ManhwaNex | Native details identity, metadata and complete cover bytes | ❌ Fail | 0.33s | NetworkError: fetch failed     at transportError (evalmachine.&lt;anonymous&gt;:41:64317)     at RequestExecution.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:41:60546)     at Generator.throw (&lt;anonymous&gt;)     at rejected (evalmachine.&lt;anonymous&gt;:41:54376)     at /home/runner/work/mana-extensions/mana-extensions/node_modules/@mana-app/types/dist/runtime/http-host.generated.js:293:5 |
+| ManhwaNex | Native discovery schema and representative section | ❌ Fail | 0.02s | NetworkError: fetch failed     at transportError (evalmachine.&lt;anonymous&gt;:41:64317)     at RequestExecution.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:41:60546)     at Generator.throw (&lt;anonymous&gt;)     at rejected (evalmachine.&lt;anonymous&gt;:41:54376)     at /home/runner/work/mana-extensions/mana-extensions/node_modules/@mana-app/types/dist/runtime/http-host.generated.js:293:5 |
+| ManhwaNex | Native catalog search and offered continuation | ❌ Fail | 0.36s | NetworkError: fetch failed     at transportError (evalmachine.&lt;anonymous&gt;:41:64317)     at RequestExecution.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:41:60546)     at Generator.throw (&lt;anonymous&gt;)     at rejected (evalmachine.&lt;anonymous&gt;:41:54376)     at /home/runner/work/mana-extensions/mana-extensions/node_modules/@mana-app/types/dist/runtime/http-host.generated.js:293:5 |
+| ManhwaNex | Native details identity, metadata and complete cover bytes | ❌ Fail | 0.31s | NetworkError: fetch failed     at transportError (evalmachine.&lt;anonymous&gt;:41:64317)     at RequestExecution.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:41:60546)     at Generator.throw (&lt;anonymous&gt;)     at rejected (evalmachine.&lt;anonymous&gt;:41:54376)     at /home/runner/work/mana-extensions/mana-extensions/node_modules/@mana-app/types/dist/runtime/http-host.generated.js:293:5 |
 | ManhwaNex | Native complete chapter inventory, identity and ordering | ⏸️ Blocked | 0.00s | Error: Native prerequisite was not verified: Native details identity, metadata and complete cover bytes     at file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:184:72     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/live-tests.mjs:25:19)     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts |
 | ManhwaNex | Native reader identity, ordered manifest and first/last image bytes | ⏸️ Blocked | 0.00s | Error: Native prerequisite was not verified: Native complete chapter inventory, identity and ordering     at file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:184:72     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/live-tests.mjs:25:19)     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.m |
 | ManhwaNex | Native advertised controls and representative filtered search | ⏸️ Blocked | 0.00s | Error: Native prerequisite was not verified: Native details identity, metadata and complete cover bytes     at file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:184:72     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/live-tests.mjs:25:19)     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts |
 | ManhwaNex | Native policy and image-origin guards fail before network | ✅ Pass | 0.00s | — |
 | Marumaru | Native initialization and advertised capabilities | ✅ Pass | 0.00s | — |
-| Marumaru | Native discovery schema and representative section | ❌ Fail | 1.61s | NetworkError: Live-test Chromium request failed or managed challenge did not finish     at transportError (evalmachine.&lt;anonymous&gt;:41:64131)     at RequestExecution.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:41:60389)     at Generator.throw (&lt;anonymous&gt;)     at rejected (evalmachine.&lt;anonymous&gt;:41:54248)     at /home/runner/work/mana-extensions/mana-extensions/node_modules/ |
+| Marumaru | Native discovery schema and representative section | ❌ Fail | 2.66s | NetworkError: Live-test Chromium request failed or managed challenge did not finish     at transportError (evalmachine.&lt;anonymous&gt;:41:64131)     at RequestExecution.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:41:60389)     at Generator.throw (&lt;anonymous&gt;)     at rejected (evalmachine.&lt;anonymous&gt;:41:54248)     at /home/runner/work/mana-extensions/mana-extensions/node_modules/ |
 | Marumaru | Native catalog search and offered continuation | ❌ Fail | 0.00s | NetworkError: Live-test Chromium request failed or managed challenge did not finish     at transportError (evalmachine.&lt;anonymous&gt;:41:64131)     at RequestExecution.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:41:60389)     at Generator.throw (&lt;anonymous&gt;)     at rejected (evalmachine.&lt;anonymous&gt;:41:54248)     at /home/runner/work/mana-extensions/mana-extensions/node_modules/ |
-| Marumaru | Native details identity, metadata and complete cover bytes | ❌ Fail | 0.33s | NetworkError: Live-test Chromium request failed or managed challenge did not finish     at transportError (evalmachine.&lt;anonymous&gt;:41:64131)     at RequestExecution.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:41:60389)     at Generator.throw (&lt;anonymous&gt;)     at rejected (evalmachine.&lt;anonymous&gt;:41:54248)     at /home/runner/work/mana-extensions/mana-extensions/node_modules/ |
+| Marumaru | Native details identity, metadata and complete cover bytes | ❌ Fail | 0.34s | NetworkError: Live-test Chromium request failed or managed challenge did not finish     at transportError (evalmachine.&lt;anonymous&gt;:41:64131)     at RequestExecution.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:41:60389)     at Generator.throw (&lt;anonymous&gt;)     at rejected (evalmachine.&lt;anonymous&gt;:41:54248)     at /home/runner/work/mana-extensions/mana-extensions/node_modules/ |
 | Marumaru | Native complete chapter inventory, identity and ordering | ⏸️ Blocked | 0.00s | Error: Native prerequisite was not verified: Native details identity, metadata and complete cover bytes     at file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:184:72     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/live-tests.mjs:25:19)     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts |
 | Marumaru | Native reader identity, ordered manifest and first/last image bytes | ⏸️ Blocked | 0.00s | Error: Native prerequisite was not verified: Native complete chapter inventory, identity and ordering     at file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:184:72     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/live-tests.mjs:25:19)     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.m |
 | Marumaru | Native policy and image-origin guards fail before network | ✅ Pass | 0.00s | — |
 | QiScans | Native initialization and advertised capabilities | ✅ Pass | 0.00s | — |
-| QiScans | Native discovery schema and representative section | ☁️ Cloudflared | 0.05s | CloudflareError: The requested resource is Cloudflare protected     at RequestExecution.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:41:62370)     at Generator.next (&lt;anonymous&gt;)     at evalmachine.&lt;anonymous&gt;:41:54561     at new Promise (&lt;anonymous&gt;)     at __awaiter (evalmachine.&lt;anonymous&gt;:41:54202)     at RequestExecution.checkChallenge (evalmachine.&lt;anonymous&gt |
-| QiScans | Native catalog search and offered continuation | ☁️ Cloudflared | 0.33s | CloudflareError: The requested resource is Cloudflare protected     at RequestExecution.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:41:62370)     at Generator.next (&lt;anonymous&gt;)     at evalmachine.&lt;anonymous&gt;:41:54561     at new Promise (&lt;anonymous&gt;)     at __awaiter (evalmachine.&lt;anonymous&gt;:41:54202)     at RequestExecution.checkChallenge (evalmachine.&lt;anonymous&gt |
-| QiScans | Native details identity, metadata and complete cover bytes | ☁️ Cloudflared | 0.32s | CloudflareError: The requested resource is Cloudflare protected     at RequestExecution.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:41:62370)     at Generator.next (&lt;anonymous&gt;)     at evalmachine.&lt;anonymous&gt;:41:54561     at new Promise (&lt;anonymous&gt;)     at __awaiter (evalmachine.&lt;anonymous&gt;:41:54202)     at RequestExecution.checkChallenge (evalmachine.&lt;anonymous&gt |
+| QiScans | Native discovery schema and representative section | ☁️ Cloudflared | 0.10s | CloudflareError: The requested resource is Cloudflare protected     at RequestExecution.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:41:62370)     at Generator.next (&lt;anonymous&gt;)     at evalmachine.&lt;anonymous&gt;:41:54561     at new Promise (&lt;anonymous&gt;)     at __awaiter (evalmachine.&lt;anonymous&gt;:41:54202)     at RequestExecution.checkChallenge (evalmachine.&lt;anonymous&gt |
+| QiScans | Native catalog search and offered continuation | ☁️ Cloudflared | 0.28s | CloudflareError: The requested resource is Cloudflare protected     at RequestExecution.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:41:62370)     at Generator.next (&lt;anonymous&gt;)     at evalmachine.&lt;anonymous&gt;:41:54561     at new Promise (&lt;anonymous&gt;)     at __awaiter (evalmachine.&lt;anonymous&gt;:41:54202)     at RequestExecution.checkChallenge (evalmachine.&lt;anonymous&gt |
+| QiScans | Native details identity, metadata and complete cover bytes | ☁️ Cloudflared | 0.33s | CloudflareError: The requested resource is Cloudflare protected     at RequestExecution.&lt;anonymous&gt; (evalmachine.&lt;anonymous&gt;:41:62370)     at Generator.next (&lt;anonymous&gt;)     at evalmachine.&lt;anonymous&gt;:41:54561     at new Promise (&lt;anonymous&gt;)     at __awaiter (evalmachine.&lt;anonymous&gt;:41:54202)     at RequestExecution.checkChallenge (evalmachine.&lt;anonymous&gt |
 | QiScans | Native complete chapter inventory, identity and ordering | ⏸️ Blocked | 0.00s | Error: Native prerequisite was not verified: Native details identity, metadata and complete cover bytes     at file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:184:72     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/live-tests.mjs:25:19)     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts |
 | QiScans | Native reader identity, ordered manifest and first/last image bytes | ⏸️ Blocked | 0.00s | Error: Native prerequisite was not verified: Native complete chapter inventory, identity and ordering     at file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:184:72     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/live-tests.mjs:25:19)     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.m |
 | QiScans | Native advertised controls and representative filtered search | ⏸️ Blocked | 0.00s | Error: Native prerequisite was not verified: Native details identity, metadata and complete cover bytes     at file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:184:72     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/live-tests.mjs:25:19)     at check (file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts |
 | QiScans | Native policy and image-origin guards fail before network | ✅ Pass | 0.00s | — |
 | VortexScans | Native initialization and advertised capabilities | ✅ Pass | 0.00s | — |
-| VortexScans | Native discovery schema and representative section | ✅ Pass | 1.08s | — |
-| VortexScans | Native catalog search and offered continuation | ✅ Pass | 0.64s | — |
-| VortexScans | Native details identity, metadata and complete cover bytes | ✅ Pass | 0.51s | — |
-| VortexScans | Native complete chapter inventory, identity and ordering | ✅ Pass | 0.53s | — |
-| VortexScans | Native reader identity, ordered manifest and first/last image bytes | ✅ Pass | 0.31s | — |
-| VortexScans | Native advertised controls and representative filtered search | ✅ Pass | 0.41s | — |
+| VortexScans | Native discovery schema and representative section | ✅ Pass | 1.55s | — |
+| VortexScans | Native catalog search and offered continuation | ✅ Pass | 0.69s | — |
+| VortexScans | Native details identity, metadata and complete cover bytes | ✅ Pass | 0.52s | — |
+| VortexScans | Native complete chapter inventory, identity and ordering | ✅ Pass | 0.52s | — |
+| VortexScans | Native reader identity, ordered manifest and first/last image bytes | ✅ Pass | 0.58s | — |
+| VortexScans | Native advertised controls and representative filtered search | ✅ Pass | 0.45s | — |
 | VortexScans | Native policy and image-origin guards fail before network | ✅ Pass | 0.00s | — |
 | VyManga | — | ⚠️ Error | — | Source suite aborted before completion; remaining checks were not run. AssertionError [ERR_ASSERTION]: No native contract configuration for VyManga     at testNativeContract (file:///home/runner/work/mana-extensions/mana-extensions/scripts/native-contracts.mjs:178:3)     at file:///home/runner/work/mana-extensions/mana-extensions/scripts/live-tests.mjs:46:13     at process.processTicksAndRejection |
 
@@ -160,6 +160,7 @@ VyManga: Source suite aborted before completion; remaining checks were not run. 
 
 | Checked (UTC) | GenzToons | GourmetScans | Hijala | Kagane | MangaStash | MangaSushi | MangaTaro | ManhwaNex | Marumaru | QiScans | VortexScans | VyManga | Run |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2026-11-28 05:03:14 UTC | ❌ Fail | ☁️ Cloudflared | ✅ Pass | ❌ Fail | ❌ Fail | ✅ Pass | ✅ Pass | ❌ Fail | ❌ Fail | ☁️ Cloudflared | ✅ Pass | ⚠️ Error | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/46110177734) |
 | 2026-11-27 23:46:54 UTC | ❌ Fail | ☁️ Cloudflared | ✅ Pass | ❌ Fail | ❌ Fail | ✅ Pass | ✅ Pass | ❌ Fail | ❌ Fail | ☁️ Cloudflared | ✅ Pass | ⚠️ Error | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/46084247712) |
 | 2026-11-27 15:40:37 UTC | ❌ Fail | ☁️ Cloudflared | ✅ Pass | ❌ Fail | ❌ Fail | ✅ Pass | ✅ Pass | ❌ Fail | ❌ Fail | ☁️ Cloudflared | ✅ Pass | ⚠️ Error | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/46026743655) |
 | 2026-11-27 05:27:02 UTC | ❌ Fail | ☁️ Cloudflared | ✅ Pass | ❌ Fail | ❌ Fail | ✅ Pass | ✅ Pass | ❌ Fail | ❌ Fail | ☁️ Cloudflared | ✅ Pass | ⚠️ Error | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/45945730443) |
@@ -183,7 +184,6 @@ VyManga: Source suite aborted before completion; remaining checks were not run. 
 | 2026-11-21 04:03:12 UTC | ✅ Pass | ☁️ Cloudflared | ✅ Pass | ❌ Fail | ❌ Fail | ✅ Pass | ✅ Pass | ✅ Pass | ❌ Fail | ☁️ Cloudflared | ✅ Pass | ⚠️ Error | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/44864021301) |
 | 2026-11-20 22:51:43 UTC | ✅ Pass | ☁️ Cloudflared | ✅ Pass | ❌ Fail | ❌ Fail | ✅ Pass | ✅ Pass | ✅ Pass | ❌ Fail | ☁️ Cloudflared | ✅ Pass | ⚠️ Error | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/44832147453) |
 | 2026-11-20 16:27:18 UTC | ✅ Pass | ☁️ Cloudflared | ✅ Pass | ❌ Fail | ❌ Fail | ✅ Pass | ✅ Pass | ✅ Pass | ❌ Fail | ☁️ Cloudflared | ✅ Pass | ⚠️ Error | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/44773227507) |
-| 2026-11-20 07:29:54 UTC | ✅ Pass | ☁️ Cloudflared | ✅ Pass | ❌ Fail | ❌ Fail | ✅ Pass | ✅ Pass | ✅ Pass | ❌ Fail | ☁️ Cloudflared | ✅ Pass | ⚠️ Error | [Run](https://github.com/LucifersCircle/mana-extensions/actions/runs/44695194186) |
 
 </details>
 
